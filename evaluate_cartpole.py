@@ -9,7 +9,7 @@ from dataset import raw_states_to_torch
 from models.resnet_like_model import Net
 from cartpole_loss import control_loss_function
 
-APPLY_UNTIL = 3
+APPLY_UNTIL = 1
 
 
 class Evaluator:
@@ -176,7 +176,7 @@ if __name__ == "__main__":
     # success, angles = evaluator.evaluate_in_environment(net, render=True)
     try:
         swingup_mean, swingup_std, _, data_collection = evaluator.make_swingup(
-            net, nr_iters=1, render=True, max_iters=100
+            net, nr_iters=1, render=True, max_iters=300
         )
         print(swingup_mean, swingup_std)
     except KeyboardInterrupt:

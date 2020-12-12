@@ -16,7 +16,7 @@ NR_EVAL_ITERS = 10
 NR_SWINGUP_ITERS = 20
 USE_NEW_DATA = 1000
 
-OUT_SIZE = 10
+OUT_SIZE = 5
 DIM = 4  # input dimension
 
 net = Net(DIM, OUT_SIZE)
@@ -25,7 +25,7 @@ net = Net(DIM, OUT_SIZE)
 #     os.path.join("models", "minimize_x_brakingWUHU", "model_pendulum")
 # )
 
-optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+optimizer = optim.SGD(net.parameters(), lr=0.0005, momentum=0.9)
 
 (
     episode_length_mean, episode_length_std, loss_list, pole_angle_mean,
@@ -91,9 +91,7 @@ for epoch in range(NR_EPOCHS):
             # forward + backward + optimize
             outputs = net(inputs)
             lam = epoch / NR_EPOCHS
-            loss = control_loss_function(
-                outputs, labels, lambda_factor=lam, printout=0
-            )
+            loss = control_loss_function(outputs, labels, lambda_factor=lam)
             loss.backward()
             optimizer.step()
             # print statistics

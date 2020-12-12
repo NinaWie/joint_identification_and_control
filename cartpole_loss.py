@@ -61,16 +61,17 @@ def state_to_theta(state, action):
     return new_state
 
 
-def control_loss_function(action, state, lambda_factor=.4, printout=0):
-
-    # bring action into -1 1 range
-    action = torch.sigmoid(action) - .5
-
-    nr_actions = action.size()[1]
-
-    # update state iteratively for each proposed action
+def loop_states(state, action_seq):
+    nr_actions = action_seq.size()[1]
+    # apply actions one after another
     for i in range(nr_actions):
-        state = state_to_theta(state, action[:, i])
+        state = state_to_theta(state, action_seq[:, i])
+    # return final state
+    return state
+
+
+def end_state_loss(state):
+    # update state iteratively for each proposed action
     abs_state = torch.abs(state)
 
     pos_loss = state[:, 0]**2
@@ -78,22 +79,42 @@ def control_loss_function(action, state, lambda_factor=.4, printout=0):
     vel_loss = abs_state[:, 1] * (2.4 - abs_state[:, 0])**2
     angle_loss = 3 * abs_state[:, 2]
     # high angle velocity is fine if angle itself is high
-    angle_vel_loss = .1 * abs_state[:, 3] * (torch.pi - abs_state[:, 2])**2
-    loss = .1 * (pos_loss + vel_loss + angle_loss + angle_vel_loss)
+    angle_vel_loss = .1 * abs_state[:, 3] * (torch.pi - abs_state[:, 2])
+    loss = pos_loss + vel_loss + angle_loss + angle_vel_loss
+    return loss
+
+
+def control_loss_function(action, state, lambda_factor=.4, printout=0):
+    in_state = state.clone()
+
+    # bring action into -1 1 range
+    action = torch.sigmoid(action) - .5
+
+    # compute final state
+    loss_model = end_state_loss(loop_states(state, action))
+
+    # for regret, compare to pure right or pure left movement or no action
+    action_right = torch.zeros(action.size()) + .5
+    action_static = torch.zeros(action.size())
+    action_left = torch.zeros(action.size()) - .5
+    loss_right = end_state_loss(loop_states(in_state, action_right))
+    loss_static = end_state_loss(loop_states(in_state, action_static))
+    loss_left = end_state_loss(loop_states(in_state, action_left))
+
+    # minimum of the possible losses
+    min_loss_possible = torch.minimum(
+        torch.minimum(loss_left, loss_right), loss_static
+    )
+    # regret loss
+    loss = loss_model - min_loss_possible
 
     if printout:
-        # print(
-        #     "x before",
-        #     x_orig[0].item(),
-        #     "x after",
-        #     x[0].item(),  # "theta max possible", theta_max_possible[0].item()
-        # )
-        # print("losses:")
-        print("position_loss", pos_loss[0].item())
-        print("vel_loss", vel_loss[0].item())
-        # print("factor", factor[0].item())
-        print("angle loss", angle_loss[0].item())
-        print("angle vel", angle_vel_loss[0].item())
+        print("action", action[0])
+        print("loss_model", loss_model[0].item())
+        print("min_loss_possible", min_loss_possible[0].item())
+        print("loss_right", loss_right[0].item())
+        print("loss_left", loss_left[0].item())
+        print("loss_static", loss_static[0].item())
         print()
-    # print(fail)
+
     return torch.sum(loss)  # + angle_acc)
