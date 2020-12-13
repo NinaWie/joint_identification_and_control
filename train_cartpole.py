@@ -16,7 +16,7 @@ NR_EVAL_ITERS = 10
 NR_SWINGUP_ITERS = 20
 USE_NEW_DATA = 1000
 
-OUT_SIZE = 5
+OUT_SIZE = 10
 DIM = 4  # input dimension
 
 net = Net(DIM, OUT_SIZE)

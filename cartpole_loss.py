@@ -74,13 +74,13 @@ def end_state_loss(state):
     # update state iteratively for each proposed action
     abs_state = torch.abs(state)
 
-    pos_loss = state[:, 0]**2
+    pos_loss = abs_state[:, 0] / 1.2
     # velocity losss is low when x is high
-    vel_loss = abs_state[:, 1] * (2.4 - abs_state[:, 0])**2
-    angle_loss = 3 * abs_state[:, 2]
+    vel_loss = .2 * abs_state[:, 1] * (2.4 - abs_state[:, 0])**2
+    angle_loss = 5 * abs_state[:, 2] / torch.pi
     # high angle velocity is fine if angle itself is high
-    angle_vel_loss = .1 * abs_state[:, 3] * (torch.pi - abs_state[:, 2])
-    loss = pos_loss + vel_loss + angle_loss + angle_vel_loss
+    angle_vel_loss = .2 * abs_state[:, 3] * (torch.pi - abs_state[:, 2])
+    loss = torch.vstack((pos_loss, vel_loss, angle_loss, angle_vel_loss))
     return loss
 
 
@@ -91,22 +91,26 @@ def control_loss_function(action, state, lambda_factor=.4, printout=0):
     action = torch.sigmoid(action) - .5
 
     # compute final state
-    loss_model = end_state_loss(loop_states(state, action))
+    loss_of_model = end_state_loss(loop_states(state, action))
 
     # for regret, compare to pure right or pure left movement or no action
-    action_right = torch.zeros(action.size()) + .5
-    action_static = torch.zeros(action.size())
-    action_left = torch.zeros(action.size()) - .5
-    loss_right = end_state_loss(loop_states(in_state, action_right))
-    loss_static = end_state_loss(loop_states(in_state, action_static))
-    loss_left = end_state_loss(loop_states(in_state, action_left))
+    for j, action_space in enumerate([-.5, 0, .5]):
+        possibly_better_action = torch.zeros(action.size()) + action_space
+        state_reached = loop_states(in_state, possibly_better_action)
+        according_losses = end_state_loss(state_reached)
+        if j == 0:
+            min_loss_possible = according_losses
+        else:
+            # minimum of the possible losses
+            min_loss_possible = torch.minimum(
+                min_loss_possible, according_losses
+            )
 
-    # minimum of the possible losses
-    min_loss_possible = torch.minimum(
-        torch.minimum(loss_left, loss_right), loss_static
-    )
     # regret loss
-    loss = loss_model - min_loss_possible
+    loss_diff = loss_of_model - min_loss_possible
+    # maximum over kinds of losses
+    loss = torch.max(loss_diff, dim=0).values
+    # print(torch.max(loss_diff, dim=0).indices)
 
     if printout:
         print("action", action[0])
