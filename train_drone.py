@@ -11,7 +11,7 @@ from drone_loss import drone_loss_function, trajectory_loss
 from environments.drone_dynamics import simulate_quadrotor
 from evaluate_drone import QuadEvaluator
 from models.hutter_model import Net
-from environments.drone_env import construct_states
+from environments.mpc_drone_env import construct_states
 from utils.plotting import plot_loss, plot_success
 
 EPOCH_SIZE = 5000

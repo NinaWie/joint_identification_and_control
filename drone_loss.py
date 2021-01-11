@@ -3,6 +3,22 @@ from environments.drone_dynamics import simulate_quadrotor, device
 torch.autograd.set_detect_anomaly(True)
 zero_tensor = torch.zeros(3).to(device)
 
+def mpc_loss(self, states, target_states, action, target_end_state):
+    gt_action = torch.tensor([9.81, 0, 0, 0]).to(device)
+    
+    # state_error = states - target_states # shape 20 x 10
+    # state_loss = torch.sum(torch.mm(torch.mm(state_error, self._Q_gap), state_error.t()))
+    # # print(state_error.size(), state_loss.size())
+    # target_error = states[-1] - target_end_state # shape 20 x 10
+    # inner_mv = torch.mv(self._Q_goal, target_error)
+    # target_loss = torch.sum(torch.dot(inner_mv, target_error.t()))
+    # add up action losses
+    # action_loss = 0
+    # for k in range(self.horizon):
+    #     action_error = actions[k] - self.action_prior[k]
+    #     action_loss += torch.dot(torch.mv(self._Q_u, action_error), action_error.t())
+    return torch.sum(state_loss + target_loss)*0.00001 #  action_loss +
+
 def drone_loss_function(current_state, start_state=None, printout=0):
     """
     Computes loss of the current state (target is assumed to be zero-state)
