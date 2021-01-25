@@ -8,10 +8,9 @@ import torch.nn.functional as F
 
 from dataset import DroneDataset
 from drone_loss import drone_loss_function, trajectory_loss, reference_loss
-from environments.drone_dynamics import simulate_quadrotor
+from environments.mpc_dynamics import dynamics
 from evaluate_drone import QuadEvaluator
 from models.hutter_model import Net
-from environments.mpc_drone_env import construct_states
 from utils.plotting import plot_loss, plot_success, plot_loss_episode_len
 
 EPOCH_SIZE = 5000
@@ -21,15 +20,15 @@ NR_EPOCHS = 200
 BATCH_SIZE = 8
 RESET_STRENGTH = 1.2
 MAX_DRONE_DIST = 0.2
-THRESH_DIV = .2
+THRESH_DIV = 1
 NR_EVAL_ITERS = 5
-STATE_SIZE = 13
+STATE_SIZE = 7
 NR_ACTIONS = 5
 REF_DIM = 9
 ACTION_DIM = 4
 LEARNING_RATE = 0.001
 SAVE = os.path.join("trained_models/drone/test_model")
-BASE_MODEL = os.path.join("trained_models/drone/ref_good_selfplay_straight")
+BASE_MODEL = None  # os.path.join("trained_models/drone/ref_good_selfplay_straight")
 BASE_MODEL_NAME = 'model_quad'
 
 # Load model or initialize model
@@ -148,7 +147,7 @@ for epoch in range(NR_EPOCHS):
 
             # ------------ VERSION 1 (x states at once)-----------------
             actions = net(in_state[:, 3:], ref_body)
-            actions = torch.sigmoid(actions)
+            # actions = torch.sigmoid(actions)
             action_seq = torch.reshape(actions, (-1, NR_ACTIONS, ACTION_DIM))
             # unnnormalize state
             # start_state = current_state.clone()
@@ -163,7 +162,7 @@ for epoch in range(NR_EPOCHS):
                 # net_input_state = (current_state - torch_mean) / torch_std
                 # action = net(net_input_state)
                 # action = torch.sigmoid(action)
-                current_state = simulate_quadrotor(action, current_state)
+                current_state = dynamics(current_state, action)
                 intermediate_states[:, k] = current_state  # [:, :3]
 
                 # Only compute loss after last action

@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import os
-from environments.drone_env import trajectory_training_data
+from environments.mpc_drone_env import trajectory_training_data
 from environments.cartpole_env import construct_states
 from environments.drone_dynamics import world_to_body_matrix
 

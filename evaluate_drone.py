@@ -7,6 +7,7 @@ import torch
 import pickle
 
 from environments.drone_env import QuadRotorEnvBase, trajectory_training_data
+from environments.mpc_drone_env import Quadrotor_v0
 from utils.plotting import (
     plot_state_variables, plot_trajectory, plot_position, plot_suc_by_dist
 )
@@ -38,7 +39,7 @@ class QuadEvaluator():
     ):
         self.dataset = dataset
         self.net = model
-        self.eval_env = QuadRotorEnvBase()
+        self.eval_env = Quadrotor_v0()
         self.horizon = horizon
         self.max_drone_dist = max_drone_dist
         self.training_means = None
@@ -110,7 +111,7 @@ class QuadEvaluator():
         """
         if self.render:
             # print([round(s, 2) for s in current_np_state])
-            current_np_state = self.eval_env._state.as_np
+            current_np_state = self.eval_env._state
             self.eval_env._state.set_position(
                 current_np_state[:3] + np.array([0, 0, 1])
             )
@@ -122,7 +123,7 @@ class QuadEvaluator():
         nr_stable = []
         for k in range(nr_test_data):
             self.eval_env.reset()
-            current_np_state = self.eval_env._state.as_np
+            current_np_state = self.eval_env._state
             # Goal state: constant position and velocity
             posf = current_np_state[:3].copy()
             # if render:
@@ -134,7 +135,7 @@ class QuadEvaluator():
                 for i in range(max_nr_steps):
                     # goal state: same pos, zero velocity
                     pos0 = current_np_state[:3]
-                    vel0 = current_np_state[6:9]
+                    vel0 = current_np_state[7:]
                     acc0 = self.eval_env.get_acceleration()
                     trajectory = get_reference(
                         pos0,
@@ -164,12 +165,12 @@ class QuadEvaluator():
         """
         # reset drone state
         self.eval_env.reset()
-        current_np_state = self.eval_env._state.as_np
+        current_np_state = self.eval_env._state
 
         # init circle
         circ_ref = Circle(plane=plane, radius=radius)
         circ_ref.init_from_tangent(
-            current_np_state[:3].copy(), current_np_state[6:9].copy()
+            current_np_state[:3].copy(), current_np_state[7:].copy()
         )
 
         alpha_start = circ_ref.to_alpha(
@@ -224,8 +225,8 @@ class QuadEvaluator():
         # self.eval_env.zero_reset(*tuple(init_state))
         self.eval_env.reset()
 
-        current_np_state = self.eval_env._state.as_np
-        traj_direction = current_np_state[6:9]  # np.random.rand(3)
+        current_np_state = self.eval_env._state
+        traj_direction = current_np_state[7:]  # np.random.rand(3)
         a_on_line = current_np_state[:3]
         b_on_line = a_on_line + traj_direction / np.linalg.norm(traj_direction)
 
