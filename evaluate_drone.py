@@ -6,9 +6,15 @@ import numpy as np
 import torch
 import pickle
 
-from environments.drone_env import QuadRotorEnvBase
-from utils.plotting import plot_state_variables
-from dataset import raw_states_to_torch
+from environments.drone_env import QuadRotorEnvBase, trajectory_training_data
+from utils.plotting import (
+    plot_state_variables, plot_trajectory, plot_position, plot_suc_by_dist
+)
+from utils.trajectory import (
+    sample_points_on_straight, sample_to_input, np_project_line,
+    eval_get_straight_ref, get_reference, Circle
+)
+from dataset import DroneDataset
 # from models.resnet_like_model import Net
 from drone_loss import drone_loss_function
 
@@ -16,27 +22,46 @@ ROLL_OUT = 1
 ACTION_DIM = 4
 
 # Use cuda if available
-device = "cpu" # torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = "cpu"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 class QuadEvaluator():
 
-    def __init__(self, model, mean=0, std=1):
-        self.mean = mean
-        # self.mean[2] -= 2  # for old models
-        self.std = std
+    def __init__(
+        self,
+        model,
+        dataset,
+        horizon=5,
+        max_drone_dist=0.1,
+        render=0,
+        **kwargs
+    ):
+        self.dataset = dataset
         self.net = model
+        self.eval_env = QuadRotorEnvBase()
+        self.horizon = horizon
+        self.max_drone_dist = max_drone_dist
+        self.training_means = None
+        self.render = render
+        self.treshold_divergence = 1
 
-    def predict_actions(self, current_np_state):
+    def predict_actions(self, current_np_state, ref_states):
         """
         Predict an action for the current state. This function is used by all
         evaluation functions
         """
         # print([round(s, 2) for s in current_np_state])
-        current_torch_state = raw_states_to_torch(
-            current_np_state, normalize=True, mean=self.mean, std=self.std
-        ).to(device)
+        in_state, _, ref_body = self.dataset.get_and_add_eval_data(
+            current_np_state, ref_states
+        )
+        # if self.render:
+        #     self.check_ood(current_np_state, ref_world)
+
         # print([round(s, 2) for s in current_torch_state[0].numpy()])
-        suggested_action = self.net(current_torch_state)
+        # print("reference", reference)
+        # print("position", current_torch_state[:, 3:])
+        suggested_action = self.net(in_state[:, 3:], ref_body)
+
         suggested_action = torch.sigmoid(suggested_action)[0]
 
         suggested_action = torch.reshape(suggested_action, (-1, ACTION_DIM))
@@ -44,252 +69,280 @@ class QuadEvaluator():
         # print([round(a, 2) for a in numpy_action_seq[0]])
         return numpy_action_seq
 
-    def stabilize(
-        self, nr_iters=1, render=False, max_time=300, start_loss=200
-    ):
-        """
-        Measure nr_iters times how long the drone can hover without falling.
-        Arguments:
-            nr_iters (int): Number of runs (multiple to compute statistics)
-            render (bool): if true, showing a simple drone simulation
-            max_time (int): Maximum number of steps to hover
-            start_loss (int): At this point we start to record the average
-                divergence from the target for evaluation --> In the optimal
-                case the drone has stabilized around the target at this time
-        Returns:
-            Average number of steps before failure
-            Standard deviation of steps before failure
-            collect_data: Array with all encountered states   
-        """
-        collect_data = []
-        pos_loss_list = list()  # collect the reason for failure
-        collect_runs = list()
-        with torch.no_grad():
-            eval_env = QuadRotorEnvBase()
-            for _ in range(nr_iters):
-                time_stable = 0
-                # Reset and run until failing or reaching max_time
-                eval_env.render_reset()
-                stable = True
-                while stable and time_stable < max_time:
-                    current_np_state = eval_env._state.as_np.copy()
-                    current_np_state[2] -= 2  # correct for height
-                    if time_stable > start_loss:
-                        pos_loss_list.append(np.absolute(current_np_state[:3]))
-                    numpy_action_seq = self.predict_actions(current_np_state)
-                    for nr_action in range(ROLL_OUT):
-                        action = numpy_action_seq[nr_action]
-                        # if render:
-                        #     # print(np.around(current_np_state[3:6], 2))
-                        #     print("action:", np.around(suggested_action, 2))
-                        current_np_state, stable = eval_env.step(action)
-                        if time_stable > 20:
-                            collect_data.append(current_np_state)
-                        if not stable:
-                            break
-                        # if render:
-                        #     print(current_np_state[:3])
-                        # count nr of actions that the drone can hover
-                        time_stable += 1
-                    if render:
-                        # .numpy()[0]
-                        print([round(s, 2) for s in current_np_state])
-                        eval_env.render()
-                        time.sleep(.1)
-                collect_runs.append(time_stable)
-        collect_data = np.array(collect_data)
-        if len(pos_loss_list) > 0:
-            print(
-                "average deviation from target pos:", [
-                    round(s, 2)
-                    for s in np.mean(np.array(pos_loss_list), axis=0)
-                ]
+    def check_ood(self, drone_state, ref_states):
+        if self.training_means is None:
+            _, reference_training_data = trajectory_training_data(
+                500, max_drone_dist=self.max_drone_dist
             )
-        return (np.mean(collect_runs), np.std(collect_runs), 0, collect_data)
+            self.training_means = np.mean(reference_training_data, axis=0)
+            self.training_std = np.std(reference_training_data, axis=0)
+        drone_state_names = np.array(
+            [
+                "pos_x", "pos_y", "pos_z", "att_1", "att_2", "att_3", "vel_x",
+                "vel_y", "vel_z", "rot_1", "rot_2", "rot_3", "rot_4",
+                "att_vel_1", "att_vel_2", "att_vel_3"
+            ]
+        )
+        ref_state_names = np.array(
+            [
+                "pos_x", "pos_y", "pos_z", "vel_x", "vel_y", "vel_z", "acc_1",
+                "acc_2", "acc_3"
+            ]
+        )
+        normed_drone_state = np.absolute(
+            (drone_state - self.dataset.mean) / self.dataset.std
+        )
+        normed_ref_state = np.absolute(
+            (ref_states - self.training_means) / self.training_std
+        )
+        if np.any(normed_drone_state > 3):
+            print("state outlier:", drone_state_names[normed_drone_state > 3])
+        if np.any(normed_ref_state > 3):
+            for i in range(ref_states.shape[0]):
+                print(
+                    f"ref outlier (t={i}):",
+                    ref_state_names[normed_ref_state[i] > 3]
+                )
 
-    def follow_trajectory(
-        self,
-        knots,
-        data_list,
-        render=False,
-        target_change_theta=.5,
-        max_iters=500
-    ):
+    def help_render(self, sleep=.05):
         """
-        Evaluate the ability of the drone to follow a trajectory defined by
-        knots
-        Arguments:
-            knots: Numpy array of shape (x, 3) with target positions
-            data_list (list): Current list of states that is to be evaluated
-            render (bool): if true, showing drone simulation
-            target_change_theta (float): When the drone has managed to fly
-                    target_change_theta*100 percent of the way towards state s,
-                    the target switches from s to the next knot
-            max_iters(int): Max number of steps to reach target
-        Returns:
-            min_distance_to_target: Min distance to the end target (last knot)
-            time_stable: Number of steps before failure (if it occurs)
-            data_list: encountered states
+        Helper function to make rendering prettier
         """
-        assert 0 <= target_change_theta <= 1, "target change factor must be\
-            between 0 and 1"
+        if self.render:
+            # print([round(s, 2) for s in current_np_state])
+            current_np_state = self.eval_env._state.as_np
+            self.eval_env._state.set_position(
+                current_np_state[:3] + np.array([0, 0, 1])
+            )
+            self.eval_env.render()
+            self.eval_env._state.set_position(current_np_state[:3])
+            time.sleep(sleep)
 
-        main_target = knots[-1]
-        distance_between_knots = np.linalg.norm(knots[1] - knots[0])
+    def stabilize(self, nr_test_data=1, max_nr_steps=300, render=True):
+        nr_stable = []
+        for k in range(nr_test_data):
+            self.eval_env.reset()
+            current_np_state = self.eval_env._state.as_np
+            # Goal state: constant position and velocity
+            posf = current_np_state[:3].copy()
+            # if render:
+            print("target pos:", posf)
+            velf = np.zeros(3)
+            # Run
+            drone_trajectory = []
+            with torch.no_grad():
+                for i in range(max_nr_steps):
+                    # goal state: same pos, zero velocity
+                    pos0 = current_np_state[:3]
+                    vel0 = current_np_state[6:9]
+                    acc0 = self.eval_env.get_acceleration()
+                    trajectory = get_reference(
+                        pos0,
+                        vel0,
+                        acc0,
+                        posf,
+                        velf,
+                        delta_t=self.eval_env.dt,
+                        ref_length=self.horizon
+                    )
+                    numpy_action_seq = self.predict_actions(
+                        current_np_state, trajectory
+                    )
+                    action = numpy_action_seq[0]
+                    current_np_state, stable = self.eval_env.step(action)
+                    drone_trajectory.append(current_np_state[:3])
+                    if not stable:
+                        break
+                    self.help_render(sleep=0)
+            nr_stable.append(i)
+        print("Average episode length: ", np.mean(nr_stable))
+        return drone_trajectory
 
-        # Set up environment
-        eval_env = QuadRotorEnvBase()
-        eval_env.zero_reset(*tuple(knots[0]))
-        current_np_state = eval_env._state.as_np
+    def circle_traj(self, max_nr_steps=200, plane=[0, 1], radius=1):
+        """
+        Follow a circle with the drone environment
+        """
+        # reset drone state
+        self.eval_env.reset()
+        current_np_state = self.eval_env._state.as_np
 
-        state_list = []
-        target_ind = 1
-        time_stable = 0
-        stable = True
-        min_distance_to_target = np.inf
-        while stable and time_stable < max_iters:
-            # as input to network, consider target as 0,0,0 - input difference
-            diff_to_target = current_np_state.copy()
-            diff_to_target[:3] = diff_to_target[:3] - knots[target_ind]
+        # init circle
+        circ_ref = Circle(plane=plane, radius=radius)
+        circ_ref.init_from_tangent(
+            current_np_state[:3].copy(), current_np_state[6:9].copy()
+        )
 
-            # Predict actions and execute
-            data_list.append(diff_to_target)
-            numpy_action_seq = self.predict_actions(diff_to_target)
-            for nr_action in range(ROLL_OUT):
-                # retrieve next action
-                action = numpy_action_seq[nr_action]
-                # take step in environment
-                current_np_state, stable = eval_env.step(action)
-
-                # output
-                state_list.append(current_np_state[:3])
-                if render:
-                    eval_env.render()
-                    time.sleep(.1)
-                    if time_stable % 30 == 0:
-                        print()
-                        current_pos = current_np_state[:3]
-                        print("pos", [round(s, 2) for s in current_pos])
-                        print(
-                            "left",
-                            np.linalg.norm(knots[target_ind] - current_pos)
-                        )
-                        print(
-                            "diff_to_target",
-                            [round(s, 2) for s in diff_to_target[:3]]
-                        )
-                time_stable += 1
+        alpha_start = circ_ref.to_alpha(
+            circ_ref.to_2D(current_np_state[:3].copy())
+        )
+        reference_trajectory, drone_trajectory = [], []
+        with torch.no_grad():
+            for i in range(max_nr_steps):
+                acc = self.eval_env.get_acceleration()
+                trajectory = circ_ref.eval_get_circle(
+                    current_np_state, acc, self.max_drone_dist, self.horizon
+                )
+                numpy_action_seq = self.predict_actions(
+                    current_np_state, trajectory
+                )
+                # only use first action (as in mpc)
+                action = numpy_action_seq[0]
+                current_np_state, stable = self.eval_env.step(action)
+                drone_pos = current_np_state[:3]
+                drone_trajectory.append(drone_pos)
                 if not stable:
-                    # print("FAILED")
+                    break
+                self.help_render(sleep=0)
+
+                # project to trajectory and check divergence
+                drone_on_line = circ_ref.project_helper(drone_pos)
+                reference_trajectory.extend(trajectory[-2:, :3].tolist())
+                div = np.linalg.norm(drone_on_line - drone_pos)
+                if div > self.treshold_divergence:
+                    if self.render:
+                        np.set_printoptions(precision=3, suppress=True)
+                        print("state")
+                        print([round(s, 2) for s in current_np_state])
+                        print("trajectory:")
+                        print(np.around(trajectory, 2))
+                    break
+        alpha_end = circ_ref.to_alpha(
+            circ_ref.to_2D(current_np_state[:3].copy())
+        )
+        if self.render:
+            self.eval_env.close()
+            print(f"Circle: Steps until divergence: {i}")
+            return np.array(reference_trajectory), drone_trajectory
+        else:
+            alpha_diff = alpha_end - alpha_start
+            if alpha_diff < 0:
+                alpha_diff = 2 * np.pi - alpha_start + alpha_end
+            return i, alpha_diff
+
+    def straight_traj(self, max_nr_steps=200):
+        # init_state = np.random.rand(3)
+        # self.eval_env.zero_reset(*tuple(init_state))
+        self.eval_env.reset()
+
+        current_np_state = self.eval_env._state.as_np
+        traj_direction = current_np_state[6:9]  # np.random.rand(3)
+        a_on_line = current_np_state[:3]
+        b_on_line = a_on_line + traj_direction / np.linalg.norm(traj_direction)
+
+        drone_trajectory = []
+        reference_trajectory = []  # drone states projected to ref
+        with torch.no_grad():
+            for i in range(max_nr_steps):
+                acc = self.eval_env.get_acceleration()
+                trajectory = eval_get_straight_ref(
+                    current_np_state, acc, a_on_line, b_on_line,
+                    self.max_drone_dist, self.horizon
+                )
+                # ref_s = sample_to_input(current_np_state, trajectory)
+                numpy_action_seq = self.predict_actions(
+                    current_np_state, trajectory
+                )
+                # only use first action (as in mpc)
+                action = numpy_action_seq[0]
+
+                current_np_state, stable = self.eval_env.step(action)
+                drone_trajectory.append(current_np_state[:3])
+                if not stable:
                     break
 
-            # Log the difference to the target
-            current_pos = current_np_state[:3]
-            diff_to_main = np.sqrt(np.sum((main_target - current_pos)**2))
-            if diff_to_main < min_distance_to_target:
-                min_distance_to_target = diff_to_main
+                self.help_render(sleep=0)
 
-            if target_ind == len(knots) - 1:  # no need to proceed to next t
-                continue
-
-            # Check if the drone has passed the current target or is close
-            use_next_target = np.linalg.norm(
-                knots[target_ind] - current_pos
-            ) < distance_between_knots * target_change_theta
-            if use_next_target:
-                # aim at next target
-                target_ind += 1
-                if render:
-                    print("--------- go to next target:", target_ind, "------")
-                time.sleep(1)
-        with open("trained_models/follow_traj.dat", "wb") as outfile:
-            pickle.dump((np.array(state_list), knots), outfile)
-        return min_distance_to_target, time_stable, data_list
-
-    def evaluate(self, nr_hover_iters=5, nr_traj_iters=10):
-        """
-        Quantitatively evaluate the ability to hover or follow a trajectory
-        """
-        with torch.no_grad():
-            data_list = []
-
-            # hover:
-            progress_list, timesteps_list = list(), list()
-            for _ in range(nr_hover_iters):
-                hover_knots = QuadEvaluator.hover_trajectory()
-                target_dist = np.linalg.norm(hover_knots[-1] - hover_knots[0])
-                progress, timesteps, data_list = self.follow_trajectory(
-                    hover_knots, data_list
+                drone_on_line = np_project_line(
+                    a_on_line, b_on_line, current_np_state[:3]
                 )
-                progress_list.append(1 - progress / target_dist)
-                timesteps_list.append(timesteps)
-            print(
-                "Hover normalized avg progress to target: {:.2f} ({:.2f})\
-                    - Hover timesteps before fail: {:.2f} ({:.2f})".format(
-                    np.mean(progress_list), np.std(progress_list),
-                    np.mean(timesteps_list), np.std(timesteps_list)
-                )
+                reference_trajectory.append(drone_on_line)
+                div = np.linalg.norm(drone_on_line - current_np_state[:3])
+                if div > self.treshold_divergence:
+                    if self.render:
+                        print("divergence too high", div)
+                    break
+        # output dependent on render or not
+        if self.render:
+            return np.array(reference_trajectory), drone_trajectory
+            self.eval_env.close()
+        else:
+            traj_len = np.linalg.norm(
+                reference_trajectory[-1] - reference_trajectory[0]
             )
+            steps_until_fail = i
+            return traj_len, steps_until_fail
 
-            # # follow trajectory
-            # progress_list, timesteps_list = list(), list()
-            # for _ in range(nr_traj_iters):
-            #     traj_knots = QuadEvaluator.random_trajectory(1.5)
-            #     overall_distance = np.linalg.norm(
-            #         traj_knots[-1] - traj_knots[0]
-            #     )
-            #     missing, timesteps, data_list = self.follow_trajectory(
-            #         traj_knots, data_list
-            #     )
-            #     progress_list.append(1 - missing / overall_distance)
-            #     timesteps_list.append(timesteps)
-            # print(
-            #     "Trajectory normalized avg progress to target: {:.2f} ({:.2f})\
-            #         - Trajectory timesteps before fail: {:.2f} ({:.2f})".
-            #     format(
-            #         np.mean(progress_list), np.std(progress_list),
-            #         np.mean(timesteps_list), np.std(timesteps_list)
-            #     )
-            # )
-            data_list = np.array(data_list)
-        return np.mean(progress_list), np.std(progress_list), data_list
-
-    @staticmethod
-    def random_trajectory(step_size, diff=5):
+    def eval_ref(
+        self, nr_test_straight=10, nr_test_circle=10, max_nr_steps=200
+    ):
         """
-        Sample a random trajectory (equally spaced knots from A to B)
-        Arguments:
-            step_size (float): Desired max distance between two states
-            diff (int): Determines distance between start and target (and thus
-                also the necessary number of knots for a given step_size)
+        Function to evaluate both on straight and on circular traj
         """
-        # if diff = 5, then x,y,z are between 0 and 5
-        start = np.random.rand(3) * diff
-        end = np.random.rand(3) * diff
-        dist = np.sqrt(np.sum((end - start)**2))
-        # number of knots required to have step_size distance inbetween
-        number_knots = int(np.ceil(dist / step_size)) + 1
+        # ================ Straight ========================
+        traj_len_stable, divergence = [], []
+        for _ in range(nr_test_straight):
+            traj_len, steps_until_fail = self.straight_traj(
+                max_nr_steps=max_nr_steps
+            )
+            traj_len_stable.append(traj_len)
+            divergence.append(steps_until_fail)
 
-        start_to_end_unit = (end - start) / (number_knots - 1)
-        knots = np.array(
-            [start + i * start_to_end_unit for i in range(number_knots)]
+        # Output results for straight trajectory
+        print(
+            "Straight: Average trajectory length: %3.2f (%3.2f)" %
+            (np.mean(traj_len_stable), np.std(traj_len_stable))
         )
-        # make height to be at least 1
-        knots[:, 2] += max(1 - np.min(knots[:, 2]), 0)
-        return knots
+        print(
+            "Straight: Steps until divergence: %3.2f (%3.2f)" %
+            (np.mean(divergence), np.std(divergence))
+        )
 
-    @staticmethod
-    def hover_trajectory():
+        # ================= CIRCLE =======================
+        circle_stable, alphas = [], []
+        for _ in range(nr_test_circle):
+            # vary plane and radius
+            possible_planes = [[0, 1], [0, 2], [1, 2]]
+            plane = possible_planes[np.random.randint(0, 3, 1)[0]]
+            radius = np.random.rand() + .5  # at least .5, max 1.5
+            # run
+            steps_until_div, alpha_diff = self.circle_traj(
+                max_nr_steps=max_nr_steps, plane=plane, radius=radius
+            )
+            circle_stable.append(steps_until_div)
+            alphas.append(alpha_diff)
+
+        # output results for circle:
+        print(
+            "Circle: Average trajectory length: %3.2f (%3.2f)" %
+            (np.mean(alphas), np.std(alphas))
+        )
+        print(
+            "Circle: Steps until divergence: %3.2f (%3.2f)" %
+            (np.mean(circle_stable), np.std(circle_stable))
+        )
+        return np.mean(traj_len_stable), np.std(traj_len_stable)
+
+    def collect_training_data(self, outpath="data/jan_2021.npy"):
         """
-        Simple trajectory with only two knots (start and target) - learn to fly
-        to position and hover there
-        Target position is always 0,0,2
+        Run evaluation but collect and save states as training data
         """
-        eval_env = QuadRotorEnvBase()
-        eval_env.render_reset()
-        start = eval_env._state.as_np[:3]
-        end = [0, 0, 2]
-        return np.array([start, end])
+        data = []
+        for _ in range(80):
+            _, drone_traj = self.straight_traj(max_nr_steps=100)
+            data.extend(drone_traj)
+        for _ in range(20):
+            # vary plane and radius
+            possible_planes = [[0, 1], [0, 2], [1, 2]]
+            plane = possible_planes[np.random.randint(0, 3, 1)[0]]
+            radius = np.random.rand() + .5
+            # run
+            _, drone_traj = self.circle_traj(
+                max_nr_steps=500, radius=radius, plane=plane
+            )
+            data.extend(drone_traj)
+        data = np.array(data)
+        print(data.shape)
+        np.save(outpath, data)
 
 
 if __name__ == "__main__":
@@ -323,29 +376,54 @@ if __name__ == "__main__":
     net = net.to(device)
     net.eval()
 
-    evaluator = QuadEvaluator(
-        net,
-        mean=np.array(param_dict["mean"]),
-        std=np.array(param_dict["std"])
-    )
-    # # watch
-    # _, _, _, collect_data = evaluator.stabilize(nr_iters=1, render=True)
-    # # compute stats
-    # success_mean, success_std, _, _ = evaluator.stabilize(
-    #     nr_iters=100, render=False
-    # )
-    # print(success_mean, success_std)
-    # plot_state_variables(
-    #     collect_data, save_path=os.path.join(model_path, "evaluation.png")
-    # )
+    dataset = DroneDataset(num_states=1, **param_dict)
+    evaluator = QuadEvaluator(net, dataset, render=1, **param_dict)
 
-    # test trajectory
-    knots = QuadEvaluator.random_trajectory(1.5)
-    # hover_trajectory()
-    # random_trajectory(10, 4)
-    print("Knots:")
-    print(np.around(knots, 2))
-    with torch.no_grad():
-        evaluator.follow_trajectory(knots, [], render=0)
+    # Straight with reference as input
+    try:
+        # STRAIGHT
+        # initial_trajectory, drone_trajectory = evaluator.straight_traj(
+        #     max_nr_steps=300,
+        # )
+        # plot_trajectory(
+        #     initial_trajectory, drone_trajectory,
+        #     os.path.join(model_path, "traj.png")
+        # )
 
+        # evaluator.collect_training_data()
+
+        # CIRCLE
+        ref_trajectory, drone_trajectory = evaluator.circle_traj(
+            max_nr_steps=1000, radius=1.5
+        )
+        plot_trajectory(
+            ref_trajectory, drone_trajectory,
+            os.path.join(model_path, "circle_traj.png")
+        )
+
+        # MEASURE change by drone dist
+        # success_mean_list = []
+        # distances = np.arange(0.5, 2.3, 0.2) * param_dict["max_drone_dist"]
+        # for drone_dist in distances:
+        #     evaluator.max_drone_dist = drone_dist
+        #     suc_mean, suc_std = evaluator.eval_traj_input(
+        #         nr_test_data=20,
+        #         max_nr_steps=200,
+        #     )
+        #     success_mean_list.append(suc_mean)
+
+        # plot_suc_by_dist(distances, success_mean_list, model_path)
+
+        # STABILIZE
+        # drone_trajectory = evaluator.stabilize(
+        #     nr_test_data=1,
+        #     max_nr_steps=1000,
+        # )
+        # plot_position(drone_trajectory, os.path.join(model_path, "stable.png"))
+
+        # evaluator.max_drone_dist = param_dict["max_drone_dist"] * 2
+        # evaluator.eval_traj_input(threshold_divergence, nr_test_data=20)
+        # max_nr_steps=200, step_size=param_dict["step_size"])
+    except KeyboardInterrupt:
+        evaluator.eval_env.close()
     # evaluator.evaluate()

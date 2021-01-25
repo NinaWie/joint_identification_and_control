@@ -12,16 +12,18 @@ import gym
 from gym import spaces
 from gym.utils import seeding
 
+from utils.trajectory import straight_training_sample, get_reference
 try:
     from .rendering import Renderer, Ground, QuadCopter
     from .copter import copter_params, DynamicsState, Euler
-    from .drone_dynamics import simulate_quadrotor
+    from .drone_dynamics import simulate_quadrotor, linear_dynamics
 except ImportError:
     from rendering import Renderer, Ground, QuadCopter
     from copter import copter_params, DynamicsState, Euler
-    from drone_dynamics import simulate_quadrotor
+    from drone_dynamics import simulate_quadrotor, linear_dynamics
 
-device = "cpu" # torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = "cpu"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 class QuadRotorEnvBase(gym.Env):
     """
@@ -57,6 +59,7 @@ class QuadRotorEnvBase(gym.Env):
         # self._attitude_reward = AttitudeReward(
         #     1.0, attitude_error_transform=np.sqrt
         # )
+        self.dt = 0.02
 
     @staticmethod
     def get_is_stable(np_state):
@@ -65,8 +68,19 @@ class QuadRotorEnvBase(gym.Env):
         Returns bool --> if true then still stable
         """
         # only roll and pitch are constrained
-        attitude_condition = np.all(np.absolute(np_state[3:5]) < .5)
+        attitude_condition = np.all(np.absolute(np_state[3:5]) < .8)
         return attitude_condition
+
+    def get_acceleration(self):
+        """
+        Compute acceleration from current state (pos, vel and att)
+        """
+        torch_state = torch.from_numpy(np.array([self._state.as_np])
+                                       ).to(device)
+        acceleration = linear_dynamics(
+            torch_state[:, 9:13], torch_state[:, 3:6], torch_state[:, 6:9]
+        )
+        return acceleration[0]
 
     def step(self, action):
         """
@@ -79,9 +93,12 @@ class QuadRotorEnvBase(gym.Env):
         assert action.shape == (4, ), f"action not size 4 but {action.shape}"
 
         # set the blade speeds. as F ~ w², and we want F ~ action.
-        torch_state = torch.from_numpy(np.array([self._state.as_np])).to(device)
+        torch_state = torch.from_numpy(np.array([self._state.as_np])
+                                       ).to(device)
         torch_action = torch.from_numpy(np.array([action])).to(device)
-        new_state_arr = simulate_quadrotor(torch_action, torch_state)
+        new_state_arr = simulate_quadrotor(
+            torch_action, torch_state, dt=self.dt
+        )
         numpy_out_state = new_state_arr.cpu().numpy()[0]
         # update internal state
         self._state.from_np(numpy_out_state)
@@ -102,7 +119,7 @@ class QuadRotorEnvBase(gym.Env):
             self.renderer.setup()
 
             # update the renderer's center position
-            self.renderer.set_center(self._state.position[0])
+            self.renderer.set_center(0)  # self._state.position[0])
 
         return self.renderer.render(mode, close)
 
@@ -137,9 +154,7 @@ class QuadRotorEnvBase(gym.Env):
 
         self.randomize_angle(5 * strength)
         self.randomize_angular_velocity(2.0 * strength)
-        self._state.attitude.yaw = self.random_state.uniform(
-            low=-0.3 * strength, high=0.3 * strength
-        )
+        self._state.attitude.yaw = self.random_state.uniform(low=-1, high=1)
         self._state.position[:3] = np.random.rand(3) * 2 - 1
         self.randomize_rotor_speeds(200, 500)
         # yaw control typically expects slower velocities
@@ -245,6 +260,82 @@ def construct_states(num_data, episode_length=10, reset_strength=1, **kwargs):
     return data
 
 
+def trajectory_training_data(
+    len_data,
+    step_size=0,
+    max_drone_dist=0.1,
+    ref_length=5,
+    reset_strength=1,
+    load_selfplay=None,  # "data/jan_2021.npy",
+    **kwargs
+):
+    """
+    Generate training dataset for trajectories as input
+    Arguments:
+        len_data: int, how much data to generate
+        step_size: Distance between two points on the trajectory
+        max_drone_dist: Maximum distance of the drone from the first state
+        ref_length: Number of states sampled from reference traj
+        reset_strength: How much to reset the model
+        load_selfplay: file path where data from self play is located
+    Returns:
+        Array of size (len_data, reference_shape) with the training data
+    """
+    if load_selfplay is not None:
+        # load training data from np array
+        data = np.load(load_selfplay)
+        rand_inds = np.random.permutation(len(data))
+        ind_counter = 0
+
+    env = QuadRotorEnvBase()
+    drone_states, ref_states = [], []
+    for _ in range(len_data):
+        if load_selfplay is not None and np.random.rand() < .5:
+            drone_state = data[rand_inds[ind_counter]]
+            ind_counter += 1
+        else:
+            env.reset(strength=reset_strength)
+            # sample a drone state
+            drone_state = env._state.as_np
+        pos0, vel0 = (drone_state[:3], drone_state[6:9])
+        acc0 = env.get_acceleration().numpy()
+
+        # sample a direction where the next position is located
+        norm_vel = np.linalg.norm(vel0)
+        # should not diverge too much from velocity direction of drone
+        sampled_pos_dir = (
+            vel0 + (np.random.rand(3) - .5) * reset_strength * norm_vel
+        )
+        sampled_pos_dir = sampled_pos_dir / np.linalg.norm(sampled_pos_dir)
+        # sample direction where the velocity should show in the end
+        sampled_vel_dir = (
+            sampled_pos_dir + (np.random.rand(3) - .5) * reset_strength
+        )
+
+        # final goal state:
+        posf = pos0 + sampled_pos_dir * max_drone_dist
+        # multiply by norm to get a velocity of similar strength
+        velf = sampled_vel_dir * (norm_vel * (1 + np.random.rand(1) * .2 - .1))
+
+        reference_states = get_reference(
+            pos0,
+            vel0,
+            acc0,
+            posf,
+            velf,
+            ref_length=ref_length,
+            delta_t=env.dt
+        )
+
+        drone_states.append(drone_state)
+        ref_states.append(reference_states)
+    drone_states = np.array(drone_states)
+    ref_states = np.array(ref_states)
+    # np.save("ref_states.npy", ref_states)
+    # exit()
+    return drone_states, ref_states
+
+
 def get_avg_distance():
     """
     Get average distance of the states from the target (zero)
@@ -257,6 +348,10 @@ def get_avg_distance():
 
 if __name__ == "__main__":
     env = QuadRotorEnvBase()
+    env.reset()
+    # a1, a2 = trajectory_training_data(1000, step_size=0.1)
+    # np.save("drone_states.npy", a1)
+    # np.save("ref_states.npy", a2)
     # env = gym.make("QuadrotorStabilizeAttitude-MotorCommands-v0")
     states = construct_states(100)
     # states = np.load("check_added_data.npy")

@@ -3,21 +3,27 @@ from environments.drone_dynamics import simulate_quadrotor, device
 torch.autograd.set_detect_anomaly(True)
 zero_tensor = torch.zeros(3).to(device)
 
+
 def mpc_loss(self, states, target_states, action, target_end_state):
     gt_action = torch.tensor([9.81, 0, 0, 0]).to(device)
-    
-    # state_error = states - target_states # shape 20 x 10
-    # state_loss = torch.sum(torch.mm(torch.mm(state_error, self._Q_gap), state_error.t()))
-    # # print(state_error.size(), state_loss.size())
-    # target_error = states[-1] - target_end_state # shape 20 x 10
-    # inner_mv = torch.mv(self._Q_goal, target_error)
-    # target_loss = torch.sum(torch.dot(inner_mv, target_error.t()))
+
+    state_error = states - target_states  # shape 20 x 10
+    state_loss = torch.sum(
+        torch.mm(torch.mm(state_error, self._Q_gap), state_error.t())
+    )
+    # print(state_error.size(), state_loss.size())
+    target_error = states[-1] - target_end_state  # shape 20 x 10
+    inner_mv = torch.mv(self._Q_goal, target_error)
+    target_loss = torch.sum(torch.dot(inner_mv, target_error.t()))
     # add up action losses
-    # action_loss = 0
-    # for k in range(self.horizon):
-    #     action_error = actions[k] - self.action_prior[k]
-    #     action_loss += torch.dot(torch.mv(self._Q_u, action_error), action_error.t())
-    return torch.sum(state_loss + target_loss)*0.00001 #  action_loss +
+    action_loss = 0
+    for k in range(self.horizon):
+        action_error = actions[k] - self.action_prior[k]
+        action_loss += torch.dot(
+            torch.mv(self._Q_u, action_error), action_error.t()
+        )
+    return torch.sum(state_loss + target_loss) * 0.00001
+
 
 def drone_loss_function(current_state, start_state=None, printout=0):
     """
@@ -61,6 +67,47 @@ def drone_loss_function(current_state, start_state=None, printout=0):
     return torch.sum(loss)
 
 
+def reference_loss(states, ref_states, printout=0, delta_t=0.02):
+    """
+    Compute loss with respect to reference trajectory
+    """
+    # TODO: add loss on actions with quaternion formulation
+    # (9.81, 0,0,0)
+    # TODO: include attitude in reference
+    angle_factor = 0.01
+    angvel_factor = 2e-2
+    vel_factor = 0.5
+    pos_factor = 1
+    yaw_factor = 10
+
+    position_loss = torch.sum((states[:, :, :3] - ref_states[:, :, :3])**2)
+    velocity_loss = torch.sum((states[:, :, 6:9] - ref_states[:, :, 3:6])**2)
+
+    angle_error = 0
+    for k in range(states.size()[1] - 2):
+        # approximate acceleration
+        acc = (states[:, k + 1, 6:9] - states[:, k, 6:9]) / delta_t
+        acc_ref = ref_states[:, k, 6:9] * delta_t
+        # subtract from desired acceleration
+        angle_error += torch.sum((acc_ref - acc)**2)
+
+    ang_vel_error = torch.sum(states[:, :, 13:15]**2
+                              ) + yaw_factor * torch.sum(states[:, :, 15]**2)
+
+    loss = (
+        angle_factor * angle_error + angvel_factor * ang_vel_error +
+        pos_factor * position_loss + vel_factor * velocity_loss
+    )
+
+    if printout:
+        print()
+        print("attitude loss", (angle_factor * angle_error).item())
+        print("att vel loss", (angvel_factor * ang_vel_error).item())
+        print("velocity loss", (velocity_loss * vel_factor).item())
+        print("position loss", (pos_factor * position_loss).item())
+    return loss
+
+
 def project_to_line(a_on_line, b_on_line, p):
     """
     Project a point p to a line from a to b
@@ -70,7 +117,7 @@ def project_to_line(a_on_line, b_on_line, p):
         b_on_line: Second point on the line
         p: point to be projected onto the line
     Returns: Tensor of shape (BATCH_SIZE, n) which is the orthogonal projection
-            of p on the line 
+            of p on the line
     """
     ap = torch.unsqueeze(p - a_on_line, 2)
     ab = b_on_line - a_on_line
@@ -155,5 +202,5 @@ def trajectory_loss(
         print("divergence", divergence_loss[0].item())
         print("progress_loss", progress_loss[0].item())
         print("final", progress_loss + .1 * divergence_loss)
-        print(fail)
+        exit()
     return torch.sum(progress_loss + .1 * divergence_loss)
