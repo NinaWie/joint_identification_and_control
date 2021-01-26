@@ -1,5 +1,6 @@
 import torch
 from environments.drone_dynamics import simulate_quadrotor, device
+from environments.mpc_drone_env import Quadrotor_v0
 torch.autograd.set_detect_anomaly(True)
 zero_tensor = torch.zeros(3).to(device)
 
@@ -67,45 +68,85 @@ def drone_loss_function(current_state, start_state=None, printout=0):
     return torch.sum(loss)
 
 
-def reference_loss(states, ref_states, printout=0, delta_t=0.02):
+def reference_loss(states, ref_states, actions, printout=0, delta_t=0.1):
     """
     Compute loss with respect to reference trajectory
     """
     # TODO: add loss on actions with quaternion formulation
     # (9.81, 0,0,0)
     # TODO: include attitude in reference
+    # angle_factor = 0.1
+    # angvel_factor = 2e-2
+    # vel_factor = 0.01
+    # pos_factor = 0.5
+    # yaw_factor = 10
+    action_factor = .1
+
+    # import numpy as np
+    # np.set_printoptions(precision=3, suppress=True)
+    # print(states[0])
+    # print(ref_states[0])
+    # print(actions[0])
+
+    # compute euler angles:
+    # angle_error = 0
+    # for i in range(states.size()[0]):
+    #     for j in range(states.size()[1]):
+    #         euler_angles = Quadrotor_v0._quatToEuler(states[i, j, 3:7])
+    #         # print("euler_angles", euler_angles)
+    #         angle_error += torch.sum(euler_angles**2)
+
+    # position_loss = torch.sum((states[:, :, :3] - ref_states[:, :, :3])**2)
+    # velocity_loss = torch.sum((states[:, :, 7:] - ref_states[:, :, 3:6])**2)
+
+    # penalize actions - should optimally be all zero
+    action_loss = torch.sum(actions**2)
+    # print("position_loss", position_loss)
+    # print("velocity_loss", velocity_loss)
+    # exit()
+    # loss = angle_error * .01
+
+    # angle_error = 0
+    # for k in range(states.size()[1] - 2):
+    #     # approximate acceleration
+    #     acc = (states[:, k + 1, 7:] - states[:, k, 7:]) / delta_t
+    #     acc_ref = ref_states[:, k, 6:] * delta_t
+    #     # subtract from desired acceleration
+    #     angle_error += torch.sum((acc_ref - acc)**2)
+
+    # OLD VERSION
     angle_factor = 0.01
     angvel_factor = 2e-2
-    vel_factor = 0.5
+    vel_factor = 0.1
     pos_factor = 1
     yaw_factor = 10
 
     position_loss = torch.sum((states[:, :, :3] - ref_states[:, :, :3])**2)
     velocity_loss = torch.sum((states[:, :, 7:] - ref_states[:, :, 3:6])**2)
+    # print(states[0, :, 7:])
+    # print(ref_states[0, :, 3:6])
+    # print()
 
     angle_error = 0
     # for k in range(states.size()[1] - 2):
     #     # approximate acceleration
-    #     acc = (states[:, k + 1, 6:9] - states[:, k, 6:9]) / delta_t
-    #     acc_ref = ref_states[:, k, 6:9] * delta_t
+    #     acc = (states[:, k + 1, 7:] - states[:, k, 7:]) / delta_t
+    #     acc_ref = ref_states[:, k, 6:] * delta_t
     #     # subtract from desired acceleration
     #     angle_error += torch.sum((acc_ref - acc)**2)
 
-    ang_vel_error = 0
-    # torch.sum(states[:, :, 13:15]**2
-    #                          ) + yaw_factor * torch.sum(states[:, :, 15]**2)
-
     loss = (
-        angle_factor * angle_error + angvel_factor * ang_vel_error +
-        pos_factor * position_loss + vel_factor * velocity_loss
+        angle_factor * angle_error + pos_factor * position_loss +
+        vel_factor * velocity_loss + action_factor * action_loss
     )
 
     if printout:
         print()
         print("attitude loss", (angle_factor * angle_error).item())
-        print("att vel loss", (angvel_factor * ang_vel_error).item())
+        # print("att vel loss", (angvel_factor * ang_vel_error).item())
         print("velocity loss", (velocity_loss * vel_factor).item())
         print("position loss", (pos_factor * position_loss).item())
+        print("action loss", (action_factor * action_loss).item())
     return loss
 
 

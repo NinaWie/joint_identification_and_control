@@ -18,8 +18,8 @@ USE_NEW_DATA = 0  # 250
 PRINT = (EPOCH_SIZE // 30)
 NR_EPOCHS = 200
 BATCH_SIZE = 8
-RESET_STRENGTH = 1.2
-MAX_DRONE_DIST = 0.2
+RESET_STRENGTH = .5
+MAX_DRONE_DIST = 0
 THRESH_DIV = 1
 NR_EVAL_ITERS = 5
 STATE_SIZE = 7
@@ -136,11 +136,16 @@ for epoch in range(NR_EPOCHS):
             # inputs are normalized states, current state is unnormalized in
             # order to correctly apply the action
             in_state, ref_world, ref_body = data
-            # unnormalize TODO: maybe return from dataset simply
+
             current_state = in_state * torch_std + torch_mean
             current_state[:, :3] = 0
 
-            # TODO: Could input :3 to NN with vel (problem: normalization)
+            # np.set_printoptions(precision=3, suppress=True)
+            # print(in_state.size(), ref_world.size(), ref_body.size())
+            # print(in_state.detach().numpy()[0])
+            # print(current_state.detach().numpy()[0])
+            # print(ref_body.detach().numpy()[0])
+            # print()
 
             # zero the parameter gradients
             optimizer.zero_grad()
@@ -167,7 +172,9 @@ for epoch in range(NR_EPOCHS):
 
                 # Only compute loss after last action
                 # 1) --------- drone loss function --------------
-            loss = reference_loss(intermediate_states, ref_world, printout=0)
+            loss = reference_loss(
+                intermediate_states, ref_world, action_seq, printout=0
+            )
             # ------------- VERSION 3: Trajectory loss -------------
             # drone_state = (current_state - torch_mean) / torch_std
             # loss = trajectory_loss(

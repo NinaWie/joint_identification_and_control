@@ -63,8 +63,6 @@ class QuadEvaluator():
         # print("position", current_torch_state[:, 3:])
         suggested_action = self.net(in_state[:, 3:], ref_body)
 
-        suggested_action = torch.sigmoid(suggested_action)[0]
-
         suggested_action = torch.reshape(suggested_action, (-1, ACTION_DIM))
         numpy_action_seq = suggested_action.cpu().numpy()
         # print([round(a, 2) for a in numpy_action_seq[0]])
@@ -109,7 +107,7 @@ class QuadEvaluator():
         """
         Helper function to make rendering prettier
         """
-        if self.render:
+        if False:  # self.render:
             # print([round(s, 2) for s in current_np_state])
             current_np_state = self.eval_env._state
             self.eval_env._state.set_position(
@@ -143,7 +141,7 @@ class QuadEvaluator():
                         acc0,
                         posf,
                         velf,
-                        delta_t=self.eval_env.dt,
+                        delta_t=self.eval_env._dt,
                         ref_length=self.horizon
                     )
                     numpy_action_seq = self.predict_actions(
@@ -151,6 +149,7 @@ class QuadEvaluator():
                     )
                     action = numpy_action_seq[0]
                     current_np_state, stable = self.eval_env.step(action)
+                    # print(action)
                     drone_trajectory.append(current_np_state[:3])
                     if not stable:
                         break
@@ -211,7 +210,7 @@ class QuadEvaluator():
             circ_ref.to_2D(current_np_state[:3].copy())
         )
         if self.render:
-            self.eval_env.close()
+            # self.eval_env.close()
             print(f"Circle: Steps until divergence: {i}")
             return np.array(reference_trajectory), drone_trajectory
         else:
@@ -267,9 +266,12 @@ class QuadEvaluator():
             return np.array(reference_trajectory), drone_trajectory
             self.eval_env.close()
         else:
-            traj_len = np.linalg.norm(
-                reference_trajectory[-1] - reference_trajectory[0]
-            )
+            if len(reference_trajectory) > 0:
+                traj_len = np.linalg.norm(
+                    reference_trajectory[-1] - reference_trajectory[0]
+                )
+            else:
+                traj_len = 0
             steps_until_fail = i
             return traj_len, steps_until_fail
 
@@ -394,13 +396,13 @@ if __name__ == "__main__":
         # evaluator.collect_training_data()
 
         # CIRCLE
-        ref_trajectory, drone_trajectory = evaluator.circle_traj(
-            max_nr_steps=1000, radius=1.5
-        )
-        plot_trajectory(
-            ref_trajectory, drone_trajectory,
-            os.path.join(model_path, "circle_traj.png")
-        )
+        # ref_trajectory, drone_trajectory = evaluator.circle_traj(
+        #     max_nr_steps=1000, radius=1.5
+        # )
+        # plot_trajectory(
+        #     ref_trajectory, drone_trajectory,
+        #     os.path.join(model_path, "circle_traj.png")
+        # )
 
         # MEASURE change by drone dist
         # success_mean_list = []
@@ -416,11 +418,11 @@ if __name__ == "__main__":
         # plot_suc_by_dist(distances, success_mean_list, model_path)
 
         # STABILIZE
-        # drone_trajectory = evaluator.stabilize(
-        #     nr_test_data=1,
-        #     max_nr_steps=1000,
-        # )
-        # plot_position(drone_trajectory, os.path.join(model_path, "stable.png"))
+        drone_trajectory = evaluator.stabilize(
+            nr_test_data=1,
+            max_nr_steps=1000,
+        )
+        plot_position(drone_trajectory, os.path.join(model_path, "stable.png"))
 
         # evaluator.max_drone_dist = param_dict["max_drone_dist"] * 2
         # evaluator.eval_traj_input(threshold_divergence, nr_test_data=20)

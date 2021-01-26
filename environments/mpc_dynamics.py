@@ -17,6 +17,21 @@ s_dim = 10
 a_dim = 4
 gz = 9.81
 
+# Quadrotor constant
+w_min_yaw = -6.0
+w_max_yaw = 6.0
+w_min_xy = -6.0
+w_max_xy = 6.0
+thrust_min = 2.0
+thrust_max = 20.0
+u_min = torch.tensor([thrust_min, w_min_xy, w_min_xy, w_min_yaw])
+u_range = torch.tensor(
+    [
+        thrust_max - thrust_min, w_max_xy - w_min_xy, w_max_xy - w_min_xy,
+        w_max_yaw - w_min_yaw
+    ]
+)
+
 # action index
 kThrust = 0
 kWx = 1
@@ -49,7 +64,7 @@ def get_acceleration(state):
     acc = torch.zeros(state.size()[0], 3)
     acc[:, 0] = 2 * (qw * qy + qx * qz) * thrust
     acc[:, 1] = 2 * (qy * qz - qw * qx) * thrust
-    acc[:, 1] = (qw * qw - qx * qx - qy * qy + qz * qz) * thrust - gz
+    acc[:, 2] = (qw * qw - qx * qx - qy * qy + qz * qz) * thrust - gz
     return acc
 
 
@@ -81,11 +96,17 @@ def drone_model(state, action):
     return dstate
 
 
-def dynamics(X, action, dt=0.02):
+def dynamics(X, action, dt=0.1):
     """
     Apply the control command on the quadrotor and transits the system to the next state
     X is the current state
     """
+    # convert action
+    normed_action = torch.sigmoid(action)
+    action = u_min + normed_action * u_range
+
+    # X = X + dt * drone_model(X, normed_action)
+    # TODO
     # rk4 int
     M = 4
     DT = dt / M

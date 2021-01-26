@@ -8,7 +8,7 @@ from utils.trajectory import straight_training_sample, get_reference
 #
 class Quadrotor_v0(object):
     #
-    def __init__(self, dt=.02):
+    def __init__(self, dt=0.1):
         #
         self._state = np.zeros(shape=s_dim)
         self._state[kQuatW] = 1.0
@@ -95,9 +95,7 @@ class Quadrotor_v0(object):
         return self._state, self.is_stable()
 
     def get_acceleration(self):
-        torch_state = (torch.from_numpy(self._state).unsqueeze(0))
-        acc = get_acceleration(torch_state)
-        return acc[0]
+        return self.get_euler()  # TODO
 
     def get_state(self):
         """
@@ -141,8 +139,8 @@ class Quadrotor_v0(object):
         Retrieve Euler Angles of the Vehicle
         """
         quat = self.get_quaternion()
-        euler = self._quatToEuler(quat)
-        return euler
+        euler = self._quatToEuler(torch.tensor(quat))
+        return euler.numpy()
 
     def get_axes(self):
         """
@@ -199,16 +197,16 @@ class Quadrotor_v0(object):
         Convert Quaternion to Euler Angles
         """
         quat_w, quat_x, quat_y, quat_z = quat[0], quat[1], quat[2], quat[3]
-        euler_x = np.arctan2(
+        euler_x = torch.atan2(
             2 * quat_w * quat_x + 2 * quat_y * quat_z, quat_w * quat_w -
             quat_x * quat_x - quat_y * quat_y + quat_z * quat_z
         )
-        euler_y = -np.arcsin(2 * quat_x * quat_z - 2 * quat_w * quat_y)
-        euler_z = np.arctan2(
+        euler_y = -torch.asin(2 * quat_x * quat_z - 2 * quat_w * quat_y)
+        euler_z = torch.atan2(
             2 * quat_w * quat_z + 2 * quat_x * quat_y, quat_w * quat_w +
             quat_x * quat_x - quat_y * quat_y - quat_z * quat_z
         )
-        return [euler_x, euler_y, euler_z]
+        return torch.squeeze(torch.vstack([euler_x, euler_y, euler_z]))
 
 
 def construct_states(num_data, episode_length=10, reset_strength=1, **kwargs):
@@ -273,7 +271,7 @@ def trajectory_training_data(
         pos0, vel0 = (
             drone_state[kPosX:kPosZ + 1], drone_state[kVelX:kVelZ + 1]
         )
-        acc0 = env.get_acceleration().numpy()
+        acc0 = np.array(env.get_acceleration())
 
         # sample a direction where the next position is located
         norm_vel = np.linalg.norm(vel0)

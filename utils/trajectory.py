@@ -107,7 +107,7 @@ class Circle:
         direction = self.get_velocity(goal_pos)
         reference = get_reference(
             drone_pos,
-            drone_state[6:9],
+            drone_state[7:],
             drone_acc,
             goal_pos,
             direction,
@@ -127,7 +127,7 @@ class Circle:
         plt.scatter(points[:, 0], points[:, 1])
 
 
-def get_reference(pos0, vel0, acc0, posf, velf, delta_t=0.02, ref_length=5):
+def get_reference(pos0, vel0, acc0, posf, velf, delta_t=0.1, ref_length=5):
     """
     Compute reference trajectory based on start (0) and final (f) states
     """
@@ -144,12 +144,15 @@ def get_reference(pos0, vel0, acc0, posf, velf, delta_t=0.02, ref_length=5):
     # fmin = 5  #[m/s**2]
     # fmax = 25 #[m/s**2]
     # wmax = 20 #[rad/s]
-    # min_time = 0.02 #[s]
+    # min_time = 0.1 #[s]
     # inputsFeasible = traj.check_input_feasibility(fmin, fmax, wmax, min_time)
 
     # output reference of pos, vel, and acc
+    # print(np.arange(0, (ref_length - .5) * delta_t, delta_t))
     ref_states = np.zeros((ref_length, 9))
-    for j, timepoint in enumerate(np.arange(0, ref_length * delta_t, delta_t)):
+    for j, timepoint in enumerate(
+        np.arange(0, (ref_length - .5) * delta_t, delta_t)
+    ):
         # print(t, traj.get_velocity(t))
         ref_states[j] = np.concatenate(
             (
@@ -178,7 +181,7 @@ def eval_get_straight_ref(
     goal_pos = projected + direction * dist_on_line
     reference = get_reference(
         drone_pos,
-        drone_state[6:9],
+        drone_state[7:],
         drone_acc,
         goal_pos,
         direction,
@@ -186,30 +189,6 @@ def eval_get_straight_ref(
     )
     # TODO: direction times some factor?
     return reference
-
-
-# TODO: compute attitude velocities etc
-
-
-def positions_to_state_trajectory(drone_state, ref_positions, delta_t=0.02):
-    """
-    Compute full reference trajectory from given drone state and
-    target positions -> for testing
-    Arguments:
-        drone_state: vector of size s (state dimension),
-            full state of the drone
-        ref_positions: array of size (x,3) with the x next target
-            positions in 3D space.
-    Returns:
-        Array of size (x, s) with the x next reference states
-    """
-    # get appropriate ref state as goal
-    # project drone to ref traj
-    # get reference
-    reference = get_reference(
-        drone_state[:3],
-        drone_state[6:9],
-    )
 
 
 def sample_points_on_straight(
