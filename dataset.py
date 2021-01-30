@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import os
+from scipy.spatial.transform import Rotation as R
 from environments.mpc_drone_env import trajectory_training_data
 from environments.cartpole_env import construct_states
 from environments.drone_dynamics import world_to_body_matrix
@@ -84,6 +85,7 @@ class DroneDataset(torch.utils.data.Dataset):
         states, ref_world, ref_body = self.prepare_data(states, ref_states)
         if (np.random.rand() < self.self_play
             ) and (self.eval_counter < self.self_play * self.num_states):
+            # self.self_play * s
             # replace data with eval data if below max eval data thresh
             self.states[self.eval_counter] = states[0]
             self.ref_world[self.eval_counter] = ref_world[0]
@@ -114,7 +116,7 @@ class DroneDataset(torch.utils.data.Dataset):
             ref_states = np.expand_dims(ref_states, 0)
 
         # Normalize
-        unnormalized_position = self.to_torch(states[:, :3])
+        unnormalized_state = self.to_torch(states)
         normed_states = (states - self.mean) / self.std
 
         # To torch tensors
@@ -122,33 +124,28 @@ class DroneDataset(torch.utils.data.Dataset):
         torch_ref_states = self.to_torch(ref_states)
         for i in range(ref_states.shape[1]):
             torch_ref_states[:, i, :3] = (
-                torch_ref_states[:, i, :3] - unnormalized_position
+                torch_ref_states[:, i, :3] - unnormalized_state[:, :3]
             )
 
-        # # World to body frame - TODO: not working properly
-        # drone_att = torch_states[:, 3:6]
-        # world_to_body = world_to_body_matrix(drone_att)
-        # TODO: add vel body to drone state instead of pos?
-        # drone_vel_body = torch.matmul(world_to_body, torch_states[6:9])
-        ref_states_body = torch_ref_states.clone()
-        # ref_states_body = torch.unsqueeze(ref_states_body, 3)
-        # for i in range(ref_states.shape[1]):
-        #     # for each time step in the reference:
-        #     # subtract position
-        #     ref_states_body[:, i, :3] = torch.matmul(
-        #         world_to_body, ref_states_body[:, i, :3]
-        #     )
-        #     # transform velocity
-        #     ref_states_body[:, i, 3:6] = torch.matmul(
-        #         world_to_body, ref_states_body[:, i, 3:6]
-        #     )
+        # transform acceleration
+        torch_ref_states[:, :, 6:] *= self.kwargs["dt"]
 
-        #     # transform acceleration
-        #     ref_states_body[:, i, 6:9] = torch.matmul(
-        #         world_to_body, ref_states_body[:, i, 6:9]
-        #     )
-        # ref_states_body = torch.squeeze(ref_states_body, dim=3)
-        return torch_states, torch_ref_states, ref_states_body
+        # # World to body frame - TODO: not working properly
+        quaternions = states[:, 3:7]
+        rot_matrices = self.to_torch(R.from_quat(quaternions).as_matrix())
+
+        drone_vel_body = torch.matmul(
+            rot_matrices, torch.unsqueeze(torch_states[:, 7:], 2)
+        )[:, :, 0]
+        # reshape and concatenate
+        # TODO: only first two columns: [:, :, :2]
+        rotation_matrix = torch.reshape(rot_matrices, (-1, 9))
+
+        drone_states = torch.hstack(
+            (torch_states, rotation_matrix, drone_vel_body)
+        )
+        ref_states_body = torch_ref_states.clone()
+        return drone_states, torch_ref_states, ref_states_body
 
 
 class CartpoleDataset(torch.utils.data.Dataset):

@@ -79,10 +79,11 @@ class Quadrotor_v0(object):
         #
         return self._state
 
-    def is_stable(self):
-        return self._state[2] > 0
+    def is_stable(self, thresh=.5):
+        cart_state = self.get_cartesian_state()
+        return cart_state[3] < thresh and cart_state[4] < thresh
 
-    def step(self, action):
+    def step(self, action, thresh=.5):
         """
         Set the vehicle's state
         """
@@ -92,7 +93,7 @@ class Quadrotor_v0(object):
         )
         next_state = dynamics(torch_state, torch_action, self._dt)
         self._state = next_state.numpy()[0]
-        return self._state, self.is_stable()
+        return self._state, self.is_stable(thresh=thresh)
 
     def get_acceleration(self):
         return self.get_euler()  # TODO
