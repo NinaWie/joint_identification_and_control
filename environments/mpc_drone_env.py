@@ -80,7 +80,10 @@ class Quadrotor_v0(object):
         return self._state
 
     def is_stable(self, thresh=.5):
+        thresh = 5
         cart_state = self.get_cartesian_state()
+        np.set_printoptions(suppress=True, precision=2)
+        print(cart_state)
         return cart_state[3] < thresh and cart_state[4] < thresh
 
     def step(self, action, thresh=.5):
@@ -220,7 +223,7 @@ def construct_states(num_data, episode_length=10, reset_strength=1, **kwargs):
                 How far from target should the states be
     """
     # return data
-    env = Quadrotor_v0()
+    env = Quadrotor_v0(dt=kwargs["dt"])
     data = []
     # is_stable_list = list()
     while len(data) < num_data:
@@ -259,7 +262,7 @@ def trajectory_training_data(
         rand_inds = np.random.permutation(len(data))
         ind_counter = 0
 
-    env = Quadrotor_v0()
+    env = Quadrotor_v0(dt=kwargs["dt"])
     drone_states, ref_states = [], []
     for _ in range(len_data):
         if load_selfplay is not None and np.random.rand() < .5:

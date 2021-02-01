@@ -417,7 +417,7 @@ if __name__ == "__main__":
     net, param_dict = load_model(model_path, epoch=args.epoch)
 
     dataset = DroneDataset(num_states=1, **param_dict)
-    evaluator = QuadEvaluator(net, dataset, render=1, **param_dict)
+    evaluator = QuadEvaluator(net, dataset, render=0, **param_dict)
     # evaluator.eval_ref(max_steps_circle=1000)
     # exit()
     # Straight with reference as input
@@ -427,10 +427,10 @@ if __name__ == "__main__":
             initial_trajectory, drone_trajectory = evaluator.straight_traj(
                 max_nr_steps=1000,
             )
-            plot_trajectory(
-                initial_trajectory, drone_trajectory,
-                os.path.join(model_path, "traj.png")
-            )
+            # plot_trajectory(
+            #     initial_trajectory, drone_trajectory,
+            #     os.path.join(model_path, "traj.png")
+            # )
 
         # evaluator.collect_training_data()
 

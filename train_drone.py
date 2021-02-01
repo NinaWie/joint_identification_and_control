@@ -171,7 +171,9 @@ for epoch in range(NR_EPOCHS):
                 # net_input_state = (current_state - torch_mean) / torch_std
                 # action = net(net_input_state)
                 # action = torch.sigmoid(action)
-                current_state = dynamics(current_state, action)  # TODO!
+                current_state = dynamics(
+                    current_state, action, dt=DELTA_T
+                )  # TODO!
                 intermediate_states[:, k] = current_state  # [:, :3]
 
                 # Only compute loss after last action

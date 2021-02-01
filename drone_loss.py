@@ -115,17 +115,25 @@ def reference_loss(states, ref_states, actions, printout=0, delta_t=0.1):
     #     angle_error += torch.sum((acc_ref - acc)**2)
 
     # OLD VERSION
-    angle_factor = 0.01
+    angle_factor = 0.001
     angvel_factor = 2e-2
-    vel_factor = 0.05
-    pos_factor = 10
+    vel_factor = 0.005
+    pos_factor = 1
     yaw_factor = 10
 
     position_loss = torch.sum((states[:, :, :3] - ref_states[:, :, :3])**2)
     velocity_loss = torch.sum((states[:, :, 7:] - ref_states[:, :, 3:6])**2)
+    # print("Positions")
+    # print(states[0, :, :3])
+    # print(ref_states[0, :, :3])
+    # print("Velocities:")
     # print(states[0, :, 7:])
     # print(ref_states[0, :, 3:6])
-    # print()
+    # print("angle error:")
+    # print((states[0, 2, 7:] - states[0, 1, 7:]) / delta_t)
+    # print(ref_states[0, 1, 6:])
+    # print("action")
+    # print(actions[0])
 
     angle_error = 0
     for k in range(states.size()[1] - 2):
@@ -149,6 +157,7 @@ def reference_loss(states, ref_states, actions, printout=0, delta_t=0.1):
         print("velocity loss", (velocity_loss * vel_factor).item())
         print("position loss", (pos_factor * position_loss).item())
         print("action loss", (action_factor * action_loss).item())
+        exit()
     return loss
 
 

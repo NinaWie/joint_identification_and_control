@@ -90,8 +90,10 @@ def drone_model(state, action):
 
     dstate[:, kVelX] = 2 * (qw * qy + qx * qz) * thrust
     dstate[:, kVelY] = 2 * (qy * qz - qw * qx) * thrust
-    # dstate[kVelZ] = (1 - 2*qx*qx - 2*qy*qy) * thrust - gz
-    dstate[:, kVelZ] = (qw * qw - qx * qx - qy * qy + qz * qz) * thrust - gz
+    # dstate[:, kVelZ] = (1 - 2 * qx * qx - 2 * qy * qy) * thrust - gz
+    # print((qw * qw - qx * qx - qy * qy + qz * qz))
+    dstate[:,
+           kVelZ] = (1 + qw * qw - qx * qx - qy * qy + qz * qz) * thrust - gz
 
     return dstate
 
@@ -105,18 +107,21 @@ def dynamics(X, action, dt=0.1):
     normed_action = torch.sigmoid(action)
     action = u_min + normed_action * u_range
 
-    # X = X + dt * drone_model(X, normed_action)
+    print(action)
+
+    X = X + dt * drone_model(X, normed_action)
+    print(X)
     # TODO
     # rk4 int
-    M = 4
-    DT = dt / M
-    #
-    for i in range(M):
-        k1 = DT * drone_model(X, action)
-        k2 = DT * drone_model(X + 0.5 * k1, action)
-        k3 = DT * drone_model(X + 0.5 * k2, action)
-        k4 = DT * drone_model(X + k3, action)
-        #
-        X = X + (k1 + 2.0 * (k2 + k3) + k4) / 6.0
+    # M = 4
+    # DT = dt / M
+    # #
+    # for i in range(M):
+    #     k1 = DT * drone_model(X, action)
+    #     k2 = DT * drone_model(X + 0.5 * k1, action)
+    #     k3 = DT * drone_model(X + 0.5 * k2, action)
+    #     k4 = DT * drone_model(X + k3, action)
+    #     #
+    #     X = X + (k1 + 2.0 * (k2 + k3) + k4) / 6.0
     # X is the new state
     return X
