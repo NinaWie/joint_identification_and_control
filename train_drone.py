@@ -70,7 +70,9 @@ else:
     )
     in_state_size = state_data.normed_states.size()[1]
     # +9 because adding 12 things but deleting position (3)
-    net = Net(in_state_size, NR_ACTIONS, REF_DIM, ACTION_DIM * NR_ACTIONS)
+    net = Net(
+        in_state_size, NR_ACTIONS, REF_DIM, ACTION_DIM * NR_ACTIONS, conv=True
+    )
     (STD, MEAN) = (state_data.std, state_data.mean)
 
 # Use cuda if available
