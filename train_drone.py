@@ -24,12 +24,15 @@ MAX_DRONE_DIST = 0.25
 THRESH_DIV = .4
 NR_EVAL_ITERS = 5
 STATE_SIZE = 12
-NR_ACTIONS = 10
+NR_ACTIONS_REF = 10
+NR_ACTIONS_PREDICT = 1
+NR_REF_TO_INP = 3
+NR_ACTIONS_LOSS = NR_ACTIONS_REF - NR_REF_TO_INP
 REF_DIM = 9
 ACTION_DIM = 4
 LEARNING_RATE = 0.0001
 SAVE = os.path.join("trained_models/drone/test_model")
-BASE_MODEL = None  # "trained_models/drone/current_model"
+BASE_MODEL = None  # "trained_models/drone/working_rnn_like"
 BASE_MODEL_NAME = 'model_quad'
 
 eval_dict = {
@@ -65,13 +68,17 @@ else:
         SELF_PLAY,
         reset_strength=RESET_STRENGTH,
         max_drone_dist=MAX_DRONE_DIST,
-        ref_length=NR_ACTIONS,
+        ref_length=NR_ACTIONS_REF,
         dt=DELTA_T
     )
     in_state_size = state_data.normed_states.size()[1]
     # +9 because adding 12 things but deleting position (3)
     net = Net(
-        in_state_size, NR_ACTIONS, REF_DIM, ACTION_DIM * NR_ACTIONS, conv=True
+        in_state_size,
+        NR_REF_TO_INP,
+        REF_DIM,
+        ACTION_DIM * NR_ACTIONS_PREDICT,
+        conv=False
     )
     (STD, MEAN) = (state_data.std, state_data.mean)
 
@@ -83,17 +90,13 @@ net = net.to(device)
 # define optimizer and torch normalization parameters
 optimizer = optim.SGD(net.parameters(), lr=LEARNING_RATE, momentum=0.9)
 
-torch_mean, torch_std = (
-    torch.from_numpy(MEAN).float(), torch.from_numpy(STD).float()
-)
-
 # save std for normalization during test time
 param_dict = {"std": STD.tolist(), "mean": MEAN.tolist()}
 # update the used parameters:
 param_dict["reset_strength"] = RESET_STRENGTH
 param_dict["max_drone_dist"] = MAX_DRONE_DIST
-param_dict["horizon"] = NR_ACTIONS
-param_dict["ref_length"] = NR_ACTIONS
+param_dict["horizon"] = NR_ACTIONS_REF
+param_dict["ref_length"] = NR_ACTIONS_REF
 param_dict["treshold_divergence"] = THRESH_DIV
 param_dict["dt"] = DELTA_T
 
@@ -166,26 +169,31 @@ for epoch in range(NR_EPOCHS):
             # zero the parameter gradients
             optimizer.zero_grad()
 
-            # ------------ VERSION 1 (x states at once)-----------------
-            actions = net(in_state, ref_states)
-            actions = torch.sigmoid(actions)
-            action_seq = torch.reshape(actions, (-1, NR_ACTIONS, ACTION_DIM))
             # unnnormalize state
             # start_state = current_state.clone()
             intermediate_states = torch.zeros(
-                in_state.size()[0], NR_ACTIONS, STATE_SIZE
+                in_state.size()[0], NR_ACTIONS_LOSS, STATE_SIZE
             )
-            for k in range(NR_ACTIONS):
-                # extract action
-                action = action_seq[:, k]
+            for k in range(NR_ACTIONS_LOSS):
+                in_state = state_data.normalize_states(current_state)
+                actions = net(in_state, ref_states[:, k:k + NR_REF_TO_INP])
+                action = torch.sigmoid(actions)
+
                 current_state = simulate_quadrotor(
                     action, current_state, dt=DELTA_T
                 )
                 intermediate_states[:, k] = current_state
 
             loss = reference_loss(
-                intermediate_states, ref_states, printout=0, delta_t=DELTA_T
+                intermediate_states,
+                ref_states[:, :NR_ACTIONS_LOSS],
+                printout=0,
+                delta_t=DELTA_T
             )
+            # print(intermediate_states[0, :, :3])
+            # print(ref_states[0, :8, :3])
+            # print()
+            # # exit()
 
             # Backprop
             loss.backward()

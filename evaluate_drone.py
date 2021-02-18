@@ -28,6 +28,7 @@ except ModuleNotFoundError:
 
 ROLL_OUT = 1
 ACTION_DIM = 4
+NR_REF_TO_INP = 3
 
 # Use cuda if available
 device = "cpu"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -85,15 +86,9 @@ class QuadEvaluator():
             #     self.check_ood(current_np_state, ref_world)
             # np.set_printoptions(suppress=True, precision=0)
             # print(current_np_state)
-            suggested_action = self.net(in_state, ref)
+            suggested_action = self.net(in_state, ref)  # [:, :NR_REF_TO_INP])
 
-            suggested_action = torch.sigmoid(suggested_action)[0]
-
-            suggested_action = torch.reshape(
-                # batch size 1
-                suggested_action,
-                (1, self.horizon, ACTION_DIM)
-            )
+            suggested_action = torch.sigmoid(suggested_action)
 
         if do_training:
             self.optimizer.zero_grad()
@@ -119,7 +114,7 @@ class QuadEvaluator():
             loss.backward()
             self.optimizer.step()
 
-        numpy_action_seq = suggested_action[0].detach().numpy()
+        numpy_action_seq = suggested_action[0, :].detach().numpy()
         # print([round(a, 2) for a in numpy_action_seq[0]])
         # keep track of actions
         self.action_counter += 1
@@ -230,14 +225,16 @@ class QuadEvaluator():
         for i in range(max_nr_steps):
             acc = self.eval_env.get_acceleration()
             trajectory = reference.get_ref_traj(current_np_state, acc)
-            numpy_action_seq = self.predict_actions(
-                current_np_state, trajectory
-            )
-            # only use first action (as in mpc)
-            action = numpy_action_seq[0]
-            current_np_state, stable = self.eval_env.step(
-                action, thresh=thresh_stable
-            )
+            for k in range(7):
+                action = self.predict_actions(
+                    current_np_state, trajectory[k:k + 3]
+                )
+                # only use first action (as in mpc)
+                current_np_state, stable = self.eval_env.step(
+                    action, thresh=thresh_stable
+                )
+            # np.set_printoptions(suppress=True, precision=3)
+            # print(trajectory[0, :3], current_np_state[:3])
             if states is not None:
                 self.eval_env._state.from_np(states[i])
                 current_np_state = states[i]
@@ -412,7 +409,7 @@ if __name__ == "__main__":
     net, param_dict = load_model(model_path, epoch=args.epoch)
 
     # optinally change drone speed
-    # param_dict["max_drone_dist"] = .6
+    param_dict["max_drone_dist"] = 0.5
     # define evaluation environment
     dataset = DroneDataset(1, 1, **param_dict)
     evaluator = QuadEvaluator(
@@ -432,7 +429,7 @@ if __name__ == "__main__":
     fixed_axis = 1
     traj_args = {
         "plane": [0, 2],
-        "radius": 2,
+        "radius": 5,
         "direction": 1,
         "thresh_div": 3,
         "thresh_stable": 1

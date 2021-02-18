@@ -61,6 +61,9 @@ class DroneDataset(torch.utils.data.Dataset):
             self.mean = np.mean(states, axis=0)
             self.std = np.std(states, axis=0)
 
+        self.mean = torch.tensor(self.mean).float()
+        self.std = torch.tensor(self.std).float()
+
         self.kwargs = kwargs
         (self.normed_states, self.states,
          self.ref_states) = self.prepare_data(states, ref_states)
@@ -126,6 +129,36 @@ class DroneDataset(torch.utils.data.Dataset):
             self.ref_states[index]
         )
 
+    def normalize_states(self, states):
+        """
+        states: torch array of shape (batch_size, 12)
+        """
+
+        # Add rotation matrix to normed states
+        drone_att = states[:, 3:6]
+        world_to_body = world_to_body_matrix(drone_att)
+        drone_vel_body = torch.matmul(
+            world_to_body, torch.unsqueeze(states[:, 6:9], 2)
+        )[:, :, 0]
+
+        normed_states = ((states - self.mean) / self.std)[:, 3:]
+        # normed_states[:, 6:10] = 0  # set rotor speeds to zero # TODO
+        # first part: attitude and velocity
+        # normed_states_first = normed_states[:, 3:9]
+        # # second part: body rates
+        # normed_states_second = normed_states[:, 13:]
+
+        # reshape and concatenate
+        rotation_matrix = torch.reshape(
+            # first two columns
+            world_to_body[:, :, :2],
+            (-1, 6)
+        )
+        normed_drone_states = torch.hstack(
+            (normed_states, rotation_matrix, drone_vel_body)
+        )
+        return normed_drone_states
+
     def prepare_data(self, states, ref_states):
         """
         Prepare numpy data for input in ANN:
@@ -143,28 +176,7 @@ class DroneDataset(torch.utils.data.Dataset):
         drone_states[:, :3] = 0
 
         # 2) Normalized states
-        normed_states = self.to_torch((states - self.mean) / self.std)[:, 3:]
-        # normed_states[:, 6:10] = 0  # set rotor speeds to zero # TODO
-        # first part: attitude and velocity
-        # normed_states_first = normed_states[:, 3:9]
-        # # second part: body rates
-        # normed_states_second = normed_states[:, 13:]
-
-        # Add rotation matrix to normed states
-        drone_att = drone_states[:, 3:6]
-        world_to_body = world_to_body_matrix(drone_att)
-        drone_vel_body = torch.matmul(
-            world_to_body, torch.unsqueeze(drone_states[:, 6:9], 2)
-        )[:, :, 0]
-        # reshape and concatenate
-        rotation_matrix = torch.reshape(
-            # first two columns
-            world_to_body[:, :, :2],
-            (-1, 6)
-        )
-        normed_drone_states = torch.hstack(
-            (normed_states, rotation_matrix, drone_vel_body)
-        )
+        normed_drone_states = self.normalize_states(drone_states.clone())
 
         # 3) Reference trajectory to torch and relative to drone position
         torch_ref_states = self.to_torch(ref_states)
