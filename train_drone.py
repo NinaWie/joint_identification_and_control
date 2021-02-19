@@ -26,7 +26,7 @@ NR_EVAL_ITERS = 5
 STATE_SIZE = 12
 NR_ACTIONS_REF = 10
 NR_ACTIONS_PREDICT = 1
-NR_REF_TO_INP = 3
+NR_REF_TO_INP = 1
 NR_ACTIONS_LOSS = NR_ACTIONS_REF - NR_REF_TO_INP
 REF_DIM = 9
 ACTION_DIM = 4
@@ -175,8 +175,18 @@ for epoch in range(NR_EPOCHS):
                 in_state.size()[0], NR_ACTIONS_LOSS, STATE_SIZE
             )
             for k in range(NR_ACTIONS_LOSS):
+                # prepare ref
+                in_ref_pos = torch.zeros(in_state.size()[0], NR_REF_TO_INP, 3)
+                for m in range(NR_REF_TO_INP):
+                    in_ref_pos[:, m] = ref_states[:, k +
+                                                  m, :3] - current_state[:, :3]
+                in_ref_vel = ref_states[:, k:k + NR_REF_TO_INP, 3:]
+                in_ref_state = torch.cat((in_ref_pos, in_ref_vel), dim=2)
+
                 in_state = state_data.normalize_states(current_state)
-                actions = net(in_state, ref_states[:, k:k + NR_REF_TO_INP])
+
+                # action
+                actions = net(in_state, in_ref_state)
                 action = torch.sigmoid(actions)
 
                 current_state = simulate_quadrotor(

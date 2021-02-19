@@ -172,17 +172,15 @@ class DroneDataset(torch.utils.data.Dataset):
 
         # 1) just output the unnormalized states, but with the position at zero
         drone_states = self.to_torch(states)
-        drone_pos = drone_states[:, :3].clone()
-        drone_states[:, :3] = 0
+        # drone_pos = drone_states[:, :3].clone()
+        # drone_states[:, :3] = 0
 
         # 2) Normalized states
         normed_drone_states = self.normalize_states(drone_states.clone())
 
         # 3) Reference trajectory to torch and relative to drone position
         torch_ref_states = self.to_torch(ref_states)
-        for i in range(ref_states.shape[1]):
-            torch_ref_states[:,
-                             i, :3] = (torch_ref_states[:, i, :3] - drone_pos)
+
         # transform acceleration
         torch_ref_states[:, :, 6:] *= self.kwargs["dt"]
 

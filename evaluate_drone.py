@@ -28,7 +28,7 @@ except ModuleNotFoundError:
 
 ROLL_OUT = 1
 ACTION_DIM = 4
-NR_REF_TO_INP = 3
+NR_REF_TO_INP = 1
 
 # Use cuda if available
 device = "cpu"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -76,6 +76,8 @@ class QuadEvaluator():
         in_state, current_state, ref = self.dataset.get_and_add_eval_data(
             current_np_state.copy(), ref_states, add_to_dataset=add_to_dataset
         )
+        for m in range(ref.shape[1]):
+            ref[:, m, :3] = (ref[:, m, :3] - current_state[:, :3])
         # check if we want to train on this sample
         do_training = (
             (self.optimizer is not None)
@@ -227,7 +229,7 @@ class QuadEvaluator():
             trajectory = reference.get_ref_traj(current_np_state, acc)
             for k in range(7):
                 action = self.predict_actions(
-                    current_np_state, trajectory[k:k + 3]
+                    current_np_state, trajectory[k:k + NR_REF_TO_INP]
                 )
                 # only use first action (as in mpc)
                 current_np_state, stable = self.eval_env.step(
