@@ -28,7 +28,7 @@ except ModuleNotFoundError:
 
 ROLL_OUT = 1
 ACTION_DIM = 4
-NR_REF_TO_INP = 1
+NR_REF_TO_INP = 3
 
 # Use cuda if available
 device = "cpu"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -76,19 +76,16 @@ class QuadEvaluator():
         in_state, current_state, ref = self.dataset.get_and_add_eval_data(
             current_np_state.copy(), ref_states, add_to_dataset=add_to_dataset
         )
-        for m in range(ref.shape[1]):
-            ref[:, m, :3] = (ref[:, m, :3] - current_state[:, :3])
+        ref_new = ref.clone()
+        for m in range(NR_REF_TO_INP):
+            ref_new[:, m, :3] = (ref[:, m, :3] - current_state[:, :3])
         # check if we want to train on this sample
         do_training = (
             (self.optimizer is not None)
             and np.random.rand() < 1 / self.take_every_x
         )
         with dummy_context() if do_training else torch.no_grad():
-            # if self.render:
-            #     self.check_ood(current_np_state, ref_world)
-            # np.set_printoptions(suppress=True, precision=0)
-            # print(current_np_state)
-            suggested_action = self.net(in_state, ref)  # [:, :NR_REF_TO_INP])
+            suggested_action = self.net(in_state, ref_new[:, :NR_REF_TO_INP])
 
             suggested_action = torch.sigmoid(suggested_action)
 
@@ -227,14 +224,12 @@ class QuadEvaluator():
         for i in range(max_nr_steps):
             acc = self.eval_env.get_acceleration()
             trajectory = reference.get_ref_traj(current_np_state, acc)
-            for k in range(7):
-                action = self.predict_actions(
-                    current_np_state, trajectory[k:k + NR_REF_TO_INP]
-                )
-                # only use first action (as in mpc)
-                current_np_state, stable = self.eval_env.step(
-                    action, thresh=thresh_stable
-                )
+
+            action = self.predict_actions(current_np_state, trajectory)
+            # only use first action (as in mpc)
+            current_np_state, stable = self.eval_env.step(
+                action, thresh=thresh_stable
+            )
             # np.set_printoptions(suppress=True, precision=3)
             # print(trajectory[0, :3], current_np_state[:3])
             if states is not None:
@@ -437,7 +432,9 @@ if __name__ == "__main__":
         "thresh_stable": 1
     }
     if args.points is not None:
-        from neural_control.utils.predefined_trajectories import collected_trajectories
+        from neural_control.utils.predefined_trajectories import (
+            collected_trajectories
+        )
         traj_args["points_to_traverse"] = collected_trajectories[args.points]
 
     # RUN
