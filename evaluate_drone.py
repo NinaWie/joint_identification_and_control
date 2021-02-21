@@ -407,7 +407,7 @@ if __name__ == "__main__":
     net, param_dict = load_model(model_path, epoch=args.epoch)
 
     # optinally change drone speed
-    # param_dict["max_drone_dist"] = .6
+    param_dict["max_drone_dist"] = .125
     param_dict["horizon"] = 5
     # define evaluation environment
     dataset = DroneDataset(1, 0, **param_dict)
