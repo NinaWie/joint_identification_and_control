@@ -406,9 +406,10 @@ if __name__ == "__main__":
     net, param_dict = load_model(model_path, epoch=args.epoch)
 
     # optinally change drone speed
-    param_dict["max_drone_dist"] = 0.5
+    # param_dict["max_drone_dist"] = .6
+    param_dict["horizon"] = 5
     # define evaluation environment
-    dataset = DroneDataset(1, 1, **param_dict)
+    dataset = DroneDataset(1, 0, **param_dict)
     evaluator = QuadEvaluator(
         net,
         dataset,
@@ -442,7 +443,7 @@ if __name__ == "__main__":
         evaluator.eval_env.env.connectUnity()
 
     reference_traj, drone_traj, _ = evaluator.follow_trajectory(
-        args.ref, max_nr_steps=500, **traj_args
+        args.ref, max_nr_steps=1000, **traj_args
     )
 
     if args.unity:
