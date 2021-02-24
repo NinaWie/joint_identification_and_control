@@ -15,12 +15,12 @@ from neural_control.utils.plotting import plot_loss_episode_len
 
 DELTA_T = 0.05
 EPOCH_SIZE = 3000
-SELF_PLAY = 0.5
+SELF_PLAY = 1
 PRINT = (EPOCH_SIZE // 30)
 NR_EPOCHS = 200
 BATCH_SIZE = 8
 RESET_STRENGTH = 1.2
-MAX_DRONE_DIST = 0.25
+MAX_DRONE_DIST = 1
 THRESH_DIV = .4
 NR_EVAL_ITERS = 5
 STATE_SIZE = 12
@@ -29,16 +29,16 @@ REF_DIM = 9
 ACTION_DIM = 4
 LEARNING_RATE = 0.0001
 SAVE = os.path.join("trained_models/drone/test_model")
-BASE_MODEL = None  # "trained_models/drone/current_model"
+BASE_MODEL = "trained_models/drone/current_model"
 BASE_MODEL_NAME = 'model_quad'
 
 eval_dict = {
     "straight": {
-        "nr_test": 10,
+        "nr_test": 0,
         "max_steps": 200
     },
     "circle": {
-        "nr_test": 10,
+        "nr_test": 3,
         "max_steps": 200
     },
     "hover": {

@@ -54,7 +54,7 @@ def reference_loss(states, ref_states, printout=0, delta_t=0.02):
     # (9.81, 0,0,0)
     # TODO: include attitude in reference
     angle_factor = 0.01
-    angvel_factor = 2e-2
+    angvel_factor = 0 # 2e-2
     vel_factor = 0.05
     pos_factor = 10
     yaw_factor = 10

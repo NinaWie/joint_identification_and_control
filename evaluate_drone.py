@@ -286,7 +286,7 @@ class QuadEvaluator():
     def sample_circle(self):
         possible_planes = [[0, 1], [0, 2], [1, 2]]
         plane = possible_planes[np.random.randint(0, 3, 1)[0]]
-        radius = np.random.rand() * 3 + 2
+        radius = np.random.rand() * 3 + 3
         direct = np.random.choice([-1, 1])
         circle_args = {"plane": plane, "radius": radius, "direction": direct}
         return circle_args
@@ -318,7 +318,7 @@ class QuadEvaluator():
             stable.append(len(drone_traj))
 
         # Output results
-        print("Speed (last):", self.compute_speed(drone_traj))
+        print(reference, ": Speed (last):", self.compute_speed(drone_traj))
         print(
             "%s: Average divergence: %3.2f (%3.2f)" %
             (reference, np.mean(div), np.std(div))
@@ -413,7 +413,7 @@ if __name__ == "__main__":
     net, param_dict = load_model(model_path, epoch=args.epoch)
 
     # optinally change drone speed
-    # param_dict["max_drone_dist"] = .6
+    param_dict["max_drone_dist"] = 1
     # define evaluation environment
     dataset = DroneDataset(1, 1, **param_dict)
     evaluator = QuadEvaluator(
@@ -454,6 +454,7 @@ if __name__ == "__main__":
         evaluator.eval_env.env.disconnectUnity()
 
     # EVAL
+    print(len(drone_traj))
     print("Speed:", evaluator.compute_speed(drone_traj[100:300, :3]))
     plot_trajectory(
         reference_traj,
