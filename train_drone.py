@@ -7,7 +7,9 @@ import torch
 import torch.nn.functional as F
 
 from neural_control.dataset import DroneDataset
-from neural_control.drone_loss import drone_loss_function, trajectory_loss, reference_loss
+from neural_control.drone_loss import (
+    drone_loss_function, trajectory_loss, reference_loss, mse
+)
 from neural_control.environments.drone_dynamics import simulate_quadrotor
 from evaluate_drone import QuadEvaluator
 from neural_control.models.hutter_model import Net
@@ -15,18 +17,19 @@ from neural_control.utils.plotting import plot_loss_episode_len
 
 DELTA_T = 0.05
 EPOCH_SIZE = 3000
-SELF_PLAY = 0.5
+SELF_PLAY = 0
 PRINT = (EPOCH_SIZE // 30)
 NR_EPOCHS = 200
 BATCH_SIZE = 8
-RESET_STRENGTH = 1.2
+RESET_STRENGTH = 0
 MAX_DRONE_DIST = 0.25
 THRESH_DIV = .4
 NR_EVAL_ITERS = 5
 STATE_SIZE = 12
 NR_ACTIONS = 10
-REF_DIM = 9
+REF_DIM = 12
 ACTION_DIM = 4
+RENEW_DATA = 5
 LEARNING_RATE = 0.0001
 SAVE = os.path.join("trained_models/drone/test_model")
 BASE_MODEL = None  # "trained_models/drone/current_model"
@@ -34,11 +37,11 @@ BASE_MODEL_NAME = 'model_quad'
 
 eval_dict = {
     "straight": {
-        "nr_test": 10,
+        "nr_test": 0,
         "max_steps": 200
     },
     "circle": {
-        "nr_test": 10,
+        "nr_test": 0,
         "max_steps": 200
     },
     "hover": {
@@ -46,8 +49,12 @@ eval_dict = {
         "max_steps": 200
     },
     "poly": {
-        "nr_test": 10,
+        "nr_test": 0,
         "max_steps": 200
+    },
+    "rand":{
+        "nr_test" = 10,
+        "max_steps"=200
     }
 }
 
@@ -116,39 +123,39 @@ for epoch in range(NR_EPOCHS):
     try:
         # EVALUATE
         print(f"Epoch {epoch} (before)")
-        eval_env = QuadEvaluator(
-            net,
-            state_data,
-            take_every_x=take_every_x,
-            optimizer=None,
-            **param_dict
-        )
-        for reference, ref_params in eval_dict.items():
-            ref_params["max_steps"] = steps_per_eval * take_steps
-            suc_mean, suc_std = eval_env.eval_ref(
-                reference, thresh_div=THRESH_DIV, **ref_params
-            )
+        # eval_env = QuadEvaluator(
+        #     net,
+        #     state_data,
+        #     take_every_x=take_every_x,
+        #     optimizer=None,
+        #     **param_dict
+        # )
+        # for reference, ref_params in eval_dict.items():
+        #     ref_params["max_steps"] = steps_per_eval * take_steps
+        #     suc_mean, suc_std = eval_env.eval_ref(
+        #         reference, thresh_div=THRESH_DIV, **ref_params
+        #     )
 
-        success_mean_list.append(suc_mean)
-        success_std_list.append(suc_std)
+        # success_mean_list.append(suc_mean)
+        # success_std_list.append(suc_std)
 
-        if (epoch + 1) % 2 == 0:
-            # renew the sampled data
-            state_data.resample_data()
-            print(
-                f"Sampled new data ({state_data.num_sampled_states}) \
-                - self play counter: {state_data.get_eval_index()}"
-            )
+        # if (epoch + 1) % RENEW_DATA == 0:
+        #     # renew the sampled data
+        #     state_data.resample_data()
+        #     print(
+        #         f"Sampled new data ({state_data.num_sampled_states}) \
+        #         - self play counter: {state_data.get_eval_index()}"
+        #     )
 
-        if suc_mean > take_steps * steps_per_eval - 50:
-            # evaluate for more steps
-            take_steps += 1
+        # if suc_mean > take_steps * steps_per_eval - 50:
+        #     # evaluate for more steps
+        #     take_steps += 1
 
-        # save best model
-        if epoch > 0 and suc_mean > highest_success:
-            highest_success = suc_mean
-            print("Best model")
-            torch.save(net, os.path.join(SAVE, "model_quad" + str(epoch)))
+        # # save best model
+        # if epoch > 0 and suc_mean > highest_success:
+        #     highest_success = suc_mean
+        #     print("Best model")
+        #     torch.save(net, os.path.join(SAVE, "model_quad" + str(epoch)))
 
         print()
 
@@ -181,9 +188,7 @@ for epoch in range(NR_EPOCHS):
                 )
                 intermediate_states[:, k] = current_state
 
-            loss = reference_loss(
-                intermediate_states, ref_states, printout=0, delta_t=DELTA_T
-            )
+            loss = mse(intermediate_states, ref_states, printout=0)
 
             # Backprop
             loss.backward()

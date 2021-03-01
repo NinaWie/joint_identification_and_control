@@ -15,6 +15,7 @@ from neural_control.utils.plotting import (
 from neural_control.utils.straight import Hover, Straight
 from neural_control.utils.circle import Circle
 from neural_control.utils.polynomial import Polynomial
+from neural_control.utils.random_traj import Random
 from neural_control.dataset import DroneDataset
 from neural_control.controllers.network_wrapper import NetworkWrapper
 from neural_control.controllers.mpc import MPC
@@ -98,7 +99,8 @@ class QuadEvaluator():
             "hover": Hover,
             "straight": Straight,
             "circle": Circle,
-            "poly": Polynomial
+            "poly": Polynomial,
+            "rand": Random
         }
         reference = object_dict[traj_type](
             current_np_state.copy(),
@@ -326,8 +328,8 @@ if __name__ == "__main__":
         "plane": [0, 2],
         "radius": 2,
         "direction": 1,
-        "thresh_div": 3,
-        "thresh_stable": 1
+        "thresh_div": np.inf,
+        "thresh_stable": np.inf
     }
     if args.points is not None:
         from neural_control.utils.predefined_trajectories import (

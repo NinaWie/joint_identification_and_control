@@ -87,6 +87,11 @@ def reference_loss(states, ref_states, printout=0, delta_t=0.02):
     return loss
 
 
+def mse(states, ref_states, printout=0):
+    loss = (ref_states - states)**2
+    return torch.sum(loss)
+
+
 def project_to_line(a_on_line, b_on_line, p):
     """
     Project a point p to a line from a to b

@@ -11,5 +11,6 @@ outputs/
 .ipynb_checkpoints/
 *.ipynb
 *.npy
+*.csv
 models
 neural_control.egg-info/

@@ -23,6 +23,7 @@ from neural_control.environments.copter import (
 from neural_control.environments.drone_dynamics import (
     simulate_quadrotor, linear_dynamics
 )
+from neural_control.utils.generate_trajectory import generate_trajectory
 
 device = "cpu"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -228,9 +229,36 @@ def random_angle(random_state, max_pitch_roll):
 # --------------------- Auxilary functions ----------------------
 
 
+def full_state_training_data(
+    len_data, ref_length=5, reset_strength=0, dt=0.02, **kwargs
+):
+    """
+    Use trajectory generation of Elia to generate random trajectories and then
+    position the drone randomly around the start
+    Arguments:
+        reset_strength: how much the drone diverges from its desired state
+    """
+    sample_freq = 5
+    noise_applied = np.ones(12) + reset_strength * (np.random.rand(12) - .5)
+    drone_states, ref_states = [], []
+
+    while len(drone_states) < len_data:
+        traj = generate_trajectory(100, dt)  # TODO: freq of trajectory?
+        # use every xth start point
+        for start in range(0, len(traj) - 2 * sample_freq, sample_freq):
+            noisy_drone_state = traj[start] * noise_applied
+            drone_states.append(noisy_drone_state)
+            ref_states.append(traj[start + 1:start + 1 + ref_length])
+
+    drone_states = np.array(drone_states)
+    ref_states = np.array(ref_states)
+    # print(drone_states.shape, ref_states.shape)
+
+    return drone_states, ref_states
+
+
 def trajectory_training_data(
     len_data,
-    step_size=0,
     max_drone_dist=0.1,
     ref_length=5,
     reset_strength=1,

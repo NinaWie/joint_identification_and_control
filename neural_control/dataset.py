@@ -1,7 +1,9 @@
 import torch
 import numpy as np
 import os
-from neural_control.environments.drone_env import trajectory_training_data
+from neural_control.environments.drone_env import (
+    trajectory_training_data, full_state_training_data
+)
 from neural_control.environments.wing_env import sample_training_data
 from neural_control.environments.cartpole_env import construct_states
 from neural_control.environments.drone_dynamics import world_to_body_matrix
@@ -54,7 +56,7 @@ class DroneDataset(torch.utils.data.Dataset):
         self.num_self_play = int(self_play * num_states)
         self.total_dataset_size = self.num_sampled_states + self.num_self_play
 
-        states, ref_states = trajectory_training_data(
+        states, ref_states = full_state_training_data(
             self.total_dataset_size, **kwargs
         )
         if mean is None:
@@ -85,7 +87,7 @@ class DroneDataset(torch.utils.data.Dataset):
         """
         Sample new training data and replace dataset with it
         """
-        states, ref_states = trajectory_training_data(
+        states, ref_states = full_state_training_data(
             self.num_sampled_states, **self.kwargs
         )
         (prep_normed_states, prep_states,
@@ -174,7 +176,8 @@ class DroneDataset(torch.utils.data.Dataset):
             torch_ref_states[:,
                              i, :3] = (torch_ref_states[:, i, :3] - drone_pos)
         # transform acceleration
-        torch_ref_states[:, :, 6:] *= self.kwargs["dt"]
+        # torch_ref_states[:, :, 6:] *= self.kwargs["dt"]
+        # TODO: normalize ref as well? rotation matrix instead of att?
 
         # ref_states_body = torch.unsqueeze(ref_states_body, 3)
         # for i in range(ref_states.shape[1]):
@@ -338,7 +341,7 @@ class WingDataset(torch.utils.data.Dataset):
         # normalize
         relative_ref = ref_states - states[:, :2]
         ref_vec_norm = torch.sqrt(torch.sum(relative_ref**2, axis=1))
-        normed_ref_states = (relative_ref.t()/ref_vec_norm).t()
+        normed_ref_states = (relative_ref.t() / ref_vec_norm).t()
 
         return normed_states, states, normed_ref_states, ref_states
 
