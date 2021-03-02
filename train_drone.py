@@ -11,12 +11,13 @@ from neural_control.drone_loss import (
     drone_loss_function, trajectory_loss, reference_loss, mse
 )
 from neural_control.environments.drone_dynamics import simulate_quadrotor
+from neural_control.controllers.network_wrapper import NetworkWrapper
 from evaluate_drone import QuadEvaluator
 from neural_control.models.hutter_model import Net
 from neural_control.utils.plotting import plot_loss_episode_len
 
 DELTA_T = 0.05
-EPOCH_SIZE = 3000
+EPOCH_SIZE = 500
 SELF_PLAY = 0
 PRINT = (EPOCH_SIZE // 30)
 NR_EPOCHS = 200
@@ -123,9 +124,8 @@ for epoch in range(NR_EPOCHS):
     try:
         # EVALUATE
         print(f"Epoch {epoch} (before)")
-        eval_env = QuadEvaluator(
-            net, take_every_x=take_every_x, optimizer=None, **param_dict
-        )
+        controller = NetworkWrapper(net, state_data, **param_dict)
+        eval_env = QuadEvaluator(controller, **param_dict)
         for reference, ref_params in eval_dict.items():
             ref_params["max_steps"] = steps_per_eval * take_steps
             suc_mean, suc_std = eval_env.eval_ref(
@@ -184,7 +184,7 @@ for epoch in range(NR_EPOCHS):
                 )
                 intermediate_states[:, k] = current_state
 
-            loss = mse(intermediate_states, ref_states, printout=1)
+            loss = mse(intermediate_states, ref_states, printout=0)
 
             # Backprop
             loss.backward()
