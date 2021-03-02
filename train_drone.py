@@ -34,7 +34,7 @@ ACTION_DIM = 4
 RENEW_DATA = 5
 LEARNING_RATE = 0.001
 SAVE = os.path.join("trained_models/drone/test_model")
-BASE_MODEL = None  # "trained_models/drone/wo_min_snap_3_1"
+BASE_MODEL = "trained_models/drone/wo_min_snap_mydata_1"
 BASE_MODEL_NAME = 'model_quad'
 
 if not os.path.exists(SAVE):

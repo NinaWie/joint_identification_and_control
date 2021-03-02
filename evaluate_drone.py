@@ -24,7 +24,7 @@ try:
 except ModuleNotFoundError:
     pass
 
-ROLL_OUT = 1
+ROLL_OUT = 3
 
 # Use cuda if available
 device = "cpu"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -135,7 +135,7 @@ class QuadEvaluator():
                 current_np_state, stable = self.eval_env.step(
                     action, thresh=thresh_stable
                 )
-                self.help_render(sleep=.1)
+                self.help_render(sleep=0)
                 # np_state[k] = current_np_state.copy()
                 # np.set_printoptions(suppress=1, precision=3)
                 # print(action)

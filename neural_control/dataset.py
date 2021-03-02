@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import os
 from neural_control.environments.drone_env import (
-    trajectory_training_data, full_state_training_data
+    trajectory_training_data, full_state_training_data, load_training_data
 )
 from neural_control.environments.wing_env import sample_training_data
 from neural_control.environments.cartpole_env import construct_states
@@ -56,7 +56,7 @@ class DroneDataset(torch.utils.data.Dataset):
         self.num_self_play = int(self_play * num_states)
         self.total_dataset_size = self.num_sampled_states + self.num_self_play
 
-        states, ref_states = full_state_training_data(
+        states, ref_states = load_training_data(
             self.total_dataset_size, **kwargs
         )
         # np.save("states.npy", states)
@@ -89,7 +89,7 @@ class DroneDataset(torch.utils.data.Dataset):
         """
         Sample new training data and replace dataset with it
         """
-        states, ref_states = full_state_training_data(
+        states, ref_states = load_training_data(
             self.num_sampled_states, **self.kwargs
         )
         (prep_normed_states, prep_states,

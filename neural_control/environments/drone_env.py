@@ -229,6 +229,22 @@ def random_angle(random_state, max_pitch_roll):
 # --------------------- Auxilary functions ----------------------
 
 
+def load_training_data(len_data, ref_length=5, reset_strength=0, **kwargs):
+    data = np.load("training_data.npy")
+    use_start_inds = np.random.permutation(len(data) - ref_length -
+                                           1)[:len_data]
+    drone_states, ref_states = [], []
+    for start in use_start_inds:
+        drone_states.append(data[start])
+        # noisy_drone_state = traj[start] * noise_applied
+        # drone_states.append(noisy_drone_state)
+        ref_states.append(np.array(data[start + 1:start + 1 + ref_length]))
+
+    drone_states = np.array(drone_states)
+    ref_states = np.array(ref_states)
+    return drone_states[:len_data], ref_states[:len_data]
+
+
 def full_state_training_data(
     len_data, ref_length=5, reset_strength=0, dt=0.02, **kwargs
 ):

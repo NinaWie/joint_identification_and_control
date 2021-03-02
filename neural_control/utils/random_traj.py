@@ -26,7 +26,11 @@ class Random:
         if render and renderer is None:
             raise ValueError("if render is true, need to input renderer")
 
-        points_3d = generate_trajectory(duration, dt)
+        # points_3d = generate_trajectory(duration, dt)
+        all_training_data = np.load("training_data.npy")
+        rand_ind = np.random.randint(0, len(all_training_data) // 501, 1)
+        start = int(rand_ind * 501)
+        points_3d = all_training_data[start:start + 501]
 
         # subtract current position to start there
         # points_3d[:, :3] = points_3d[:, :3] - points_3d[
