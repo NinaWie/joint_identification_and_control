@@ -562,8 +562,8 @@ def generate_trajectory(
     quad = Quad(10.0)
 
     # the arena bounds
-    arena_bound_max = np.array([10, 10, 10])  # np.array([8.0, 5.0, 5.0]) #
-    arena_bound_min = np.array([0, 0, 0])
+    arena_bound_max = np.array([6.5, 10, 10])  # np.array([8.0, 5.0, 5.0]) #
+    arena_bound_min = np.array([-6.5, -10, 0])
 
     # compute trajector
     trajectory, motor_inputs, t_vec = compute_random_trajectory(

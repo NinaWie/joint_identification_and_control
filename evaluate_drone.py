@@ -10,7 +10,7 @@ from neural_control.environments.drone_env import (
 )
 from neural_control.utils.plotting import (
     plot_state_variables, plot_trajectory, plot_position, plot_suc_by_dist,
-    plot_drone_ref_coords
+    plot_drone_ref_coords, print_state_ref_div
 )
 from neural_control.utils.straight import Hover, Straight
 from neural_control.utils.circle import Circle
@@ -111,23 +111,42 @@ class QuadEvaluator():
             dt=self.dt,
             **traj_args
         )
+        if traj_type == "rand":
+            self.eval_env._state.from_np(reference.reference[0])
+            current_np_state = self.eval_env._state.as_np
 
         self.help_render()
         # start = input("start")
 
         (reference_trajectory, drone_trajectory,
          divergences) = [], [current_np_state], []
-        for i in range(max_nr_steps):
+        for _ in range(max_nr_steps):
             acc = self.eval_env.get_acceleration()
             trajectory = reference.get_ref_traj(current_np_state, acc)
             numpy_action_seq = self.controller.predict_actions(
                 current_np_state, trajectory
             )
             # only use first action (as in mpc)
-            action = numpy_action_seq[0]
-            current_np_state, stable = self.eval_env.step(
-                action, thresh=thresh_stable
-            )
+            # np_ref = trajectory
+            # np_state = np.zeros((ROLL_OUT, 12))
+            # TODO: if roll out>0 then need to increase currend_ind von ref
+            for k in range(ROLL_OUT):
+                action = numpy_action_seq[k]
+                current_np_state, stable = self.eval_env.step(
+                    action, thresh=thresh_stable
+                )
+                self.help_render(sleep=.1)
+                # np_state[k] = current_np_state.copy()
+                # np.set_printoptions(suppress=1, precision=3)
+                # print(action)
+                # print(current_np_state[:3], trajectory[k, :3])
+                if k > 0:
+                    reference.current_ind += 1
+            # print(self.eval_env._state.as_np)
+            # print("action", numpy_action_seq)
+            # print_state_ref_div(np_ref, np_state)
+            # exit()
+
             if states is not None:
                 self.eval_env._state.from_np(states[i])
                 current_np_state = states[i]
@@ -138,7 +157,6 @@ class QuadEvaluator():
                     print("unstable")
                     # print(self.eval_env._state.as_np)
                 break
-            self.help_render(sleep=0)
 
             drone_pos = current_np_state[:3]
             drone_trajectory.append(current_np_state)
@@ -276,14 +294,14 @@ if __name__ == "__main__":
         "-m",
         "--model",
         type=str,
-        default="current_model",
+        default="test_model",
         help="Directory of model"
     )
     parser.add_argument(
         "-e", "--epoch", type=str, default="", help="Saved epoch"
     )
     parser.add_argument(
-        "-r", "--ref", type=str, default="circle", help="which trajectory"
+        "-r", "--ref", type=str, default="rand", help="which trajectory"
     )
     parser.add_argument(
         '-p',
@@ -305,7 +323,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    params = {"render": 1, "dt": 0.05, "horizon": 10, "max_drone_dist": .5}
+    params = {"render": 1, "dt": 0.05, "horizon": 3, "max_drone_dist": .5}
 
     # rendering
     if args.unity:

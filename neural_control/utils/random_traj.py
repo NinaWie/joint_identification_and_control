@@ -29,8 +29,8 @@ class Random:
         points_3d = generate_trajectory(duration, dt)
 
         # subtract current position to start there
-        points_3d[:, :3] = points_3d[:, :3] - points_3d[
-            0, :3] + drone_state[:3]
+        # points_3d[:, :3] = points_3d[:, :3] - points_3d[
+        #     0, :3] + drone_state[:3]
 
         self.reference = points_3d
         self.ref_len = len(self.reference)
@@ -57,8 +57,8 @@ class Random:
             zero_ref[:, :3] = self.reference[-1, :3]
             left_over_ref = self.reference[self.current_ind:]
             return np.vstack((left_over_ref, zero_ref))
-        out_ref = self.reference[self.current_ind:self.current_ind +
-                                 self.horizon]
+        out_ref = self.reference[self.current_ind + 1:self.current_ind +
+                                 self.horizon + 1]
         self.current_ind += 1
         return out_ref
 

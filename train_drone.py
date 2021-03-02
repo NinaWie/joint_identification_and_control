@@ -16,8 +16,9 @@ from evaluate_drone import QuadEvaluator
 from neural_control.models.hutter_model import Net
 from neural_control.utils.plotting import plot_loss_episode_len
 
+DEBUG = 0
 DELTA_T = 0.05
-EPOCH_SIZE = 500
+EPOCH_SIZE = 500 if DEBUG else 3000
 SELF_PLAY = 0
 PRINT = (EPOCH_SIZE // 30)
 NR_EPOCHS = 200
@@ -27,14 +28,17 @@ MAX_DRONE_DIST = 0.25
 THRESH_DIV = .4
 NR_EVAL_ITERS = 5
 STATE_SIZE = 12
-NR_ACTIONS = 10
+NR_ACTIONS = 3
 REF_DIM = 12
 ACTION_DIM = 4
 RENEW_DATA = 5
-LEARNING_RATE = 0.0001
+LEARNING_RATE = 0.001
 SAVE = os.path.join("trained_models/drone/test_model")
-BASE_MODEL = "trained_models/drone/crappy_wo_min_snap"
+BASE_MODEL = None  # "trained_models/drone/wo_min_snap_3_1"
 BASE_MODEL_NAME = 'model_quad'
+
+if not os.path.exists(SAVE):
+    os.mkdir(SAVE)
 
 eval_dict = {
     "straight": {
@@ -124,36 +128,45 @@ for epoch in range(NR_EPOCHS):
     try:
         # EVALUATE
         print(f"Epoch {epoch} (before)")
-        controller = NetworkWrapper(net, state_data, **param_dict)
-        eval_env = QuadEvaluator(controller, **param_dict)
-        for reference, ref_params in eval_dict.items():
-            ref_params["max_steps"] = steps_per_eval * take_steps
-            suc_mean, suc_std = eval_env.eval_ref(
-                reference, thresh_div=THRESH_DIV, **ref_params
-            )
+        if not DEBUG:
+            controller = NetworkWrapper(net, state_data, **param_dict)
+            eval_env = QuadEvaluator(controller, **param_dict)
+            for reference, ref_params in eval_dict.items():
+                ref_params["max_steps"] = steps_per_eval * take_steps
+                suc_mean, suc_std = eval_env.eval_ref(
+                    reference, thresh_div=THRESH_DIV, **ref_params
+                )
 
-        success_mean_list.append(suc_mean)
-        success_std_list.append(suc_std)
+            success_mean_list.append(suc_mean)
+            success_std_list.append(suc_std)
 
-        if (epoch + 1) % RENEW_DATA == 0:
-            # renew the sampled data
-            state_data.resample_data()
-            print(
-                f"Sampled new data ({state_data.num_sampled_states}) \
-                - self play counter: {state_data.get_eval_index()}"
-            )
+            if (epoch + 1) % RENEW_DATA == 0:
+                # print(
+                #     "increase reset strength: from ",
+                #     param_dict["reset_strength"]
+                # )
+                # param_dict["reset_strength"] = (
+                #     param_dict["reset_strength"] + 0.05
+                # )
+                # print("to", param_dict["reset_strength"])
+                # renew the sampled data
+                state_data.resample_data()
+                print(
+                    f"Sampled new data ({state_data.num_sampled_states}) \
+                    - self play counter: {state_data.get_eval_index()}"
+                )
 
-        if suc_mean > take_steps * steps_per_eval - 50:
-            # evaluate for more steps
-            take_steps += 1
+            if suc_mean > take_steps * steps_per_eval - 50:
+                # evaluate for more steps
+                take_steps += 1
 
-        # save best model
-        if epoch > 0 and suc_mean > highest_success:
-            highest_success = suc_mean
-            print("Best model")
-            torch.save(net, os.path.join(SAVE, "model_quad" + str(epoch)))
+            # save best model
+            if epoch > 0 and suc_mean > highest_success:
+                highest_success = suc_mean
+                print("Best model")
+                torch.save(net, os.path.join(SAVE, "model_quad" + str(epoch)))
 
-        print()
+            print()
 
         # Training
         tic_epoch = time.time()
@@ -184,7 +197,7 @@ for epoch in range(NR_EPOCHS):
                 )
                 intermediate_states[:, k] = current_state
 
-            loss = mse(intermediate_states, ref_states, printout=0)
+            loss = mse(intermediate_states, ref_states, printout=DEBUG)
 
             # Backprop
             loss.backward()

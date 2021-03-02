@@ -1,4 +1,6 @@
 import torch
+import numpy as np
+from neural_control.utils.plotting import print_state_ref_div
 from neural_control.environments.drone_dynamics import simulate_quadrotor, device
 torch.autograd.set_detect_anomaly(True)
 zero_tensor = torch.zeros(3).to(device)
@@ -88,13 +90,16 @@ def reference_loss(states, ref_states, printout=0, delta_t=0.02):
 
 
 def mse(states, ref_states, printout=0):
-    loss = (ref_states - states)**2
+    loss = torch.sum((ref_states[:, :, :9] - states[:, :, :9])**2) * 10
+    # loss1 = (ref_states[:, :, 3:] - states[:, :, 3:])**2
+    # loss2 = (ref_states[:, :, :3] - states[:, :, :3] * 2)**2
+    # loss = (torch.sum(loss1) + torch.sum(loss2))
     if printout:
-        print(ref_states.size(), states.size())
-        print(ref_states[0])
-        print(states[0])
-        print()
-    return torch.sum(loss)
+        np_state = states[0].detach().numpy()
+        np_ref = ref_states[0].detach().numpy()
+        print_state_ref_div(np_ref, np_state)
+        exit()
+    return loss
 
 
 def project_to_line(a_on_line, b_on_line, p):

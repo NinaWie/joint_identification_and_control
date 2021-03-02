@@ -49,13 +49,21 @@ class NetworkWrapper:
         add_to_dataset = (self.action_counter + 1) % self.take_every_x == 0
         # preprocess state
         in_state, current_state, ref = self.dataset.get_and_add_eval_data(
-            current_np_state.copy(), ref_states, add_to_dataset=add_to_dataset
+            current_np_state.copy(),
+            ref_states.copy(),
+            add_to_dataset=add_to_dataset
         )
+        # np.set_printoptions(suppress=True, precision=3)
+        # print("in_state")
+        # print(in_state.detach().numpy()[0])
+        # print("ref")
+        # print(ref.detach().numpy()[0])
         # check if we want to train on this sample
-        do_training = (
-            (self.optimizer is not None)
-            and np.random.rand() < 1 / self.take_every_x
-        )
+        do_training = False
+        # (
+        #     (self.optimizer is not None)
+        #     and np.random.rand() < 1 / self.take_every_x
+        # )
         with dummy_context() if do_training else torch.no_grad():
             # if self.render:
             #     self.check_ood(current_np_state, ref_world)

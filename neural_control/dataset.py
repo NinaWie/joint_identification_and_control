@@ -59,6 +59,8 @@ class DroneDataset(torch.utils.data.Dataset):
         states, ref_states = full_state_training_data(
             self.total_dataset_size, **kwargs
         )
+        # np.save("states.npy", states)
+        # np.save("ref_state.npy", ref_states)
         if mean is None:
             # sample states
             self.mean = np.mean(states, axis=0)

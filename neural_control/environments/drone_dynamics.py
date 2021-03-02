@@ -175,7 +175,9 @@ def simulate_quadrotor(action, state, dt=0.02):
     # angular_momentum_body_frame(rotor_speed, angular_velocity)
     angular_acc = ang_momentum / inertia_vector
     # update state variables
-    position = position + 0.5 * dt * dt * acceleration + 0.5 * dt * velocity
+
+    position = position + dt * velocity
+    # 0.5 * dt * dt * acceleration + position + dt * velocity * 0.5
     velocity = velocity + dt * acceleration
     angular_velocity = angular_velocity + dt * angular_acc
     attitude = attitude + dt * euler_rate(attitude, angular_velocity)
