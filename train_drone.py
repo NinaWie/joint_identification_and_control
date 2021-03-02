@@ -32,7 +32,7 @@ ACTION_DIM = 4
 RENEW_DATA = 5
 LEARNING_RATE = 0.0001
 SAVE = os.path.join("trained_models/drone/test_model")
-BASE_MODEL = None  # "trained_models/drone/current_model"
+BASE_MODEL = "trained_models/drone/crappy_wo_min_snap"
 BASE_MODEL_NAME = 'model_quad'
 
 eval_dict = {
@@ -52,9 +52,9 @@ eval_dict = {
         "nr_test": 0,
         "max_steps": 200
     },
-    "rand":{
-        "nr_test" = 10,
-        "max_steps"=200
+    "rand": {
+        "nr_test": 10,
+        "max_steps": 200
     }
 }
 
@@ -123,39 +123,35 @@ for epoch in range(NR_EPOCHS):
     try:
         # EVALUATE
         print(f"Epoch {epoch} (before)")
-        # eval_env = QuadEvaluator(
-        #     net,
-        #     state_data,
-        #     take_every_x=take_every_x,
-        #     optimizer=None,
-        #     **param_dict
-        # )
-        # for reference, ref_params in eval_dict.items():
-        #     ref_params["max_steps"] = steps_per_eval * take_steps
-        #     suc_mean, suc_std = eval_env.eval_ref(
-        #         reference, thresh_div=THRESH_DIV, **ref_params
-        #     )
+        eval_env = QuadEvaluator(
+            net, take_every_x=take_every_x, optimizer=None, **param_dict
+        )
+        for reference, ref_params in eval_dict.items():
+            ref_params["max_steps"] = steps_per_eval * take_steps
+            suc_mean, suc_std = eval_env.eval_ref(
+                reference, thresh_div=THRESH_DIV, **ref_params
+            )
 
-        # success_mean_list.append(suc_mean)
-        # success_std_list.append(suc_std)
+        success_mean_list.append(suc_mean)
+        success_std_list.append(suc_std)
 
-        # if (epoch + 1) % RENEW_DATA == 0:
-        #     # renew the sampled data
-        #     state_data.resample_data()
-        #     print(
-        #         f"Sampled new data ({state_data.num_sampled_states}) \
-        #         - self play counter: {state_data.get_eval_index()}"
-        #     )
+        if (epoch + 1) % RENEW_DATA == 0:
+            # renew the sampled data
+            state_data.resample_data()
+            print(
+                f"Sampled new data ({state_data.num_sampled_states}) \
+                - self play counter: {state_data.get_eval_index()}"
+            )
 
-        # if suc_mean > take_steps * steps_per_eval - 50:
-        #     # evaluate for more steps
-        #     take_steps += 1
+        if suc_mean > take_steps * steps_per_eval - 50:
+            # evaluate for more steps
+            take_steps += 1
 
-        # # save best model
-        # if epoch > 0 and suc_mean > highest_success:
-        #     highest_success = suc_mean
-        #     print("Best model")
-        #     torch.save(net, os.path.join(SAVE, "model_quad" + str(epoch)))
+        # save best model
+        if epoch > 0 and suc_mean > highest_success:
+            highest_success = suc_mean
+            print("Best model")
+            torch.save(net, os.path.join(SAVE, "model_quad" + str(epoch)))
 
         print()
 
@@ -188,7 +184,7 @@ for epoch in range(NR_EPOCHS):
                 )
                 intermediate_states[:, k] = current_state
 
-            loss = mse(intermediate_states, ref_states, printout=0)
+            loss = mse(intermediate_states, ref_states, printout=1)
 
             # Backprop
             loss.backward()

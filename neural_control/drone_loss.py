@@ -89,6 +89,11 @@ def reference_loss(states, ref_states, printout=0, delta_t=0.02):
 
 def mse(states, ref_states, printout=0):
     loss = (ref_states - states)**2
+    if printout:
+        print(ref_states.size(), states.size())
+        print(ref_states[0])
+        print(states[0])
+        print()
     return torch.sum(loss)
 
 
