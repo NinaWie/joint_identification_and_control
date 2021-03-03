@@ -31,10 +31,10 @@ STATE_SIZE = 12
 NR_ACTIONS = 3
 REF_DIM = 12
 ACTION_DIM = 4
-RENEW_DATA = 5
+RENEW_DATA = 2
 LEARNING_RATE = 0.001
 SAVE = os.path.join("trained_models/drone/test_model")
-BASE_MODEL = "trained_models/drone/wo_min_snap_mydata_1"
+BASE_MODEL = None  # "trained_models/drone/wo_min_snap_mydata_1"
 BASE_MODEL_NAME = 'model_quad'
 
 if not os.path.exists(SAVE):
@@ -141,14 +141,6 @@ for epoch in range(NR_EPOCHS):
             success_std_list.append(suc_std)
 
             if (epoch + 1) % RENEW_DATA == 0:
-                # print(
-                #     "increase reset strength: from ",
-                #     param_dict["reset_strength"]
-                # )
-                # param_dict["reset_strength"] = (
-                #     param_dict["reset_strength"] + 0.05
-                # )
-                # print("to", param_dict["reset_strength"])
                 # renew the sampled data
                 state_data.resample_data()
                 print(
@@ -164,6 +156,14 @@ for epoch in range(NR_EPOCHS):
             if epoch > 0 and suc_mean > highest_success:
                 highest_success = suc_mean
                 print("Best model")
+                print(
+                    "increase reset strength: from ",
+                    param_dict["reset_strength"]
+                )
+                param_dict["reset_strength"] = (
+                    param_dict["reset_strength"] + 0.01
+                )
+                print("to", param_dict["reset_strength"])
                 torch.save(net, os.path.join(SAVE, "model_quad" + str(epoch)))
 
             print()

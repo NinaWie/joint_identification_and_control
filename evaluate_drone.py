@@ -346,8 +346,8 @@ if __name__ == "__main__":
         "plane": [0, 2],
         "radius": 2,
         "direction": 1,
-        "thresh_div": np.inf,
-        "thresh_stable": np.inf
+        "thresh_div": 3,
+        "thresh_stable": 2
     }
     if args.points is not None:
         from neural_control.utils.predefined_trajectories import (
@@ -367,7 +367,7 @@ if __name__ == "__main__":
         evaluator.eval_env.env.disconnectUnity()
 
     # EVAL
-    print("Speed:", evaluator.compute_speed(drone_traj[100:300, :3]))
+    # print("Speed:", evaluator.compute_speed(drone_traj[100:300, :3]))
     plot_trajectory(
         reference_traj,
         drone_traj,
