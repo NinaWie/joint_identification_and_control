@@ -89,7 +89,7 @@ def reference_loss(states, ref_states, printout=0, delta_t=0.02):
     return loss
 
 
-weighting = torch.zeros(12)
+weighting = torch.ones(12)
 weighting[3:6] = .1
 weighting[6:9] = .5
 weighting[9:] = .05

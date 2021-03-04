@@ -24,7 +24,7 @@ try:
 except ModuleNotFoundError:
     pass
 
-ROLL_OUT = 3
+ROLL_OUT = 1
 
 # Use cuda if available
 device = "cpu"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -140,6 +140,8 @@ class QuadEvaluator():
                 # np.set_printoptions(suppress=1, precision=3)
                 # print(action)
                 # print(current_np_state[:3], trajectory[k, :3])
+                # print("div1", np.linalg.norm(current_np_state[:3] - trajectory[k, :3]))
+                # print()
                 if k > 0:
                     reference.current_ind += 1
             # print(self.eval_env._state.as_np)
@@ -323,7 +325,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    params = {"render": 1, "dt": 0.05, "horizon": 3, "max_drone_dist": .5}
+    params = {"render": 1, "dt": 0.05, "horizon": 10, "max_drone_dist": .5}
 
     # rendering
     if args.unity:
@@ -367,14 +369,14 @@ if __name__ == "__main__":
         evaluator.eval_env.env.disconnectUnity()
 
     # EVAL
-    # print("Speed:", evaluator.compute_speed(drone_traj[100:300, :3]))
-    plot_trajectory(
-        reference_traj,
-        drone_traj,
-        os.path.join(model_path, args.ref + "_traj.png"),
-        fixed_axis=fixed_axis
-    )
-    plot_drone_ref_coords(
-        drone_traj[1:, :3], reference_traj,
-        os.path.join(model_path, args.ref + "_coords.png")
-    )
+    print("Speed:", evaluator.compute_speed(drone_traj[100:300, :3]))
+    # plot_trajectory(
+    #     reference_traj,
+    #     drone_traj,
+    #     os.path.join(model_path, args.ref + "_traj.png"),
+    #     fixed_axis=fixed_axis
+    # )
+    # plot_drone_ref_coords(
+    #     drone_traj[1:, :3], reference_traj,
+    #     os.path.join(model_path, args.ref + "_coords.png")
+    # )

@@ -47,7 +47,7 @@ class MPC(object):
         self.addon = np.swapaxes(
             np.vstack(
                 (
-                    np.expand_dims(np.arange(0, self._T, self._dt), 0),
+                    np.expand_dims(np.arange(0, self._T-.001, self._dt), 0),
                     np.zeros((1, self._N)), np.zeros((1, self._N)) + 10
                 )
             ), 1, 0
@@ -95,7 +95,7 @@ class MPC(object):
         elif self.dynamics_model == "simple_quad":
             # cost matrix for the action
             self._Q_u = np.diag([10, .1, .1, .1])
-            self._Q_pen = np.diag([100, 100, 100, 0, 0, 0, 10, 10, 10, 1, 1, 1])
+            self._Q_pen = np.diag([100, 100, 100, 100, 100, 100, 10, 10, 10, 1, 1, 1])
             # initial state and control action TODO
             self._quad_s0 = (np.zeros(12)).tolist()
             self._quad_u0 = [0.781, .5, .5, .5]
@@ -316,16 +316,17 @@ class MPC(object):
         """
         # [0 for _ in range(len(current_state))]
         # modify the reference traj to input it into mpc
-        changed_middle_ref_states = np.zeros((self._N, len(current_state)))
-        changed_middle_ref_states[:, :3] = ref_states[:, :3]
-        changed_middle_ref_states[:, 6:9] = ref_states[:, 3:6]
+        changed_middle_ref_states = ref_states
+        # np.zeros((self._N, len(current_state)))
+        # changed_middle_ref_states[:, :3] = ref_states[:, :3]
+        # changed_middle_ref_states[:, 6:9] = ref_states[:, 3:6]
 
         # no goal point for now
         # goal_state = changed_middle_ref_states[-1].copy().tolist()
         goal_state = np.zeros(self._s_dim)
         goal_state[:3] = (2 * changed_middle_ref_states[-1, :3] +
                     changed_middle_ref_states[-2, :3])
-        goal_state[6:9] = changed_middle_ref_states[-1, :3]
+        goal_state[6:9] = changed_middle_ref_states[-1, 6:9]
 
 
         # apped three mysterious entries:

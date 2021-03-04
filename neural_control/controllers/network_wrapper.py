@@ -57,7 +57,7 @@ class NetworkWrapper:
         # print("in_state")
         # print(in_state.detach().numpy()[0])
         # print("ref")
-        # print(ref.detach().numpy()[0])
+        # print(ref.detach().numpy()[0, 0, :3])
         # check if we want to train on this sample
         do_training = False
         # (

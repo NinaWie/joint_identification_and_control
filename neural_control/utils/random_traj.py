@@ -33,8 +33,9 @@ class Random:
         points_3d = all_training_data[start:start + 501]
 
         # subtract current position to start there
-        # points_3d[:, :3] = points_3d[:, :3] - points_3d[
-        #     0, :3] + drone_state[:3]
+        # print(drone_state[:3], points_3d[:3])
+        points_3d[:, :3] = points_3d[:, :3] - points_3d[
+            0, :3] + drone_state[:3]
 
         self.reference = points_3d
         self.ref_len = len(self.reference)
