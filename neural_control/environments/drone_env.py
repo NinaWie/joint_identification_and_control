@@ -228,46 +228,6 @@ def random_angle(random_state, max_pitch_roll):
 
 # --------------------- Auxilary functions ----------------------
 
-# data = np.load("training_data.npy")
-# rand_inds = np.random.permutation(len(data))
-# # remove problematic ones
-# rand_inds = (rand_inds[np.logical_and(rand_inds % 501 < 490,
-#             rand_inds % 501 > 30)])
-
-
-def load_training_data(len_data, ref_length=5, reset_strength=0, **kwargs):
-    np.set_printoptions(precision=2, suppress=True)
-    # print((np.random.rand(3) - .5) * reset_strength)
-    some_point = np.random.randint(0, len(rand_inds) - len_data, 1)[0]
-    use_start_inds = rand_inds[some_point:some_point + len_data]
-    drone_states, ref_states = [], []
-    for start in use_start_inds:
-        next_ref = np.array(data[start + 1:start + 1 + ref_length])
-        ref_states.append(next_ref)
-        # drone_states.append(data[start])
-        # noise_applied = (
-        #     np.ones(12) + reset_strength * (np.random.rand(12) - .5)
-        # )
-        # print("not noisy drone state", data[start])
-        random_direction = np.random.rand(12) - .5
-        div_vector = (
-            next_ref[1] - next_ref[0]
-        ) * random_direction * reset_strength
-        # print("div_vector", div_vector)
-        noisy_drone_state = data[start] + div_vector
-        # noisy_drone_state[:3] += (np.random.rand(3) - .5) * reset_strength
-
-        drone_states.append(noisy_drone_state)
-
-        # print(noisy_drone_state)
-        # print("ref_states")
-        # print(ref_states)
-        # print()
-
-    drone_states = np.array(drone_states)
-    ref_states = np.array(ref_states)
-    return drone_states[:len_data], ref_states[:len_data]
-
 
 def full_state_training_data(
     len_data, ref_length=5, dt=0.02, speed_factor=.6, **kwargs

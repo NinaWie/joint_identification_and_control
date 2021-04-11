@@ -37,6 +37,7 @@ class TrainDrone(TrainBase):
         """
         self.config = config
         super().__init__(train_dynamics, eval_dynamics, **config)
+        self.in_state_size = config["in_state_size"]
 
         # Create environment for evaluation
         if self.sample_in == "real_flightmare":
@@ -64,31 +65,14 @@ class TrainDrone(TrainBase):
                 os.path.join(base_model, "param_dict.json"), "r"
             ) as outfile:
                 previous_parameters = json.load(outfile)
-            data_std = np.array(previous_parameters["std"]).astype(float)
-            data_mean = np.array(previous_parameters["mean"]).astype(float)
         else:
-            self.state_data = QuadDataset(
-                self.epoch_size,
-                self.self_play,
-                reset_strength=self.reset_strength,
-                max_drone_dist=self.max_drone_dist,
-                ref_length=self.nr_actions,
-                dt=self.delta_t
-            )
-            in_state_size = self.state_data.normed_states.size()[1]
-            # +9 because adding 12 things but deleting position (3)
             self.net = Net(
-                in_state_size,
+                self.in_state_size,
                 self.nr_actions,
                 self.ref_dim,
-                self.action_dim * self.nr_actions,
-                conv=1
+                self.action_dim * self.nr_actions_rnn,
+                conv=0
             )
-            (data_std, data_mean) = (self.state_data.std, self.state_data.mean)
-
-        # save std for normalization during test time
-        self.config["std"] = data_std.tolist()
-        self.config["mean"] = data_mean.tolist()
 
         # update the used parameters:
         self.config["horizon"] = self.nr_actions
@@ -106,7 +90,7 @@ class TrainDrone(TrainBase):
             json.dump(self.config, outfile)
 
         # init dataset
-        self.state_data = QuadDataset(self.epoch_size, **self.config)
+        self.state_data = QuadDataset(**self.config)
         self.init_optimizer()
 
     def train_controller_model(
@@ -135,25 +119,91 @@ class TrainDrone(TrainBase):
         self.optimizer_controller.step()
         return loss
 
+    def run_epoch(self, train="controller"):
+        for i, trajectory in enumerate(self.trainloader, 0):
+            traj_len = trajectory.size()[1]
+            b_s = trajectory.size()[0]
+            ind = 0
+
+            traj_loss = 0
+
+            while ind + self.nr_actions + 1 < traj_len:
+                # for now: reset state to trajectory each time
+                current_state = torch.cat(
+                    (trajectory[:, ind], torch.zeros(b_s, 3)), dim=1
+                )
+
+                self.optimizer_controller.zero_grad()
+                # target and placeholder for reached states
+                intermediate_states = torch.zeros(
+                    b_s, self.nr_actions, self.state_size
+                )
+                action_seq = torch.zeros(b_s, self.nr_actions, self.action_dim)
+                target_states = trajectory[:,
+                                           ind + 1:ind + self.nr_actions + 1]
+                # print("current state", current_state[0])
+                # print("target states", target_states[0])
+                for j in range(self.nr_actions):
+                    ref_traj = trajectory[:, ind + 1:ind + self.nr_actions + 1]
+                    in_state, in_ref_state = self.state_data.preprocess_data(
+                        current_state, ref_traj
+                    )
+                    # print(in_state.size(), in_ref_state.size())
+
+                    # predict action
+                    action = self.net(in_state, in_ref_state)
+                    action = torch.sigmoid(action)
+                    # print(current_state.size(), action.size())
+                    # action_seq = torch.reshape(
+                    #     actions, (-1, self.nr_actions, self.action_dim)
+                    # )
+                    # print("action_seq", action_seq.size())
+                    current_state = self.train_dynamics(
+                        current_state, action, dt=self.delta_t
+                    )
+                    intermediate_states[:, j] = current_state
+                    action_seq[:, j] = action
+
+                    ind += 1
+
+                loss = drone_loss_function(
+                    intermediate_states, target_states, action_seq, printout=0
+                )
+                # Backprop
+                loss.backward()
+                # print(self.net.states_in.weight.grad)
+                traj_loss += loss.item()
+                self.optimizer_controller.step()
+
+            # print(self.net.fc_out.weight.grad)
+            print("finished one set of trajectories", int(traj_loss))
+            if (i + 1) % 20 == 0:
+                self.evaluate_model((i + 1) // 20)
+
     def evaluate_model(self, epoch):
         # EVALUATE
         controller = NetworkWrapper(self.net, self.state_data, **self.config)
 
-        evaluator = QuadEvaluator(controller, self.eval_env, **self.config)
+        evaluator = QuadEvaluator(
+            controller, self.eval_env, test_time=1, **self.config
+        )
         # run with mpc to collect data
         # eval_env.run_mpc_ref("rand", nr_test=5, max_steps=500)
         # run without mpc for evaluation
         with torch.no_grad():
             suc_mean, suc_std = evaluator.run_eval(
-                "rand", nr_test=10, **self.config
+                "rand",
+                nr_test=config["nr_eval_runs"],
+                thresh_stable=config["thresh_stable_eval"],
+                thresh_div=config["thresh_div_eval"]
             )
 
-        self.sample_new_data(epoch)
+        # self.sample_new_data(epoch)
 
-        # increase threshold
-        if epoch % 5 == 0 and self.config["thresh_div"] < self.thresh_div_end:
-            self.config["thresh_div"] += .05
-            print("increased thresh div", round(self.config["thresh_div"], 2))
+        # # increase threshold
+        # if epoch % 5 == 0 and self.config["thresh_div"] < self.thresh_div_end:
+        #     self.config["thresh_div"] += .05
+        #     print("increased thresh div", round(self.config["thresh_div"], 2))
 
         # save best model
         self.save_model(epoch, suc_mean)
@@ -230,21 +280,21 @@ if __name__ == "__main__":
     with open("configs/quad_config.json", "r") as infile:
         config = json.load(infile)
 
-    mod_params = {"mass": 1}
-    # {'translational_drag': np.array([0.7, 0.7, 0.7])}
-    config["modified_params"] = mod_params
+    # mod_params = {"mass": 1}
+    # # {'translational_drag': np.array([0.7, 0.7, 0.7])}
+    # config["modified_params"] = mod_params
 
-    baseline_model = "trained_models/quad/baseline_flightmare"
-    config["thresh_div_start"] = 1
-    config["thresh_stable_start"] = 1.5
+    baseline_model = None  # "trained_models/quad/baseline_flightmare"
+    # config["thresh_div_start"] = 1
+    # config["thresh_stable_start"] = 1.5
 
     config["save_name"] = "test"
 
-    config["nr_epochs"] = 20
+    # config["nr_epochs"] = 20
 
     # TRAIN
-    # train_control(baseline_model, config)
-    train_dynamics(baseline_model, config)
+    train_control(baseline_model, config)
+    # train_dynamics(baseline_model, config)
     # train_sampling_finetune(baseline_model, config)
     # FINE TUNING parameters:
     # self.thresh_div_start = 1

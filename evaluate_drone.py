@@ -142,7 +142,9 @@ class QuadEvaluator():
             current_np_state, stable = self.eval_env.step(
                 action[0], thresh=thresh_stable
             )
-            # np.set_printoptions(suppress=1, precision=3)
+            if self.render:
+                np.set_printoptions(suppress=1, precision=3)
+                print("action", action)
             # print(current_np_state[:3], trajectory[0, :3])
             if states is not None:
                 self.eval_env._state.from_np(states[i])
@@ -298,7 +300,7 @@ def load_model(model_path, epoch=""):
     # load std or other parameters from json
     net, param_dict = load_model_params(model_path, "model_quad", epoch=epoch)
     param_dict["self_play"] = 0
-    dataset = QuadDataset(1, **param_dict)
+    dataset = QuadDataset(**param_dict)
 
     controller = NetworkWrapper(net, dataset, **param_dict)
 
@@ -360,7 +362,7 @@ if __name__ == "__main__":
     # params["dt"] = .05
     # params["max_drone_dist"] = 1
     params["speed_factor"] = .4
-    modified_params = {"mass": 1}
+    modified_params = {}
     # {"rotational_drag": np.array([.1, .1, .1])}
     # {"mass": 1}
     # {"translational_drag": np.array([.7, .7, .7])}

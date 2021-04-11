@@ -45,7 +45,7 @@ class Random:
         #     0, :3] + drone_state[:3]
         # TODO merge: without it it looks nicer, but this was in merge
 
-        self.reference = points_3d[:, :6]
+        self.reference = points_3d[:, :6]  # TODO
         # np.zeros((len(points_3d), 9))
         # self.reference[:, :3] = points_3d[:, :3]
         # self.reference[:, 3:6] = points_3d[:, 6:9]

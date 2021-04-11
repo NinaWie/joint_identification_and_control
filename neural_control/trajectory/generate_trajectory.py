@@ -554,7 +554,7 @@ def compute_geometric_trajectory(quad, duration=30.0, dt=0.001):
     return trajectory, motor_inputs, t_vec
 
 
-def load_prepare_trajectory(base_dir, dt, speed_factor, test=False):
+def load_prepare_trajectory(base_dir, dt, speed_factor, test=False, path=None):
     """
     speed factor: between 0 and 1, 0.6 would mean that it's going at 0.6 of the
     actual speed (but discrete steps! if dt=0.05 then speed_factor can only be
@@ -568,10 +568,12 @@ def load_prepare_trajectory(base_dir, dt, speed_factor, test=False):
     #     quad, arena_bound_max, arena_bound_min, .9, .7, .7,
     #     10, 0.01, seed=np.random.randint(10000)
     # )
-    folder = 'test' if test else "train"
-    data_list = os.listdir(os.path.join(base_dir, folder))
-    rand_traj = np.random.choice(data_list)
-    trajectory = np.load(os.path.join(base_dir, folder, rand_traj))
+    if test:
+        data_list = os.listdir(os.path.join(base_dir, "test"))
+        rand_traj = np.random.choice(data_list)
+        path = os.path.join(base_dir, "test", rand_traj)
+
+    trajectory = np.load(path)
 
     # dt for trajectory generation is 0.01, then transform back
     take_every_nth = int(dt / 0.01 * speed_factor)

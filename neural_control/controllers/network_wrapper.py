@@ -5,6 +5,7 @@ import time
 import torch.optim as optim
 
 from neural_control.drone_loss import reference_loss
+from neural_control.dataset import QuadDataset
 
 
 @contextlib.contextmanager
@@ -45,60 +46,20 @@ class NetworkWrapper:
         Predict an action for the current state. This function is used by all
         evaluation functions
         """
-        # determine whether we also add the sample to our train data
-        add_to_dataset = (self.action_counter + 1) % self.take_every_x == 0
         # preprocess state
-        in_state, current_state, ref, _ = self.dataset.get_and_add_eval_data(
-            current_np_state.copy(), ref_states, add_to_dataset=add_to_dataset
+        current_torch_state = torch.tensor([current_np_state]).float()
+        ref_torch_state = torch.tensor([ref_states]).float()
+        in_state, in_ref = QuadDataset.preprocess_data(
+            current_torch_state, ref_torch_state
         )
-        #  check if we want to train on this sample
-        do_training = False
-        # (
-        #     (self.optimizer is not None)
-        #     and np.random.rand() < 1 / self.take_every_x
-        # )
-        with dummy_context() if do_training else torch.no_grad():
-            # if self.render:
-            #     self.check_ood(current_np_state, ref_world)
-            # np.set_printoptions(suppress=True, precision=0)
-            # print(current_np_state)
-            # tic = time.time()
-            suggested_action = self.net(in_state, ref)
 
-            suggested_action = torch.sigmoid(suggested_action)[0]
+        suggested_action = self.net(in_state, in_ref)
 
-            suggested_action = torch.reshape(
-                # batch size 1
-                suggested_action,
-                (1, self.horizon, self.action_dim)
-            )
-            # print(time.time()-tic)
+        suggested_action = torch.sigmoid(suggested_action)
 
-        if do_training:
-            self.optimizer.zero_grad()
-
-            intermediate_states = torch.zeros(
-                in_state.size()[0], self.horizon,
-                current_state.size()[1]
-            )
-            for k in range(self.horizon):
-                # extract action
-                action = suggested_action[:, k]
-                # TODO: if really training here, need to get the dynamics
-                current_state = simple_dynamics_function(
-                    action, current_state, dt=self.dt
-                )
-                intermediate_states[:, k] = current_state
-
-            # print(intermediate_states.size(), ref.size())
-            loss = reference_loss(
-                intermediate_states, ref, printout=0, delta_t=self.dt
-            )
-
-            # Backprop
-            loss.backward()
-            self.optimizer.step()
-
+        suggested_action = torch.reshape(
+            suggested_action, (1, 1, self.action_dim)
+        )
         numpy_action_seq = suggested_action[0].detach().numpy()
         # print([round(a, 2) for a in numpy_action_seq[0]])
         # keep track of actions

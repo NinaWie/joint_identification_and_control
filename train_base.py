@@ -256,7 +256,7 @@ class TrainBase:
     def run_control(self, config, sampling_based_finetune=False):
         try:
             for epoch in range(config["nr_epochs"]):
-                _ = self.evaluate_model(epoch)
+                # _ = self.evaluate_model(epoch) # TODO
 
                 print(f"\nEpoch {epoch}")
                 self.run_epoch(train="controller")

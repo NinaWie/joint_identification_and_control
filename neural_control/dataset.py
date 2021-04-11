@@ -4,6 +4,9 @@ import os
 from neural_control.environments.drone_env import (
     trajectory_training_data, full_state_training_data
 )
+from neural_control.trajectory.generate_trajectory import (
+    load_prepare_trajectory
+)
 from neural_control.environments.wing_env import sample_training_data
 from neural_control.environments.cartpole_env import construct_states
 from neural_control.dynamics.quad_dynamics_base import Dynamics
@@ -135,7 +138,87 @@ class DroneDataset(torch.utils.data.Dataset):
         )
 
 
-class QuadDataset(DroneDataset):
+class QuadDataset(torch.utils.data.Dataset):
+
+    def __init__(
+        self, dt, speed_factor, trajectory_dir="data/traj_data_1", **kwargs
+    ):
+        self.traj_dir = trajectory_dir
+        self.dt = dt
+        self.speed_factor = speed_factor
+        self.traj_names = np.array(
+            os.listdir(os.path.join(self.traj_dir, "train"))
+        )
+        self.current_traj_ind = 0
+        self.nr_avail = len(self.traj_names)
+
+    def load_trajectories(self, num_traj):
+        """
+        Method ot used atm!!
+        Args:
+            num_traj ([type]): [description]
+        """
+        inds = np.random.permutation(self.nr_avail)
+        load_these = self.traj_names[inds]
+        for filename in load_these:
+            fp = os.path.join(self.traj_dir, "train", filename)
+            traj = load_prepare_trajectory(
+                self.traj_dir, self.dt, self.speed_factor, test=0, path=fp
+            )
+        # TODO
+        return traj
+
+    @staticmethod
+    def preprocess_data(state, reference):
+        """
+        Transform the full state and reference to the one that is input
+
+        Args:
+            state (torch.tensor): Shape [batch_size, state_dim]
+            state: (pos, att, vel, av)
+            reference (torch.tensor): Shape [batch_size, horizon, ref_dim]
+            ref: (pos, vel, att) #TODO: input att or not?
+        """
+        # 2) compute relative position and reset drone position to zero
+        subtract_drone_pos = torch.unsqueeze(state[:, :3], 1)
+        subtract_drone_vel = torch.unsqueeze(state[:, 6:9], 1)
+
+        # get rotation matrix
+        att = state[:, 3:6]
+        world_to_body = Dynamics.world_to_body_matrix(att)
+        drone_vel_body = torch.matmul(
+            world_to_body, torch.unsqueeze(state[:, 6:9], 2)
+        )[:, :, 0]
+        # first two columns of rotation matrix
+        drone_rot_matrix = torch.reshape(world_to_body[:, :, :2], (-1, 6))
+
+        # for the drone, input is: vel (body and world), av, rotation matrix
+        inp_drone_states = torch.hstack(
+            (state[:, 6:9], drone_rot_matrix, drone_vel_body)
+        )
+
+        # for the reference, input is: relative pos, vel, vel-drone vel
+        # TODO: add rotation, leave out av?
+        pos_minus_posdrone = reference[:, :, :3] - subtract_drone_pos
+        vel_minus_veldrone = reference[:, :, 3:6] - subtract_drone_vel
+        inp_ref_states = torch.cat(
+            (pos_minus_posdrone, reference[:, :, 3:6], vel_minus_veldrone),
+            dim=2
+        )
+        return inp_drone_states, inp_ref_states
+
+    def __len__(self):
+        return self.nr_avail
+
+    def __getitem__(self, index):
+        fp = os.path.join(self.traj_dir, "train", self.traj_names[index])
+        traj = load_prepare_trajectory(
+            self.traj_dir, self.dt, self.speed_factor, test=0, path=fp
+        )
+        return torch.from_numpy(traj).float()
+
+
+class QuadDatasetOld(DroneDataset):
 
     def __init__(self, num_states, self_play, mean=None, std=None, **kwargs):
         super().__init__(num_states, self_play, mean=mean, std=std, **kwargs)
