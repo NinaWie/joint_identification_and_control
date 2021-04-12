@@ -18,37 +18,36 @@ def drone_loss_function(states, ref_states, action_seq, printout=0):
         loss (torch float scalar)
     """
     # weighting
-    angle_factor = .05
-    angvel_factor = .02
+    # angle_factor = 0  #.05
+    # angvel_factor = 0  # .02
     pos_factor = 1
-    vel_factor = .1
-    action_factor = 1
+    vel_factor = .5
+    # action_factor = 0  #1
 
-    # action loss
-    action_loss = torch.sum((action_seq - .5)**2)
-    # attittude and att velocity loss
-    # angle_error = torch.sum(states[:, :, 3:6]**2, axis=1)
-    ang_vel_error = torch.sum(states[:, 9:12]**2)
-
-    # print("states", states.size())
-    # print(states[0, :5, :3])
-    # print("targets", ref_states.size())
-    # print(ref_states[0, :5, :3])
+    # # action loss
+    # action_loss = torch.sum((action_seq - .5)**2)
+    # # attittude and att velocity loss
+    # # angle_error = torch.sum(states[:, :, 3:6]**2, axis=1)
+    # ang_vel_error = torch.sum(states[:, 9:12]**2)
 
     position_loss = torch.sum((states[:, :, :3] - ref_states[:, :, :3])**2)
-    velocity_loss = torch.sum((states[:, :, 6:9] - ref_states[:, :, 3:6])**2)
+    velocity_loss = torch.sum((states[:, :, 6:9] - ref_states[:, :, 6:9])**2)
 
-    # together
+    # # together
     loss = (
-        angvel_factor * ang_vel_error + pos_factor * position_loss +
-        vel_factor * velocity_loss + action_factor * action_loss
+        pos_factor * position_loss +  # angvel_factor * ang_vel_error + 
+        vel_factor * velocity_loss  # + action_factor * action_loss
     )
 
     if printout:
-        print("ang_vel_error", angvel_factor * ang_vel_error)
-        print("pos error", pos_factor * position_loss)
-        print("vel_error", vel_factor * velocity_loss)
-        print("action loss", action_factor * action_loss)
+        print("------------------------------")
+        print_state_ref_div(
+            states[0].detach().numpy(), ref_states[0].detach().numpy()
+        )
+        # print("ang_vel_error", angvel_factor * ang_vel_error)
+        # print("pos error", pos_factor * position_loss)
+        # print("vel_error", vel_factor * velocity_loss)
+        # print("action loss", action_factor * action_loss)
     return torch.sum(loss)
 
 

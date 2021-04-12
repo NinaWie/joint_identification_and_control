@@ -22,14 +22,14 @@
     "ref_dim": 9,
     "action_dim": 4,
     "l2_lambda": 0.01,
-    "learning_rate_controller": 0.001,
+    "learning_rate_controller": 0.00001,
     "learning_rate_dynamics": 0.001,
     "resample_every": 3,
     "suc_up_down": 1,
-    "speed_factor": 0.4,
+    "speed_factor": 0.5,
     "system": "quad",
     "train_dyn_for_epochs": 5,
     "train_dyn_every": 1,
-    "nr_eval_runs": 10,
+    "nr_eval_runs": 1,
     "modified_params": {}
 }

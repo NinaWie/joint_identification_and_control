@@ -11,6 +11,7 @@ from neural_control.drone_loss import (
     drone_loss_function, simply_last_loss, reference_loss, mse_loss,
     weighted_loss
 )
+from neural_control.trajectory.generate_trajectory import load_prepare_trajectory
 from neural_control.dynamics.quad_dynamics_simple import SimpleDynamics
 from neural_control.dynamics.quad_dynamics_flightmare import (
     FlightmareDynamics
@@ -71,7 +72,7 @@ class TrainDrone(TrainBase):
                 self.nr_actions,
                 self.ref_dim,
                 self.action_dim * self.nr_actions_rnn,
-                conv=0
+                conv=(self.nr_actions >= 5)
             )
 
         # update the used parameters:
@@ -120,14 +121,15 @@ class TrainDrone(TrainBase):
         return loss
 
     def run_epoch(self, train="controller"):
+        optim_steps = 0
         for i, trajectory in enumerate(self.trainloader, 0):
             traj_len = trajectory.size()[1]
             b_s = trajectory.size()[0]
-            ind = 0
+            ind = np.random.choice(np.arange(self.nr_actions))
 
             traj_loss = 0
 
-            while ind + self.nr_actions + 1 < traj_len:
+            while ind + 2 * self.nr_actions + 1 < traj_len:
                 # for now: reset state to trajectory each time
                 current_state = torch.cat(
                     (trajectory[:, ind], torch.zeros(b_s, 3)), dim=1
@@ -141,30 +143,46 @@ class TrainDrone(TrainBase):
                 action_seq = torch.zeros(b_s, self.nr_actions, self.action_dim)
                 target_states = trajectory[:,
                                            ind + 1:ind + self.nr_actions + 1]
-                # print("current state", current_state[0])
-                # print("target states", target_states[0])
+                # if i % 10 == 0:
+                #     print("---------------------------")
+                #     np.set_printoptions(precision=2, suppress=1)
+                #     print("current state", current_state[0].detach().numpy())
+                #     print("target states", target_states[0].detach().numpy())
+                # ------------- version 1 -----------------
+                # in_state, in_ref_state = self.state_data.preprocess_data(
+                #     current_state, target_states
+                # )
+                # action = self.net(in_state, in_ref_state)
+                # action = torch.sigmoid(action)
+                # action_seq = torch.reshape(
+                #     action, (-1, self.nr_actions, self.action_dim)
+                # )
+
                 for j in range(self.nr_actions):
                     ref_traj = trajectory[:, ind + 1:ind + self.nr_actions + 1]
                     in_state, in_ref_state = self.state_data.preprocess_data(
                         current_state, ref_traj
                     )
-                    # print(in_state.size(), in_ref_state.size())
 
                     # predict action
+                    # action = action_seq[:, j] # version 1
                     action = self.net(in_state, in_ref_state)
                     action = torch.sigmoid(action)
                     # print(current_state.size(), action.size())
-                    # action_seq = torch.reshape(
-                    #     actions, (-1, self.nr_actions, self.action_dim)
-                    # )
                     # print("action_seq", action_seq.size())
                     current_state = self.train_dynamics(
                         current_state, action, dt=self.delta_t
                     )
                     intermediate_states[:, j] = current_state
-                    action_seq[:, j] = action
+                    action_seq[:, j] = action  # del for version 1
 
                     ind += 1
+
+                # if i % 10 == 0:
+                #     print(
+                #         "reached states",
+                #         intermediate_states[0].detach().numpy()
+                #     )
 
                 loss = drone_loss_function(
                     intermediate_states, target_states, action_seq, printout=0
@@ -172,12 +190,17 @@ class TrainDrone(TrainBase):
                 # Backprop
                 loss.backward()
                 # print(self.net.states_in.weight.grad)
+
                 traj_loss += loss.item()
                 self.optimizer_controller.step()
+                optim_steps += 1
 
-            # print(self.net.fc_out.weight.grad)
-            print("finished one set of trajectories", int(traj_loss))
             if (i + 1) % 20 == 0:
+                print()
+                print(
+                    "finished set of trajectories", round(traj_loss, 2),
+                    "after ", optim_steps
+                )
                 self.evaluate_model((i + 1) // 20)
 
     def evaluate_model(self, epoch):

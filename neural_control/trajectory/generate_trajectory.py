@@ -588,8 +588,8 @@ def load_prepare_trajectory(base_dir, dt, speed_factor, test=False, path=None):
     # only use pos and vel
     transformed_ref = np.hstack(
         (
-            taken_every[:, :3], taken_every[:, 7:10] * speed_factor,
-            euler_angles * speed_factor
+            taken_every[:, :3], euler_angles * speed_factor, taken_every[:,
+                                                                         7:10]
         )
     )
     # print("transformed shape", transformed_ref.shape)

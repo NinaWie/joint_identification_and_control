@@ -58,7 +58,7 @@ class NetworkWrapper:
         suggested_action = torch.sigmoid(suggested_action)
 
         suggested_action = torch.reshape(
-            suggested_action, (1, 1, self.action_dim)
+            suggested_action, (1, -1, self.action_dim)
         )
         numpy_action_seq = suggested_action[0].detach().numpy()
         # print([round(a, 2) for a in numpy_action_seq[0]])
