@@ -74,7 +74,7 @@ class TrainDrone(TrainBase):
                 self.self_play,
                 reset_strength=self.reset_strength,
                 max_drone_dist=self.max_drone_dist,
-                ref_length=self.nr_actions,
+                ref_length=self.nr_actions * 2,
                 dt=self.delta_t
             )
             in_state_size = self.state_data.normed_states.size()[1]
@@ -83,7 +83,7 @@ class TrainDrone(TrainBase):
                 in_state_size,
                 self.nr_actions,
                 self.ref_dim,
-                self.action_dim * self.nr_actions,
+                self.action_dim * self.nr_actions_rnn,
                 conv=1
             )
             (data_std, data_mean) = (self.state_data.std, self.state_data.mean)
@@ -94,7 +94,7 @@ class TrainDrone(TrainBase):
 
         # update the used parameters:
         self.config["horizon"] = self.nr_actions
-        self.config["ref_length"] = self.nr_actions
+        self.config["ref_length"] = self.nr_actions * 2
         self.config["thresh_div"] = self.thresh_div_start
         self.config["dt"] = self.delta_t
         self.config["take_every_x"] = self.self_play_every_x
@@ -129,9 +129,56 @@ class TrainDrone(TrainBase):
             intermediate_states[:, k] = current_state
 
         loss = simply_last_loss(
-            intermediate_states, ref_states[:, -1], action_seq, printout=0
+            intermediate_states, ref_states, action_seq, printout=0
         )
 
+        # Backprop
+        loss.backward()
+        self.optimizer_controller.step()
+        return loss
+
+    def train_controller_recurrent(
+        self, current_state, action_seq, in_ref_state, ref_states
+    ):
+        """Recurrent style training
+
+        Args:
+            current_state ([type]): [description]
+            action_seq ([type]): [description]
+            in_ref_state ([type]): [description]
+            ref_states ([type]): [description]
+
+        Returns:
+            [type]: [description]
+        """
+        intermediate_states = torch.zeros(
+            current_state.size()[0], self.nr_actions, self.state_size
+        )
+        action_seq = torch.zeros(
+            current_state.size()[0], self.nr_actions, self.action_dim
+        )
+        # lstm hide
+        hx = torch.randn(current_state.size()[0], 20)  # (batch, hidden_size)
+        cx = torch.randn(current_state.size()[0], 20)
+
+        for k in range(self.nr_actions):
+            current_ref = ref_states[:, k:self.nr_actions + k]
+            in_state, _, in_ref_state, _ = self.state_data.prepare_data(
+                current_state, current_ref
+            )
+            raw_action, hx, cx = self.net(in_state, in_ref_state, hx, cx)
+            action = torch.sigmoid(raw_action)
+            current_state = self.train_dynamics(
+                current_state, action, dt=self.delta_t
+            )
+            intermediate_states[:, k] = current_state
+            action_seq[:, k] = action
+        loss = simply_last_loss(
+            intermediate_states,
+            ref_states[:, :self.nr_actions],
+            action_seq,
+            printout=0
+        )
         # Backprop
         loss.backward()
         self.optimizer_controller.step()
@@ -232,21 +279,21 @@ if __name__ == "__main__":
     with open("configs/quad_config.json", "r") as infile:
         config = json.load(infile)
 
-    mod_params = {"mass": 1}
-    # {'translational_drag': np.array([0.7, 0.7, 0.7])}
-    config["modified_params"] = mod_params
+    # mod_params = {"mass": 1}
+    # # {'translational_drag': np.array([0.7, 0.7, 0.7])}
+    # config["modified_params"] = mod_params
 
-    baseline_model = "trained_models/quad/baseline_flightmare"
-    config["thresh_div_start"] = 1
-    config["thresh_stable_start"] = 1.5
+    baseline_model = None  # "trained_models/quad/test_rec_master"
+    # config["thresh_div_start"] = .1
+    # config["thresh_stable_start"] = 1.5
 
-    config["save_name"] = "test"
+    config["save_name"] = "test_out"
 
-    config["nr_epochs"] = 20
+    config["nr_epochs"] = 200
 
     # TRAIN
-    # train_control(baseline_model, config)
-    train_dynamics(baseline_model, config)
+    train_control(baseline_model, config)
+    # train_dynamics(baseline_model, config)
     # train_sampling_finetune(baseline_model, config)
     # FINE TUNING parameters:
     # self.thresh_div_start = 1

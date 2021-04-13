@@ -171,20 +171,21 @@ class TrainBase:
             # order to correctly apply the action
             in_state, current_state, in_ref_state, ref_states = data
 
-            actions = self.net(in_state, in_ref_state)
-            actions = torch.sigmoid(actions)
-            action_seq = torch.reshape(
-                actions, (-1, self.nr_actions, self.action_dim)
-            )
+            # actions = self.net(in_state, in_ref_state)
+            # actions = torch.sigmoid(actions)
+            # action_seq = torch.reshape(
+            #     actions, (-1, self.nr_actions_rnn, self.action_dim)
+            # )
+            # print(in_state.size(), in_ref_state.size(), ref_states.size())
 
             if train == "controller":
-                loss = self.train_controller_model(
-                    current_state, action_seq, in_ref_state, ref_states
-                )
-                # # ---- recurrent --------
-                # loss = self.train_controller_recurrent(
+                # loss = self.train_controller_model(
                 #     current_state, action_seq, in_ref_state, ref_states
                 # )
+                # # ---- recurrent --------
+                loss = self.train_controller_recurrent(
+                    current_state, None, in_ref_state, ref_states
+                )
             else:
                 # should work for both recurrent and normal
                 loss = self.train_dynamics_model(current_state, action_seq)
@@ -256,7 +257,8 @@ class TrainBase:
     def run_control(self, config, sampling_based_finetune=False):
         try:
             for epoch in range(config["nr_epochs"]):
-                _ = self.evaluate_model(epoch)
+                # _ = self.evaluate_model(epoch)
+                # self.sample_new_data(epoch)
 
                 print(f"\nEpoch {epoch}")
                 self.run_epoch(train="controller")

@@ -146,6 +146,7 @@ class QuadEvaluator():
                 use_action, thresh=thresh_stable
             )
             # np.set_printoptions(suppress=1, precision=3)
+            # print(action)
             # print(current_np_state[:3], trajectory[0, :3])
             if states is not None:
                 self.eval_env._state.from_np(states[i])
@@ -164,7 +165,7 @@ class QuadEvaluator():
 
             # reset the state to the reference
             if div > thresh_div or not stable:
-                if self.test_time:
+                if 1:  # self.test_time:
                     # TODO: must always be down for flightmare train
                     # print("diverged at", len(drone_trajectory))
                     break

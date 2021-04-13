@@ -154,19 +154,21 @@ class QuadDataset(DroneDataset):
         return torch.matmul(world_to_body, torch.unsqueeze(state_vector,
                                                            2))[:, :, 0]
 
-    def prepare_data(self, states, ref_states):
+    def prepare_data(self, drone_states, torch_ref_states):
         """
         Prepare numpy data for input in ANN:
         - expand dims
         - normalize
         - world to body
         """
-        if len(states.shape) == 1:
-            states = np.expand_dims(states, 0)
-            ref_states = np.expand_dims(ref_states, 0)
-        # 1) make torch arrays
-        drone_states = self.to_torch(states)
-        torch_ref_states = self.to_torch(ref_states)
+        if len(drone_states.shape) == 1:
+            drone_states = np.expand_dims(drone_states, 0)
+            torch_ref_states = np.expand_dims(torch_ref_states, 0)
+
+        if isinstance(drone_states, np.ndarray):
+            # 1) make torch arrays
+            drone_states = self.to_torch(drone_states)
+            torch_ref_states = self.to_torch(torch_ref_states)
 
         # 2) compute relative position and reset drone position to zero
         subtract_drone_pos = torch.unsqueeze(drone_states[:, :3], 1)

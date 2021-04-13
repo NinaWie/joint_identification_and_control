@@ -22,12 +22,13 @@ class Net(nn.Module):
         self.conv = conv
         self.reshape_len = 20 * (ref_length - 2) if conv else 64
         self.ref_in = nn.Linear(ref_length * ref_dim, 64)
-        self.fc1 = nn.Linear(64 + self.reshape_len, 64)
-        self.fc2 = nn.Linear(64, 64)
-        self.fc3 = nn.Linear(64, 64)
-        self.fc_out = nn.Linear(64, out_size)
+        self.lstm_cell = nn.LSTMCell(64 + self.reshape_len, 20)
+        # self.fc1 = nn.Linear(64 + self.reshape_len, 64)
+        # self.fc2 = nn.Linear(64, 64)
+        # self.fc3 = nn.Linear(64, 64)
+        self.fc_out = nn.Linear(20, out_size)
 
-    def forward(self, state, ref):
+    def forward(self, state, ref, hx, cx):
         # process state and reference differently
         state = torch.tanh(self.states_in(state))
         if self.conv:
@@ -37,11 +38,16 @@ class Net(nn.Module):
             ref = torch.reshape(ref, (-1, self.reshape_len))
         else:
             ref = torch.tanh(self.ref_in(ref))
+
         # concatenate
         x = torch.hstack((state, ref))
-        # normal feed-forward
-        x = torch.tanh(self.fc1(x))
-        x = torch.tanh(self.fc2(x))
-        x = torch.tanh(self.fc3(x))
-        x = self.fc_out(x)
-        return x
+        hx, cx = self.lstm_cell(x, (hx, cx))
+
+        out_action = self.fc_out(hx)
+        return out_action, hx, cx
+        # # normal feed-forward
+        # x = torch.tanh(self.fc1(x))
+        # x = torch.tanh(self.fc2(x))
+        # x = torch.tanh(self.fc3(x))
+        # x = self.fc_out(x)
+        # return x
