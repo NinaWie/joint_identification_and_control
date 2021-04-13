@@ -121,7 +121,24 @@ class TrainDrone(TrainBase):
         return loss
 
     def run_epoch(self, train="controller"):
-        optim_steps = 0
+        # load only one trajectory
+        # trajectory = torch.tensor(
+        #     [
+        #         load_prepare_trajectory(
+        #             "data/traj_data_1",
+        #             self.delta_t,
+        #             self.speed_factor,
+        #             test=0,
+        #             path=None
+        #         )
+        #     ]
+        # ).float()
+        # # np.set_printoptions(precision=3, suppress=1)
+        # # print(trajectory[0, :, :6].numpy())
+        # trajectory = trajectory.repeat(8, 1, 1)
+        # print(trajectory.size())
+        eval_every = 10
+        # for i in range(1000):
         for i, trajectory in enumerate(self.trainloader, 0):
             traj_len = trajectory.size()[1]
             b_s = trajectory.size()[0]
@@ -193,15 +210,18 @@ class TrainDrone(TrainBase):
 
                 traj_loss += loss.item()
                 self.optimizer_controller.step()
-                optim_steps += 1
+                self.optimizer_steps += 1
 
-            if (i + 1) % 20 == 0:
+            if (i + 1) % eval_every == 0:
                 print()
                 print(
                     "finished set of trajectories", round(traj_loss, 2),
-                    "after ", optim_steps
+                    "after ", self.optimizer_steps
                 )
-                self.evaluate_model((i + 1) // 20)
+                self.results_dict["loss"].append(traj_loss)
+                self.results_dict["used_traj_d1"].append(i * self.batch_size)
+                self.results_dict["samples_in_d1"].append(self.optimizer_steps)
+                self.evaluate_model((i + 1) // eval_every)
 
     def evaluate_model(self, epoch):
         # EVALUATE

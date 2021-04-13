@@ -82,6 +82,7 @@ class TrainBase:
             "loss": [0],
             "samples_in_d2": [],
             "samples_in_d1": [],
+            "used_traj_d1": [],
             "thresh_div": [],
             "trained": []
         }
@@ -101,6 +102,7 @@ class TrainBase:
 
         self.count_finetune_data = 0
         self.sampled_data_count = 0
+        self.optimizer_steps = 0
 
         self.current_score = 0 if suc_up_down == 1 else np.inf
 

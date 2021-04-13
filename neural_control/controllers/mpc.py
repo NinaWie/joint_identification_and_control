@@ -347,7 +347,7 @@ class MPC(object):
         # modify the reference traj to input it into mpc
         changed_middle_ref_states = np.zeros((self._N, len(current_state)))
         changed_middle_ref_states[:, :3] = ref_states[:, :3]
-        changed_middle_ref_states[:, 6:9] = ref_states[:, 6:9]
+        changed_middle_ref_states[:, 6:9] = ref_states[:, 6:9] * 2
 
         # no goal point for now
         # goal_state = changed_middle_ref_states[-1].copy().tolist()
