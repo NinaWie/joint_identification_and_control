@@ -140,6 +140,7 @@ class TrainDrone(TrainBase):
         # trajectory = trajectory.repeat(8, 1, 1)
         # print(trajectory.size())
         eval_every = 10
+        self.evaluate_model(0)
         # for i in range(1000):
         for i, trajectory in enumerate(self.trainloader, 0):
             traj_len = trajectory.size()[1]
@@ -226,6 +227,7 @@ class TrainDrone(TrainBase):
                 self.evaluate_model((i + 1) // eval_every)
 
     def evaluate_model(self, epoch):
+        print("EPOCH", epoch)
         # EVALUATE
         controller = NetworkWrapper(self.net, self.state_data, **self.config)
 
@@ -329,11 +331,11 @@ if __name__ == "__main__":
     # # {'translational_drag': np.array([0.7, 0.7, 0.7])}
     # config["modified_params"] = mod_params
 
-    baseline_model = None  # "trained_models/quad/baseline_flightmare"
-    # config["thresh_div_start"] = 1
-    # config["thresh_stable_start"] = 1.5
+    baseline_model = "trained_models/quad/first_try_all_traj"
+    config["thresh_div_start"] = 1
+    config["thresh_stable_start"] = 1.5
 
-    config["save_name"] = "test"
+    config["save_name"] = "train_all_traj_further"
 
     # config["nr_epochs"] = 20
 

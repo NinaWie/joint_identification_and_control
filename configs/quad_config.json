@@ -30,6 +30,6 @@
     "system": "quad",
     "train_dyn_for_epochs": 5,
     "train_dyn_every": 1,
-    "nr_eval_runs": 1,
+    "nr_eval_runs": 10,
     "modified_params": {}
 }
