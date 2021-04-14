@@ -30,7 +30,7 @@ class Net(nn.Module):
 
     def forward(self, state, ref):
         # process state and reference differently
-        state = torch.tanh(self.states_in(state))
+        state = torch.relu(self.states_in(state))
         if self.conv:
             # ref = torch.reshape(ref, (-1, self.ref_dim, 3))
             ref = torch.transpose(ref, 1, 2)
@@ -38,12 +38,12 @@ class Net(nn.Module):
             ref = torch.reshape(ref, (-1, self.reshape_len))
         else:
             ref = torch.reshape(ref, (-1, self.ref_length * self.ref_dim))
-            ref = torch.tanh(self.ref_in(ref))
+            ref = torch.relu(self.ref_in(ref))
         # concatenate
         x = torch.hstack((state, ref))
         # normal feed-forward
-        x = torch.tanh(self.fc1(x))
-        x = torch.tanh(self.fc2(x))
-        x = torch.tanh(self.fc3(x))
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        x = torch.relu(self.fc3(x))
         x = self.fc_out(x)
         return x

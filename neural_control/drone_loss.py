@@ -20,7 +20,7 @@ def drone_loss_function(states, ref_states, action_seq, printout=0):
     # weighting
     # angle_factor = 0  #.05
     # angvel_factor = 0  # .02
-    pos_factor = 1
+    pos_factor = 5
     vel_factor = .5
     # action_factor = 0  #1
 

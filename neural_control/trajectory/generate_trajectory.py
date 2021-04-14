@@ -573,6 +573,8 @@ def load_prepare_trajectory(base_dir, dt, speed_factor, test=False, path=None):
         rand_traj = np.random.choice(data_list)
         path = os.path.join(base_dir, "test", rand_traj)
 
+    # path = os.path.join(base_dir, "train", "traj_3.npy")
+
     trajectory = np.load(path)
 
     # dt for trajectory generation is 0.01, then transform back
@@ -589,9 +591,8 @@ def load_prepare_trajectory(base_dir, dt, speed_factor, test=False, path=None):
     # only use pos and vel
     transformed_ref = np.hstack(
         (
-            taken_every[:, :3],
-            euler_angles * speed_factor,
-            taken_every[:, 7:10]  # * speed_factor
+            taken_every[:, :3], euler_angles * speed_factor,
+            taken_every[:, 7:10] * speed_factor * 2
         )
     )
     # print("transformed shape", transformed_ref.shape)
