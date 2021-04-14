@@ -10,6 +10,7 @@ from neural_control.dynamics.fixed_wing_dynamics import LearntFixedWingDynamics
 from neural_control.plotting import (
     plot_loss_episode_len, print_state_ref_div
 )
+from torch.utils.tensorboard import SummaryWriter
 
 
 class TrainBase:
@@ -108,6 +109,9 @@ class TrainBase:
 
         self.state_data = None
         self.net = None
+
+        # launch tensorboard
+        self.writer = SummaryWriter()
 
     def init_optimizer(self):
         # Init train loader
@@ -253,6 +257,7 @@ class TrainBase:
                 self.train_dynamics.state_dict(),
                 os.path.join(self.save_path, "dynamics_model")
             )
+        self.writer.close()
         print("finished and saved.")
 
     def run_control(self, config, sampling_based_finetune=False):

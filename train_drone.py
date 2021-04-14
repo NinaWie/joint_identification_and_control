@@ -209,12 +209,15 @@ class TrainDrone(TrainBase):
                 )
                 # Backprop
                 loss.backward()
-                # print(self.net.states_in.weight.grad)
 
+                for name, param in self.net.named_parameters():
+                    self.writer.add_histogram(name + ".grad", param)
                 traj_loss += loss.item()
+
                 self.optimizer_controller.step()
                 self.optimizer_steps += 1
 
+            self.writer.add_scalar("Loss/train", traj_loss, i)
             if (i + 1) % eval_every == 0:
                 print()
                 print(
@@ -224,7 +227,12 @@ class TrainDrone(TrainBase):
                 self.results_dict["loss"].append(traj_loss)
                 self.results_dict["used_traj_d1"].append(i * self.batch_size)
                 self.results_dict["samples_in_d1"].append(self.optimizer_steps)
-                self.evaluate_model((i + 1) // eval_every)
+                suc_mean, suc_std = self.evaluate_model((i + 1) // eval_every)
+                self.writer.add_scalar("Success_mean", suc_mean, i)
+                self.writer.add_scalar("Success_std", suc_std, i)
+                for name, param in self.net.named_parameters():
+                    self.writer.add_histogram(name, param)
+                self.writer.flush()
 
     def evaluate_model(self, epoch):
         print("EPOCH", epoch)
