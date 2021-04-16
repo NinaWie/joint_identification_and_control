@@ -272,7 +272,20 @@ class LearntFixedWingDynamics(torch.nn.Module, FixedWingDynamics):
     Trainable dynamics for a fixed wing drone
     """
 
-    def __init__(self, modified_params={}):
+    def __init__(self, modified_params={}, not_trainable=["rho", "g"]):
+        """Initialize trainable fixed wing dynamics
+
+        Args:
+            modified_params (dict, optional): Parameters that are different
+                than in the config file. Defaults to {}.
+            not_trainable: List of parameters that are not trainable, e.g.
+                gravity is fixed
+        """
+        if len(modified_params) > 0:
+            print(
+                "WARNING: parameters also modified in learnt dynamics:",
+                modified_params
+            )
         FixedWingDynamics.__init__(self, modified_params)
         super(LearntFixedWingDynamics, self).__init__()
 
@@ -295,8 +308,8 @@ class LearntFixedWingDynamics(torch.nn.Module, FixedWingDynamics):
                 # make inertia separately
                 continue
             # # code to avoid training the parameters
-            # if "0" in key:
-            #     requires_grad = False
+            if key in not_trainable:
+                requires_grad = False
             dict_pytorch[key] = torch.nn.Parameter(
                 torch.tensor([val]), requires_grad=requires_grad
             )

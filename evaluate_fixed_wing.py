@@ -215,7 +215,8 @@ if __name__ == "__main__":
         )
         # np.save(
         #     os.path.join(
-        #         out_path, f"{model_name}_{'_'.join(modified_params.keys())}.npy"
+        #         out_path,
+        #         f"{model_name}_{'_'.join(modified_params.keys())}.npy"
         #     ), dists_from_target
         # )
         # print("time for 100 trajectories", time.time() - tic)

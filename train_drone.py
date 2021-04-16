@@ -65,6 +65,11 @@ class TrainDrone(TrainBase):
                 previous_parameters = json.load(outfile)
             data_std = np.array(previous_parameters["std"]).astype(float)
             data_mean = np.array(previous_parameters["mean"]).astype(float)
+            if previous_parameters["dt"] != self.delta_t:
+                raise RuntimeWarning(
+                    f"dt difference: {previous_parameters['dt']} in loaded\
+                         config but {self.delta_t} now"
+                )
         else:
             self.state_data = QuadDataset(
                 self.epoch_size,
