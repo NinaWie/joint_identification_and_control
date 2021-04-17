@@ -151,6 +151,56 @@ class TrainFixedWing(TrainBase):
         self.optimizer_controller.step()
         return loss
 
+    def train_both_models(
+        self, current_state, action_seq, in_ref_state, ref_states
+    ):
+        target_pos = self._compute_target_pos(current_state, in_ref_state)
+
+        # zero the parameter gradients
+        self.optimizer_both.zero_grad()
+
+        intermediate_states = torch.zeros(
+            current_state.size()[0], self.nr_actions_rnn, self.state_size
+        )
+        intermediate_eval = torch.zeros(
+            current_state.size()[0], self.nr_actions_rnn, self.state_size
+        )
+        current_state_d2 = current_state.clone()
+
+        for k in range(self.nr_actions_rnn):
+            # extract action
+            action = action_seq[:, k]
+            current_state = self.train_dynamics(
+                current_state, action, dt=self.delta_t
+            )
+            current_state_d2 = self.eval_dynamics(
+                current_state_d2, action, dt=self.delta_t
+            )
+            intermediate_states[:, k] = current_state
+            intermediate_eval[:, k] = current_state_d2
+
+        # # use only one state ahead
+        # first_target = torch.unsqueeze(target_pos[:, 0], 1)
+        # next_state_d1 = self.train_dynamics(
+        #     current_state, action_seq[:, 0], dt=self.delta_t
+        # )
+        # next_state_d2 = self.eval_dynamics(
+        #     current_state, action_seq[:, 0], dt=self.delta_t
+        # )
+        # in loss: torch.unsqueeze(next_state_d1, 1)
+        dyn_loss = torch.sum((intermediate_states - intermediate_eval)**2)
+        con_loss = fixed_wing_mpc_loss(
+            intermediate_states, target_pos, action_seq
+        )
+        print(dyn_loss, con_loss)
+        loss = dyn_loss + con_loss
+        loss.backward()
+        self.optimizer_both.step()
+
+        self.results_dict["loss_dyn_per_step"].append(loss.item())
+        self.results_dict["loss_con_per_step"].append(loss.item())
+        return loss
+
     def evaluate_model(self, epoch):
         # EVALUATE
         controller = FixedWingNetWrapper(
@@ -254,14 +304,14 @@ if __name__ == "__main__":
     with open("configs/wing_config.json", "r") as infile:
         config = json.load(infile)
 
-    baseline_model = None  # "trained_models/wing/baseline_fixed_wing"
-    config["save_name"] = "train_mpc_loss"
+    baseline_model = "trained_models/wing/current_model"
+    config["save_name"] = "test_train_both"
 
     # set high thresholds because not training from scratch
     # config["thresh_div_start"] = 20
     # config["thresh_stable_start"] = 1.5
 
-    mod_params = {}
+    mod_params = {"vel_drag_factor": .9}
     #  {"rho": 1.6}
     # {
     #     "CL0": 0.3,  # 0.39
@@ -276,6 +326,6 @@ if __name__ == "__main__":
 
     # TRAIN
     # config["nr_epochs"] = 20
-    train_control(baseline_model, config)
-    # train_dynamics(baseline_model, config)
+    # train_control(baseline_model, config)
+    train_dynamics(baseline_model, config)
     # train_sampling_finetune(baseline_model, config)

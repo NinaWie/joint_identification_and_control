@@ -123,6 +123,7 @@ class TrainBase:
 
         self.state_data = None
         self.net = None
+        self.train_both = True
 
         self.writer = SummaryWriter()
 
@@ -145,6 +146,15 @@ class TrainBase:
             self.optimizer_dynamics = optim.SGD(
                 self.train_dynamics.parameters(),
                 lr=self.learning_rate_dynamics,
+                momentum=0.9
+            )
+        if self.train_both:
+            self.optimizer_both = optim.SGD(
+                (
+                    list(self.net.parameters()) +
+                    list(self.train_dynamics.parameters())
+                ),
+                lr=self.learning_rate_controller,
                 momentum=0.9
             )
 
@@ -198,18 +208,21 @@ class TrainBase:
                 actions, (-1, self.nr_actions, self.action_dim)
             )
 
-            if train == "controller":
-                loss = self.train_controller_model(
-                    current_state, action_seq, in_ref_state, ref_states
-                )
-                # # ---- recurrent --------
-                # loss = self.train_controller_recurrent(
-                #     current_state, action_seq, in_ref_state, ref_states
-                # )
-            else:
-                # should work for both recurrent and normal
-                loss = self.train_dynamics_model(current_state, action_seq)
-                self.count_finetune_data += len(current_state)
+            loss = self.train_both_models(
+                current_state, action_seq, in_ref_state, ref_states
+            )
+            # if train == "controller":
+            #     loss = self.train_controller_model(
+            #         current_state, action_seq, in_ref_state, ref_states
+            #     )
+            #     # # ---- recurrent --------
+            #     # loss = self.train_controller_recurrent(
+            #     #     current_state, action_seq, in_ref_state, ref_states
+            #     # )
+            # else:
+            #     # should work for both recurrent and normal
+            #     loss = self.train_dynamics_model(current_state, action_seq)
+            #     self.count_finetune_data += len(current_state)
 
             running_loss += loss.item()
         # time_epoch = time.time() - tic

@@ -190,7 +190,7 @@ if __name__ == "__main__":
     else:
         controller = MPC(20, 0.1, dynamics="fixed_wing_3D")
 
-    modified_params = {}
+    modified_params = {"vel_drag_factor": .9}
     # {
     #     "CL0": 0.3,  # 0.39
     #     "CD0": 0.02,  #  0.0765,
