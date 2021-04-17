@@ -127,7 +127,9 @@ class FixedWingDynamics:
 
         # # aerodynamic forces calculations
         # (see beard & mclain, 2012, p. 44 ff)
-        V = torch.sqrt(vel_u**2 + vel_v**2 + vel_w**2)  # velocity norm
+        V = self.cfg["vel_drag_factor"] * torch.sqrt(
+            vel_u**2 + vel_v**2 + vel_w**2
+        )  # velocity norm
         alpha = torch.arctan(vel_w / vel_u)  # angle of attack
         alpha = torch.clamp(alpha, -alpha_bound, alpha_bound)  # TODO
         beta = torch.arctan(vel_v / V)
@@ -396,7 +398,9 @@ class FixedWingDynamicsMPC(FixedWingDynamics):
 
         ## aerodynamic forces calculations
         # (see beard & mclain, 2012, p. 44 ff)
-        V = ca.sqrt(vel_u**2 + vel_v**2 + vel_w**2)  # velocity norm
+        V = self.cfg["vel_drag_factor"] * ca.sqrt(
+            vel_u**2 + vel_v**2 + vel_w**2
+        )  # velocity norm
         alpha = ca.atan(vel_w / vel_u)  # angle of attack
         # alpha = torch.clamp(alpha, -alpha_bound, alpha_bound) TODO
         beta = ca.atan(vel_v / V)
