@@ -48,7 +48,13 @@ class SimpleWingEnv(gym.Env):
         """
 
         action_torch = torch.tensor([action.tolist()]).float()
-        state_torch = torch.tensor([self._state.tolist()]).float()
+
+        # possibly add noise to the current state
+        noisy_state = self._state.copy()
+        # noisy_state[1:3
+        #             ] = noisy_state[1:3] * (1 + np.random.rand(2) * 0.2 - 0.1)
+        # noisy_state[3:6] = noisy_state[3:6] + (np.random.rand(3) - .5)
+        state_torch = torch.tensor([noisy_state.tolist()]).float()
 
         new_state = self.dynamics(state_torch, action_torch, self.dt)
         self._state = new_state[0].numpy()
