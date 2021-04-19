@@ -188,9 +188,17 @@ if __name__ == "__main__":
             model_path, epoch=args.epoch, name="model_wing", **params
         )
     else:
-        controller = MPC(20, 0.1, dynamics="fixed_wing_3D")
+        load_dynamics = None
+        # 'trained_models/wing/train_vel_drag_5/dynamics_model'
+        controller = MPC(
+            horizon=20,
+            dt=0.1,
+            dynamics="fixed_wing_3D",
+            load_dynamics=load_dynamics
+        )
 
     modified_params = {}
+    # {"vel_drag_factor": 0.9}
     # {
     #     "CL0": 0.3,  # 0.39
     #     "CD0": 0.02,  #  0.0765,

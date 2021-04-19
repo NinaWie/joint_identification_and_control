@@ -344,7 +344,29 @@ class LearntFixedWingDynamics(torch.nn.Module, FixedWingDynamics):
 class FixedWingDynamicsMPC(FixedWingDynamics):
 
     def __init__(self, modified_params={}):
-        super().__init__(modified_params)
+
+        # transform loaded torch parameters into normal
+        numpy_modified_params = {}
+        for key, val in modified_params.items():
+            if "cfg." in key:
+                raw_key = key[4:]
+                raw_val = val[0].item()
+                numpy_modified_params[raw_key] = raw_val
+        # change the config accordingly
+        super().__init__(numpy_modified_params)
+
+        # if I is loaded, it's not in the config
+        if "I" in modified_params.keys():
+            print("loaded I from learnt dynamics")
+            self.I = modified_params["I"]
+        else:
+            self.I = torch.tensor(
+                [
+                    [self.cfg["I_xx"], 0, -self.cfg["I_xz"]],
+                    [0, self.cfg["I_yy"], 0],
+                    [-self.cfg["I_xz"], 0, self.cfg["I_zz"]]
+                ]
+            )
 
         self.derive_parameters()
 
@@ -353,15 +375,8 @@ class FixedWingDynamicsMPC(FixedWingDynamics):
         self.cfg["g_m"] = self.cfg["g"] * self.cfg["mass"]
         self.gravity_vec_ca = ca.SX(np.array([0, 0, self.cfg["g_m"]]))
         # inertia
-        self.I = torch.tensor(
-            [
-                [self.cfg["I_xx"], 0, -self.cfg["I_xz"]],
-                [0, self.cfg["I_yy"], 0],
-                [-self.cfg["I_xz"], 0, self.cfg["I_zz"]]
-            ]
-        )
         self.I_inv = torch.inverse(self.I)
-        self.I_casadi = ca.SX(self.I.numpy())  # TODO
+        self.I_casadi = ca.SX(self.I.numpy())
         self.I_inv_casadi = ca.SX(self.I_inv.numpy())
 
     def simulate_fixed_wing(self, dt):
