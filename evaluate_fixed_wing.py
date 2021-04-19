@@ -54,7 +54,7 @@ class FixedWingEvaluator:
 
         state = self.eval_env._state
         stable = True
-        drone_traj, divergences = [], []
+        drone_traj, div_to_linear, div_target = [], [], []
         step = 0
         while len(drone_traj) < max_steps:
             current_target = target_points[current_target_ind]
@@ -79,14 +79,24 @@ class FixedWingEvaluator:
                 line_start, current_target, state[:3]
             )
             div = np.linalg.norm(drone_on_line - state[:3])
-            divergences.append(div)
+            div_to_linear.append(div)
             drone_traj.append(np.concatenate((state, action[0])))
 
             # set next target if we have passed one
             if state[0] > current_target[0]:
+                # project target onto line
+                target_on_traj = project_to_line(
+                    drone_traj[-2][:3], state[:3], current_target
+                )
+                div_target.append(
+                    np.linalg.norm(target_on_traj - current_target)
+                )
                 if self.render:
                     np.set_printoptions(suppress=1, precision=3)
-                    print("target:", current_target, "pos:", state[:3])
+                    print(
+                        "target:", current_target, "pos:", state[:3],
+                        "div to target", div_target[-1]
+                    )
                 if current_target_ind < len(target_points) - 1:
                     current_target_ind += 1
                     line_start = state[:3]
@@ -94,6 +104,7 @@ class FixedWingEvaluator:
                     break
 
             if not stable or div > self.thresh_div:
+                div_target.append(self.thresh_div)
                 if self.test_time:
                     print("diverged", div, "stable", stable)
                     break
@@ -104,14 +115,14 @@ class FixedWingEvaluator:
                     reset_state[3:6
                                 ] = vec / np.linalg.norm(vec) * self.des_speed
                     self.eval_env._state = reset_state
-        return np.array(drone_traj), np.array(divergences)
+        return np.array(drone_traj), np.array(div_target)
 
     def run_eval(self, nr_test, return_dists=False):
         mean_div, not_div_time = [], []
         for i in range(nr_test):
             target_point = [
-                np.random.rand(3) * np.array([60, 10, 10]) +
-                np.array([30, -5, -5])
+                np.random.rand(3) * np.array([70, 10, 10]) +
+                np.array([20, -5, -5])
             ]
             # traj_test = run_wing_flight(
             #     self.eval_env, traj_len=300, dt=self.dt, render=0

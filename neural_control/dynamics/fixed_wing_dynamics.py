@@ -30,6 +30,8 @@ class FixedWingDynamics:
         # update with modified parameters
         self.cfg.update(modified_params)
 
+        self.cfg["g"] = torch.tensor([self.cfg["g"]])
+        self.cfg["mass"] = torch.tensor([self.cfg["mass"]])
         self.I = torch.tensor(
             [
                 [self.cfg["I_xx"], 0, -self.cfg["I_xz"]],
@@ -198,7 +200,7 @@ class FixedWingDynamics:
             self.inertial_body_function(eul_phi, eul_theta, zero_vec), 1, 2
         )
         zero = torch.zeros(1, 1)
-        gravity_vec = torch.vstack([zero, zero, torch.tensor(g_m)])
+        gravity_vec = torch.vstack([zero, zero, g_m])
         f_xyz = (
             torch.matmul(body_wind_matrix, vec1) +
             torch.matmul(body_to_inertia, gravity_vec) +
@@ -372,7 +374,8 @@ class FixedWingDynamicsMPC(FixedWingDynamics):
 
     def derive_parameters(self):
         # gravity vector
-        self.cfg["g_m"] = self.cfg["g"] * self.cfg["mass"]
+        self.cfg["mass"] = self.cfg["mass"].item()
+        self.cfg["g_m"] = (self.cfg["g"] * self.cfg["mass"]).item()
         self.gravity_vec_ca = ca.SX(np.array([0, 0, self.cfg["g_m"]]))
         # inertia
         self.I_inv = torch.inverse(self.I)
