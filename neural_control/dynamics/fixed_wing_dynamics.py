@@ -318,27 +318,34 @@ class LearntFixedWingDynamics(torch.nn.Module, FixedWingDynamics):
         self.cfg = torch.nn.ParameterDict(dict_pytorch)
 
         # further layer for dynamic (non parameter) mismatch
+        loaded_weights = np.load("data/identity_network.npz")
         self.linear_state_1 = nn.Linear(16, 64)
-        torch.nn.init.constant_(self.linear_state_1.weight, 0)
-        torch.nn.init.constant_(self.linear_state_1.bias, 0)
-
+        self.linear_state_1.weight = torch.nn.Parameter(
+            torch.tensor(loaded_weights['state_1_weight'])
+        )
+        self.linear_state_1.bias = torch.nn.Parameter(
+            torch.tensor(loaded_weights['state_1_bias'])
+        )
         self.linear_state_2 = nn.Linear(64, 12)
-        torch.nn.init.constant_(self.linear_state_2.weight, 0)
-        torch.nn.init.constant_(self.linear_state_2.bias, 0)
+        self.linear_state_2.weight = torch.nn.Parameter(
+            torch.tensor(loaded_weights['state_2_weight'])
+        )
+        self.linear_state_2.bias = torch.nn.Parameter(
+            torch.tensor(loaded_weights['state_2_bias'])
+        )
 
     def state_transformer(self, state, action):
         state_action = torch.cat((state, action), dim=1)
         layer_1 = torch.relu(self.linear_state_1(state_action))
         new_state = self.linear_state_2(layer_1)
-        # TODO: activation function?
         return new_state
 
     def forward(self, state, action, dt):
         # run through D1
-        new_state = self.simulate_fixed_wing(state, action, dt)
+        estimated_state = self.simulate_fixed_wing(state, action, dt)
         # run through T
-        added_new_state = self.state_transformer(state, action)
-        return new_state + added_new_state
+        new_state = self.state_transformer(estimated_state, action)
+        return new_state
 
 
 class FixedWingDynamicsMPC(FixedWingDynamics):
