@@ -197,8 +197,8 @@ class TrainFixedWing(TrainBase):
         loss.backward()
         self.optimizer_both.step()
 
-        self.results_dict["loss_dyn_per_step"].append(loss.item())
-        self.results_dict["loss_con_per_step"].append(loss.item())
+        self.results_dict["loss_dyn_per_step"].append(dyn_loss.item())
+        self.results_dict["loss_con_per_step"].append(con_loss.item())
         return loss
 
     def evaluate_model(self, epoch):
