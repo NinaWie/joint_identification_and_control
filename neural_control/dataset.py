@@ -257,8 +257,12 @@ class WingDataset(DroneDataset):
         std=None,
         ref_mean=None,
         ref_std=None,
+        delta_t=0.05,
+        nr_actions=10,
         **kwargs
-    ):
+    ):        
+        self.dt = delta_t
+        self.nr_actions = nr_actions
         super().__init__(num_states, self_play, mean=mean, std=std, **kwargs)
 
     def sample_data(self, num_samples):
@@ -267,6 +271,21 @@ class WingDataset(DroneDataset):
         """
         states, ref_states = sample_training_data(num_samples, **self.kwargs)
         return states, ref_states
+
+    def _compute_target_pos(self, current_state, ref_vector):
+        # # GIVE LINEAR TRAJECTORY FOR LOSS
+        # speed = torch.sqrt(torch.sum(current_state[:, 3:6]**2, dim=1))
+        vec_len_per_step = 12 * self.dt
+        # form auxiliary array with linear reference for loss computation
+        target_pos = torch.zeros(
+            (current_state.size()[0], self.nr_actions, 3)
+        )
+        for i in range(self.nr_actions):
+            for j in range(3):
+                target_pos[:, i, j] = current_state[:, j] + (
+                    ref_vector[:, j] * vec_len_per_step * (i + 1)
+                )
+        return target_pos
 
     def prepare_data(self, states, ref_states):
         """
@@ -299,6 +318,12 @@ class WingDataset(DroneDataset):
         # normalize
         relative_ref = ref_states - states[:, :3]
         ref_vec_norm = torch.sqrt(torch.sum(relative_ref**2, axis=1))
-        normed_ref_states = (relative_ref.t() / ref_vec_norm).t()
 
-        return normed_states, states, normed_ref_states, ref_states
+        # get vector in direction of target
+        normed_ref_vector = (relative_ref.t() / ref_vec_norm).t()
+        # transform to the input states
+        ref_states = self._compute_target_pos(states, normed_ref_vector)
+        relative_ref = ref_states[:, -1] - states[:, :3]
+
+
+        return normed_states, states, relative_ref, ref_states

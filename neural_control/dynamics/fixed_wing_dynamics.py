@@ -30,6 +30,8 @@ class FixedWingDynamics:
         # update with modified parameters
         self.cfg.update(modified_params)
 
+        self.cfg["g"] = torch.tensor([self.cfg["g"]])
+        self.cfg["mass"] = torch.tensor([self.cfg["mass"]])
         self.I = torch.tensor(
             [
                 [self.cfg["I_xx"], 0, -self.cfg["I_xz"]],
@@ -99,6 +101,9 @@ class FixedWingDynamics:
         """
         Dynamics of a fixed wing drone
         """
+
+        # dummy_residual = self.cfg["residual_factor"] * state
+
         # STATE
         pos = state[:, :3]  # position in inertial frame North East Down (NED)
 
@@ -198,7 +203,7 @@ class FixedWingDynamics:
             self.inertial_body_function(eul_phi, eul_theta, zero_vec), 1, 2
         )
         zero = torch.zeros(1, 1)
-        gravity_vec = torch.vstack([zero, zero, torch.tensor(g_m)])
+        gravity_vec = torch.vstack([zero, zero, g_m])
         f_xyz = (
             torch.matmul(body_wind_matrix, vec1) +
             torch.matmul(body_to_inertia, gravity_vec) +
@@ -264,7 +269,7 @@ class FixedWingDynamics:
             )
         )
         # simple integration over time
-        next_state = state + dt * state_dot
+        next_state = state + dt * state_dot  # - dummy_residual
 
         return next_state
 
@@ -274,7 +279,11 @@ class LearntFixedWingDynamics(torch.nn.Module, FixedWingDynamics):
     Trainable dynamics for a fixed wing drone
     """
 
-    def __init__(self, modified_params={}, not_trainable=["rho", "g"]):
+    def __init__(
+        self,
+        modified_params={},
+        not_trainable=["rho", "g", "residual_factor"]
+    ):
         """Initialize trainable fixed wing dynamics
 
         Args:
@@ -319,12 +328,12 @@ class LearntFixedWingDynamics(torch.nn.Module, FixedWingDynamics):
 
         # further layer for dynamic (non parameter) mismatch
         self.linear_state_1 = nn.Linear(16, 64)
-        torch.nn.init.constant_(self.linear_state_1.weight, 0)
-        torch.nn.init.constant_(self.linear_state_1.bias, 0)
+        std = 0.0001
+        torch.nn.init.normal_(self.linear_state_1.weight, mean=0.0, std=std)
+        torch.nn.init.normal_(self.linear_state_1.bias, mean=0.0, std=std)
 
-        self.linear_state_2 = nn.Linear(64, 12)
-        torch.nn.init.constant_(self.linear_state_2.weight, 0)
-        torch.nn.init.constant_(self.linear_state_2.bias, 0)
+        self.linear_state_2 = nn.Linear(64, 12, bias=False)
+        torch.nn.init.normal_(self.linear_state_2.weight, mean=0.0, std=std)
 
     def state_transformer(self, state, action):
         state_action = torch.cat((state, action), dim=1)
@@ -344,24 +353,40 @@ class LearntFixedWingDynamics(torch.nn.Module, FixedWingDynamics):
 class FixedWingDynamicsMPC(FixedWingDynamics):
 
     def __init__(self, modified_params={}):
-        super().__init__(modified_params)
+
+        # transform loaded torch parameters into normal
+        numpy_modified_params = {}
+        for key, val in modified_params.items():
+            if "cfg." in key:
+                raw_key = key[4:]
+                raw_val = val[0].item()
+                numpy_modified_params[raw_key] = raw_val
+        # change the config accordingly
+        super().__init__(numpy_modified_params)
+
+        # if I is loaded, it's not in the config
+        if "I" in modified_params.keys():
+            print("loaded I from learnt dynamics")
+            self.I = modified_params["I"]
+        else:
+            self.I = torch.tensor(
+                [
+                    [self.cfg["I_xx"], 0, -self.cfg["I_xz"]],
+                    [0, self.cfg["I_yy"], 0],
+                    [-self.cfg["I_xz"], 0, self.cfg["I_zz"]]
+                ]
+            )
 
         self.derive_parameters()
 
     def derive_parameters(self):
         # gravity vector
-        self.cfg["g_m"] = self.cfg["g"] * self.cfg["mass"]
+        self.cfg["mass"] = self.cfg["mass"].item()
+        self.cfg["g_m"] = (self.cfg["g"] * self.cfg["mass"]).item()
         self.gravity_vec_ca = ca.SX(np.array([0, 0, self.cfg["g_m"]]))
         # inertia
-        self.I = torch.tensor(
-            [
-                [self.cfg["I_xx"], 0, -self.cfg["I_xz"]],
-                [0, self.cfg["I_yy"], 0],
-                [-self.cfg["I_xz"], 0, self.cfg["I_zz"]]
-            ]
-        )
         self.I_inv = torch.inverse(self.I)
-        self.I_casadi = ca.SX(self.I.numpy())  # TODO
+        self.I_casadi = ca.SX(self.I.numpy())
         self.I_inv_casadi = ca.SX(self.I_inv.numpy())
 
     def simulate_fixed_wing(self, dt):

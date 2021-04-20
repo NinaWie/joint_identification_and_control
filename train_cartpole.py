@@ -91,7 +91,7 @@ for epoch in range(NR_EPOCHS):
             # forward + backward + optimize
             outputs = net(inputs)
             lam = epoch / NR_EPOCHS
-            loss = control_loss_function(
+            loss = cartpole_loss(
                 outputs, labels, lambda_factor=lam, printout=0
             )
             loss.backward()

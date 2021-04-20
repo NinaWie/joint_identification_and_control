@@ -83,25 +83,9 @@ class TrainFixedWing(TrainBase):
 
         self.init_optimizer()
 
-    def _compute_target_pos(self, current_state, ref_vector):
-        # # GIVE LINEAR TRAJECTORY FOR LOSS
-        # speed = torch.sqrt(torch.sum(current_state[:, 3:6]**2, dim=1))
-        vec_len_per_step = 12 * self.delta_t_train
-        # form auxiliary array with linear reference for loss computation
-        target_pos = torch.zeros(
-            (current_state.size()[0], self.nr_actions_rnn, 3)
-        )
-        for i in range(self.nr_actions_rnn):
-            for j in range(3):
-                target_pos[:, i, j] = current_state[:, j] + (
-                    ref_vector[:, j] * vec_len_per_step * (i + 1)
-                )
-        return target_pos
-
     def train_controller_model(
         self, current_state, action_seq, in_ref_state, ref_states
     ):
-        target_pos = self._compute_target_pos(current_state, in_ref_state)
         # zero the parameter gradients
         self.optimizer_controller.zero_grad()
         intermediate_states = torch.zeros(
@@ -116,7 +100,7 @@ class TrainFixedWing(TrainBase):
             intermediate_states[:, k] = current_state
 
         loss = fixed_wing_mpc_loss(
-            intermediate_states, target_pos, action_seq, printout=0
+            intermediate_states, ref_states, action_seq, printout=0
         )
 
         # Backprop
@@ -252,30 +236,6 @@ def train_control(base_model, config):
     trainer.initialize_model(base_model, modified_params=modified_params)
 
     trainer.run_control(config, curriculum=0)
-
-
-def train_dynamics(base_model, config):
-    """First train dynamcs, then train controller with estimated dynamics
-
-    Args:
-        base_model (filepath): Model to start training with
-        config (dict): config parameters
-    """
-    modified_params = config["modified_params"]
-    config["sample_in"] = "train_env"
-    # set thresholds high so the tracking error is reliable
-    config["thresh_div_start"] = 20
-    config["thresh_stable_start"] = 1.5
-
-    # train environment is learnt
-    train_dynamics = LearntFixedWingDynamics()
-    eval_dynamics = FixedWingDynamics(modified_params=modified_params)
-
-    trainer = TrainFixedWing(train_dynamics, eval_dynamics, config)
-    trainer.initialize_model(base_model, modified_params=modified_params)
-
-    # RUN
-    trainer.run_dynamics(config)
 
 
 def train_sampling_finetune(base_model, config):

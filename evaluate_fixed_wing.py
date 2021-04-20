@@ -30,6 +30,7 @@ class FixedWingEvaluator:
         thresh_div=10,
         thresh_stable=0.8,
         test_time=0,
+        waypoint_metric=1,
         **kwargs
     ):
         self.controller = controller
@@ -41,6 +42,7 @@ class FixedWingEvaluator:
         self.eval_env = env
         self.des_speed = 11.5
         self.test_time = test_time
+        self.waypoint_metric = waypoint_metric
 
     def fly_to_point(self, target_points, max_steps=1000, do_avg_act=0):
         self.eval_env.zero_reset()
@@ -54,7 +56,7 @@ class FixedWingEvaluator:
 
         state = self.eval_env._state
         stable = True
-        drone_traj, divergences = [], []
+        drone_traj, div_to_linear, div_target = [], [], []
         step = 0
         while len(drone_traj) < max_steps:
             current_target = target_points[current_target_ind]
@@ -79,14 +81,24 @@ class FixedWingEvaluator:
                 line_start, current_target, state[:3]
             )
             div = np.linalg.norm(drone_on_line - state[:3])
-            divergences.append(div)
+            div_to_linear.append(div)
             drone_traj.append(np.concatenate((state, action[0])))
 
             # set next target if we have passed one
             if state[0] > current_target[0]:
+                # project target onto line
+                target_on_traj = project_to_line(
+                    drone_traj[-2][:3], state[:3], current_target
+                )
+                div_target.append(
+                    np.linalg.norm(target_on_traj - current_target)
+                )
                 if self.render:
                     np.set_printoptions(suppress=1, precision=3)
-                    print("target:", current_target, "pos:", state[:3])
+                    print(
+                        "target:", current_target, "pos:", state[:3],
+                        "div to target", div_target[-1]
+                    )
                 if current_target_ind < len(target_points) - 1:
                     current_target_ind += 1
                     line_start = state[:3]
@@ -94,6 +106,7 @@ class FixedWingEvaluator:
                     break
 
             if not stable or div > self.thresh_div:
+                div_target.append(self.thresh_div)
                 if self.test_time:
                     print("diverged", div, "stable", stable)
                     break
@@ -104,14 +117,19 @@ class FixedWingEvaluator:
                     reset_state[3:6
                                 ] = vec / np.linalg.norm(vec) * self.des_speed
                     self.eval_env._state = reset_state
-        return np.array(drone_traj), np.array(divergences)
+        if len(drone_traj) == max_steps:
+            print("Reached max steps")
+            div_target.append(self.thresh_div)
+        if not self.waypoint_metric:
+            return np.array(drone_traj), np.array(div_to_linear)
+        return np.array(drone_traj), np.array(div_target)
 
     def run_eval(self, nr_test, return_dists=False):
         mean_div, not_div_time = [], []
         for i in range(nr_test):
             target_point = [
-                np.random.rand(3) * np.array([60, 10, 10]) +
-                np.array([30, -5, -5])
+                np.random.rand(3) * np.array([70, 10, 10]) +
+                np.array([20, -5, -5])
             ]
             # traj_test = run_wing_flight(
             #     self.eval_env, traj_len=300, dt=self.dt, render=0
@@ -143,7 +161,7 @@ def load_model(model_path, epoch="", **kwargs):
     Load model and corresponding parameters
     """
     net, param_dict = load_model_params(model_path, "model_wing", epoch=epoch)
-    dataset = WingDataset(100, **param_dict)
+    dataset = WingDataset(0, **param_dict)
 
     controller = FixedWingNetWrapper(net, dataset, **param_dict)
     return controller
@@ -188,9 +206,17 @@ if __name__ == "__main__":
             model_path, epoch=args.epoch, name="model_wing", **params
         )
     else:
-        controller = MPC(20, 0.1, dynamics="fixed_wing_3D")
+        load_dynamics = None
+        # 'trained_models/wing/train_vel_drag_5/dynamics_model'
+        controller = MPC(
+            horizon=20,
+            dt=0.1,
+            dynamics="fixed_wing_3D",
+            load_dynamics=load_dynamics
+        )
 
-    modified_params = {"vel_drag_factor": .9}
+    modified_params = {}
+    # {"vel_drag_factor": 0.9}
     # {
     #     "CL0": 0.3,  # 0.39
     #     "CD0": 0.02,  #  0.0765,
@@ -226,7 +252,7 @@ if __name__ == "__main__":
     target_point = [[50, -3, -3], [100, 3, 3]]
 
     # RUN
-    drone_traj, _ = evaluator.fly_to_point(target_point, max_steps=1000)
+    drone_traj, _ = evaluator.fly_to_point(target_point, max_steps=600)
 
     np.set_printoptions(suppress=True, precision=3)
     print("\n final state", drone_traj[-1])

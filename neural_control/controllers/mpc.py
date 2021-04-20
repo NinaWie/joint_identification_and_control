@@ -20,7 +20,14 @@ class MPC(object):
     Nonlinear MPC
     """
 
-    def __init__(self, horizon=20, dt=0.05, dynamics="high_mpc", **kwargs):
+    def __init__(
+        self,
+        horizon=20,
+        dt=0.05,
+        dynamics="high_mpc",
+        load_dynamics=None,
+        **kwargs
+    ):
         """
         Nonlinear MPC for quadrotor control        
         """
@@ -31,6 +38,12 @@ class MPC(object):
         self._T = horizon * dt
         self._dt = dt
         self._N = horizon
+
+        # load parameter dictionary
+        self.modified_dynamics = {}
+        if load_dynamics is not None:
+            import torch
+            self.modified_dynamics = torch.load(load_dynamics)
 
         # Gravity
         self._gz = 9.81
@@ -148,7 +161,7 @@ class MPC(object):
         elif self.dynamics_model == "fixed_wing_2D":
             F = fixed_wing_dynamics_mpc(self._dt)
         elif self.dynamics_model == "fixed_wing_3D":
-            dyn = FixedWingDynamicsMPC()
+            dyn = FixedWingDynamicsMPC(self.modified_dynamics)
             F = dyn.simulate_fixed_wing(self._dt)
         fMap = F.map(self._N, "openmp")  # parallel
 
