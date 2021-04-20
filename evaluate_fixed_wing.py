@@ -117,6 +117,9 @@ class FixedWingEvaluator:
                     reset_state[3:6
                                 ] = vec / np.linalg.norm(vec) * self.des_speed
                     self.eval_env._state = reset_state
+        if len(drone_traj) == max_steps:
+            print("Reached max steps")
+            div_target.append(self.thresh_div)
         if not self.waypoint_metric:
             return np.array(drone_traj), np.array(div_to_linear)
         return np.array(drone_traj), np.array(div_target)
@@ -158,7 +161,7 @@ def load_model(model_path, epoch="", **kwargs):
     Load model and corresponding parameters
     """
     net, param_dict = load_model_params(model_path, "model_wing", epoch=epoch)
-    dataset = WingDataset(100, **param_dict)
+    dataset = WingDataset(0, **param_dict)
 
     controller = FixedWingNetWrapper(net, dataset, **param_dict)
     return controller
@@ -249,7 +252,7 @@ if __name__ == "__main__":
     target_point = [[50, -3, -3], [100, 3, 3]]
 
     # RUN
-    drone_traj, _ = evaluator.fly_to_point(target_point, max_steps=1000)
+    drone_traj, _ = evaluator.fly_to_point(target_point, max_steps=600)
 
     np.set_printoptions(suppress=True, precision=3)
     print("\n final state", drone_traj[-1])
