@@ -83,25 +83,9 @@ class TrainFixedWing(TrainBase):
 
         self.init_optimizer()
 
-    def _compute_target_pos(self, current_state, ref_vector):
-        # # GIVE LINEAR TRAJECTORY FOR LOSS
-        # speed = torch.sqrt(torch.sum(current_state[:, 3:6]**2, dim=1))
-        vec_len_per_step = 12 * self.delta_t_train
-        # form auxiliary array with linear reference for loss computation
-        target_pos = torch.zeros(
-            (current_state.size()[0], self.nr_actions_rnn, 3)
-        )
-        for i in range(self.nr_actions_rnn):
-            for j in range(3):
-                target_pos[:, i, j] = current_state[:, j] + (
-                    ref_vector[:, j] * vec_len_per_step * (i + 1)
-                )
-        return target_pos
-
     def train_controller_model(
         self, current_state, action_seq, in_ref_state, ref_states
     ):
-        target_pos = self._compute_target_pos(current_state, in_ref_state)
         # zero the parameter gradients
         self.optimizer_controller.zero_grad()
         intermediate_states = torch.zeros(
@@ -116,7 +100,7 @@ class TrainFixedWing(TrainBase):
             intermediate_states[:, k] = current_state
 
         loss = fixed_wing_mpc_loss(
-            intermediate_states, target_pos, action_seq, printout=0
+            intermediate_states, ref_states, action_seq, printout=0
         )
 
         # Backprop
