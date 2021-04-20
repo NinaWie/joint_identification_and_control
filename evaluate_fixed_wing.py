@@ -30,6 +30,7 @@ class FixedWingEvaluator:
         thresh_div=10,
         thresh_stable=0.8,
         test_time=0,
+        waypoint_metric=1,
         **kwargs
     ):
         self.controller = controller
@@ -41,6 +42,7 @@ class FixedWingEvaluator:
         self.eval_env = env
         self.des_speed = 11.5
         self.test_time = test_time
+        self.waypoint_metric = waypoint_metric
 
     def fly_to_point(self, target_points, max_steps=1000, do_avg_act=0):
         self.eval_env.zero_reset()
@@ -115,6 +117,8 @@ class FixedWingEvaluator:
                     reset_state[3:6
                                 ] = vec / np.linalg.norm(vec) * self.des_speed
                     self.eval_env._state = reset_state
+        if not self.waypoint_metric:
+            return np.array(drone_traj), np.array(div_to_linear)
         return np.array(drone_traj), np.array(div_target)
 
     def run_eval(self, nr_test, return_dists=False):
