@@ -133,8 +133,15 @@ class QuadEvaluator():
         for i in range(max_nr_steps):
             # acc = self.eval_env.get_acceleration()
             trajectory = reference.get_ref_traj(current_np_state, 0)
+
+            noisy_state = current_np_state.copy()
+            # noisy_state[
+            #     1:3] = noisy_state[1:3] * (1 + np.random.rand(2) * 0.2 - 0.5)
+            # noisy_state[6:9] = noisy_state[6:9] + (np.random.rand(3) - .5)
+            noisy_state[3:6] = noisy_state[3:6] + (np.random.rand(3) - .5) * .4
+
             action = self.controller.predict_actions(
-                current_np_state, trajectory.copy()
+                noisy_state, trajectory.copy()
             )
 
             # possible average with previous actions
@@ -250,11 +257,13 @@ class QuadEvaluator():
             # print(np.mean(divergences), no_large_div)
             # no_large_div = np.where(np.array(divergences) > thresh_div)[0][0]
             stable.append(no_large_div)
+            print(round(div[-1], 2))
             # stable.append(len(drone_traj))
 
         # Output results
         stable = np.array(stable)
         div_of_full_runs = np.array(div)[stable == np.max(stable)]
+        print("Median div:", round(np.median(div), 2))
         print(
             "%s: Average div of full runs: %3.2f (%3.2f)" %
             (reference, np.mean(div_of_full_runs), np.std(div_of_full_runs))
@@ -363,7 +372,7 @@ if __name__ == "__main__":
     params["render"] = RENDER if not args.unity else 0
     # params["dt"] = .05
     # params["max_drone_dist"] = 1
-    params["speed_factor"] = .4
+    params["speed_factor"] = .2
     modified_params = {}  # {"mass": 1}
     # {"rotational_drag": np.array([.1, .1, .1])}
     # {"mass": 1}

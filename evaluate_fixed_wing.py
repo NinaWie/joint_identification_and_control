@@ -58,7 +58,15 @@ class FixedWingEvaluator:
         step = 0
         while len(drone_traj) < max_steps:
             current_target = target_points[current_target_ind]
-            action = self.controller.predict_actions(state, current_target)
+
+            noisy_state = state.copy()
+            # noisy_state[
+            #     1:3] = noisy_state[1:3] * (1 + np.random.rand(2) * 0.2 - 0.5)
+            noisy_state[6:9] = noisy_state[6:9] + (np.random.rand(3) - .5) * .2
+
+            action = self.controller.predict_actions(
+                noisy_state, current_target
+            )
 
             use_action = average_action(action, step, do_avg_act=do_avg_act)
             step += 1
@@ -136,6 +144,7 @@ class FixedWingEvaluator:
             # min_dists.append(np.min(last_x_dists))
             # not_diverged = np.sum(divergences < self.thresh_div)
             mean_div.append(np.mean(divergences))
+            print(mean_div[-1])
             # not_div_time.append(not_diverged)
         mean_err = np.mean(mean_div)
         std_err = np.std(mean_div)
@@ -143,6 +152,7 @@ class FixedWingEvaluator:
         #     "Time not diverged: %3.2f (%3.2f)" %
         #     (np.mean(not_div_time), np.std(not_div_time))
         # )
+        print("Median error", round(np.median(mean_div), 2))
         print("Average error: %3.2f (%3.2f)" % (mean_err, std_err))
         if return_dists:
             return np.array(mean_div)
