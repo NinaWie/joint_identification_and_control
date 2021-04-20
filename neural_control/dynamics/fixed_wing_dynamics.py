@@ -101,6 +101,9 @@ class FixedWingDynamics:
         """
         Dynamics of a fixed wing drone
         """
+
+        # dummy_residual = self.cfg["residual_factor"] * state
+
         # STATE
         pos = state[:, :3]  # position in inertial frame North East Down (NED)
 
@@ -266,7 +269,7 @@ class FixedWingDynamics:
             )
         )
         # simple integration over time
-        next_state = state + dt * state_dot
+        next_state = state + dt * state_dot  # - dummy_residual
 
         return next_state
 
@@ -276,7 +279,11 @@ class LearntFixedWingDynamics(torch.nn.Module, FixedWingDynamics):
     Trainable dynamics for a fixed wing drone
     """
 
-    def __init__(self, modified_params={}, not_trainable=["rho", "g"]):
+    def __init__(
+        self,
+        modified_params={},
+        not_trainable=["rho", "g", "residual_factor"]
+    ):
         """Initialize trainable fixed wing dynamics
 
         Args:
@@ -321,12 +328,12 @@ class LearntFixedWingDynamics(torch.nn.Module, FixedWingDynamics):
 
         # further layer for dynamic (non parameter) mismatch
         self.linear_state_1 = nn.Linear(16, 64)
-        torch.nn.init.constant_(self.linear_state_1.weight, 0)
-        torch.nn.init.constant_(self.linear_state_1.bias, 0)
+        std = 0.0001
+        torch.nn.init.normal_(self.linear_state_1.weight, mean=0.0, std=std)
+        torch.nn.init.normal_(self.linear_state_1.bias, mean=0.0, std=std)
 
-        self.linear_state_2 = nn.Linear(64, 12)
-        torch.nn.init.constant_(self.linear_state_2.weight, 0)
-        torch.nn.init.constant_(self.linear_state_2.bias, 0)
+        self.linear_state_2 = nn.Linear(64, 12, bias=False)
+        torch.nn.init.normal_(self.linear_state_2.weight, mean=0.0, std=std)
 
     def state_transformer(self, state, action):
         state_action = torch.cat((state, action), dim=1)

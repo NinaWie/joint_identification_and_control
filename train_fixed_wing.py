@@ -204,30 +204,6 @@ def train_control(base_model, config):
     trainer.run_control(config, curriculum=0)
 
 
-def train_dynamics(base_model, config):
-    """First train dynamcs, then train controller with estimated dynamics
-
-    Args:
-        base_model (filepath): Model to start training with
-        config (dict): config parameters
-    """
-    modified_params = config["modified_params"]
-    config["sample_in"] = "train_env"
-    # set thresholds high so the tracking error is reliable
-    config["thresh_div_start"] = 20
-    config["thresh_stable_start"] = 1.5
-
-    # train environment is learnt
-    train_dynamics = LearntFixedWingDynamics()
-    eval_dynamics = FixedWingDynamics(modified_params=modified_params)
-
-    trainer = TrainFixedWing(train_dynamics, eval_dynamics, config)
-    trainer.initialize_model(base_model, modified_params=modified_params)
-
-    # RUN
-    trainer.run_dynamics(config)
-
-
 def train_sampling_finetune(base_model, config):
     """First train dynamcs, then train controller with estimated dynamics
 

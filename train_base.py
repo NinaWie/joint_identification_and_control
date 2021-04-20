@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import shutil
 import numpy as np
 import torch
 import torch.optim as optim
@@ -124,7 +125,10 @@ class TrainBase:
         self.state_data = None
         self.net = None
 
+        if os.path.exists("runs"):
+            shutil.rmtree("runs")
         self.writer = SummaryWriter()
+        self.log_train_dyn = False
 
     def init_optimizer(self):
         # Init train loader
@@ -142,6 +146,7 @@ class TrainBase:
         )
         if isinstance(self.train_dynamics, LearntFixedWingDynamics
                       ) or isinstance(self.train_dynamics, LearntDynamics):
+            self.log_train_dyn = True
             self.optimizer_dynamics = optim.SGD(
                 self.train_dynamics.parameters(),
                 lr=self.learning_rate_dynamics,
@@ -179,6 +184,10 @@ class TrainBase:
             (next_state_d1 - next_state_d2)**2
         ) + self.l2_lambda * l2_loss
         loss.backward()
+        if self.log_train_dyn:
+            for name, param in self.train_dynamics.named_parameters():
+                if param.grad is not None:
+                    self.writer.add_histogram(name + ".grad", param.grad)
         self.optimizer_dynamics.step()
 
         self.results_dict["loss_dyn_per_step"].append(loss.item())
@@ -358,7 +367,7 @@ class TrainBase:
                     print("Params of dynamics model after training:")
                     for key, val in self.train_dynamics.state_dict().items():
                         if len(val) > 10:
-                            print(key, "too long")
+                            print(key, torch.sum(torch.abs(val)).item())
                             continue
                         print(key, val)
                     self.current_score = 0 if self.suc_up_down == 1 else np.inf
