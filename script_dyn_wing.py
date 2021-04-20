@@ -1,13 +1,16 @@
 import json
 import os
+import torch
 
 from train_fixed_wing import TrainFixedWing
 from neural_control.dynamics.fixed_wing_dynamics import (
     FixedWingDynamics, LearntFixedWingDynamics
 )
 
+never_trainable = ["rho", "g", "residual_factor"]
 
-def train_dynamics(base_model, config):
+
+def train_dynamics(base_model, config, not_trainable):
     """First train dynamcs, then train controller with estimated dynamics
 
     Args:
@@ -18,7 +21,7 @@ def train_dynamics(base_model, config):
     config["sample_in"] = "train_env"
 
     # train environment is learnt
-    train_dynamics = LearntFixedWingDynamics()
+    train_dynamics = LearntFixedWingDynamics(not_trainable=not_trainable)
     eval_dynamics = FixedWingDynamics(modified_params=modified_params)
 
     trainer = TrainFixedWing(train_dynamics, eval_dynamics, config)
@@ -41,10 +44,12 @@ if __name__ == "__main__":
     config["thresh_stable_start"] = 1.5
     # set self play to zero to avoid bad actions
     config["self_play"] = 0
+    config["epoch_size"] = 1000
+    # lambda: how much delta network is penalized
     config["l2_lambda"] = 0
     config["waypoint_metric"] = False
 
-    mod_params = {"residual_factor": 0.03}
+    mod_params = {"vel_drag_factor": 0.9}
     #  {"rho": 1.6}
     # {
     #     "CL0": 0.3,  # 0.39
@@ -59,4 +64,9 @@ if __name__ == "__main__":
 
     # TRAIN
     config["nr_epochs"] = 10
-    train_dynamics(baseline_model, config)
+
+    train_dynamics(
+        baseline_model,
+        config,
+        not_trainable=never_trainable + ["vel_drag_factor"]
+    )
