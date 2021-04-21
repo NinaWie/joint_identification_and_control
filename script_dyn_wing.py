@@ -37,19 +37,21 @@ if __name__ == "__main__":
         config = json.load(infile)
 
     baseline_model = "trained_models/wing/current_model"
-    config["save_name"] = "train_residual_minus_w_params"
+    config["save_name"] = "train_dyn_residual"
 
     # set high thresholds because not training from scratch
     config["thresh_div_start"] = 20
     config["thresh_stable_start"] = 1.5
     # set self play to zero to avoid bad actions
     config["self_play"] = 0
-    config["epoch_size"] = 1000
+    config["epoch_size"] = 500
     # lambda: how much delta network is penalized
     config["l2_lambda"] = 0
-    config["waypoint_metric"] = False
+    config["waypoint_metric"] = True
 
-    mod_params = {"vel_drag_factor": 0.9}
+    config["train_dyn_for_epochs"] = 20
+
+    mod_params = {"residual_factor": 0.0001}
     #  {"rho": 1.6}
     # {
     #     "CL0": 0.3,  # 0.39
@@ -63,7 +65,7 @@ if __name__ == "__main__":
     config["modified_params"] = mod_params
 
     # TRAIN
-    config["nr_epochs"] = 10
+    config["nr_epochs"] = 20
 
     train_dynamics(
         baseline_model,

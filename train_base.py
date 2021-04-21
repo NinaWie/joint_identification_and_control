@@ -111,7 +111,7 @@ class TrainBase:
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
         else:
-            input("Save directory already exists. Continue?")
+            pass  # input("Save directory already exists. Continue?") # TODO
 
         # dynamics
         self.eval_dynamics = eval_dynamics
@@ -173,12 +173,13 @@ class TrainBase:
 
     def train_dynamics_model(self, current_state, action_seq):
         # zero the parameter gradients
+        first_action = action_seq[:, 0].detach()
         self.optimizer_dynamics.zero_grad()
         next_state_d1 = self.train_dynamics(
-            current_state, action_seq[:, 0], dt=self.delta_t
+            current_state, first_action, dt=self.delta_t
         )
         next_state_d2 = self.eval_dynamics(
-            current_state, action_seq[:, 0], dt=self.delta_t
+            current_state, first_action, dt=self.delta_t
         )
         # regularize:
         l2_loss = 0
@@ -201,7 +202,7 @@ class TrainBase:
         self.optimizer_dynamics.step()
 
         self.results_dict["loss_dyn_per_step"].append(loss.item())
-        return loss
+        return loss * 1000
 
     def run_epoch(self, train="controller"):
         # tic_epoch = time.time()
@@ -217,9 +218,9 @@ class TrainBase:
                 actions, (-1, self.nr_actions, self.action_dim)
             )
 
-            loss = self.train_both_models(
-                current_state, action_seq, in_ref_state, ref_states
-            )
+            # loss = self.train_both_models(
+            #     current_state, action_seq, in_ref_state, ref_states
+            # )
             # if train == "controller":
             #     loss = self.train_controller_model(
             #         current_state, action_seq, in_ref_state, ref_states
@@ -230,7 +231,7 @@ class TrainBase:
             #     # )
             # else:
             #     # should work for both recurrent and normal
-            #     loss = self.train_dynamics_model(current_state, action_seq)
+            loss = self.train_dynamics_model(current_state, action_seq)
             #     self.count_finetune_data += len(current_state)
 
             running_loss += loss.item()

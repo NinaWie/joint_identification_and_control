@@ -157,7 +157,7 @@ class TrainFixedWing(TrainBase):
 
         detached_action_seq = action_seq.detach()
 
-        for k in range(self.nr_actions_rnn):
+        for k in range(2):  # self.nr_actions_rnn):
             # extract action
             action = action_seq[:, k]
             detached_action = detached_action_seq[:, k]
@@ -213,7 +213,7 @@ class TrainFixedWing(TrainBase):
 
         self.results_dict["loss_dyn_per_step"].append(dyn_loss.item())
         self.results_dict["loss_con_per_step"].append(con_loss.item())
-        return adv_loss
+        return dyn_loss
 
     def evaluate_model(self, epoch):
         # EVALUATE
