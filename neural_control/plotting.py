@@ -185,6 +185,32 @@ def plot_trajectory(knots, states, save_path, fixed_axis=2):
     plt.savefig(save_path)
 
 
+def plot_angle_of_attack(states, save_path):
+    vel_u, vel_v, vel_w = (states[:, 3], states[:, 4], states[:, 5])
+    V = np.sqrt(vel_u**2 + vel_v**2 + vel_w**2)
+    alpha = np.arctan(vel_w / vel_u)
+    beta = np.arctan(vel_v / V)
+
+    plt.figure()
+    plt.plot(states[:, 6], label="roll")
+    plt.plot(states[:, 7], label="pitch")
+    plt.plot(states[:, 8], label="yaw")
+    plt.plot(alpha, label="angle of attack")
+    plt.legend()
+    plt.title("Angle of attack and attitude")
+    plt.savefig(os.path.join(save_path, "alpha_attitude.jpg"))
+
+    plt.figure()
+    plt.plot(beta)
+    plt.title("Beta")
+    plt.savefig(os.path.join(save_path, "beta.jpg"))
+
+    plt.figure()
+    plt.plot(alpha)
+    plt.title("Angle of attack")
+    plt.savefig(os.path.join(save_path, "alpha.jpg"))
+
+
 def plot_loss_episode_len(
     episode_length_mean, episode_length_std, loss_list, save_path=None
 ):

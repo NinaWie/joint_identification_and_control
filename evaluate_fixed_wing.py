@@ -6,7 +6,7 @@ import numpy as np
 import torch
 
 from neural_control.environments.wing_env import SimpleWingEnv, run_wing_flight
-from neural_control.plotting import plot_wing_pos_3d, plot_success
+from neural_control.plotting import plot_wing_pos_3d, plot_angle_of_attack
 from neural_control.dataset import WingDataset
 from neural_control.controllers.network_wrapper import FixedWingNetWrapper
 from neural_control.controllers.mpc import MPC
@@ -249,7 +249,10 @@ if __name__ == "__main__":
         # run_mpc_analysis(evaluator)
         exit()
 
-    target_point = [[50, -3, -3], [100, 3, 3]]
+    target_point = [[50, -3, 3], [100, 3, -3]]
+    # [[25, -2, 2], [50, -1, 1], [75, 1, -2], [100, 3, -5]]
+    # [[50, -3, -3], [100, 3, 3]]
+    # [[50, 2, -3], [75, 0, -3], [100, -2, -5], [125, -2, -4]]
 
     # RUN
     drone_traj, _ = evaluator.fly_to_point(target_point, max_steps=600)
@@ -257,13 +260,15 @@ if __name__ == "__main__":
     np.set_printoptions(suppress=True, precision=3)
     print("\n final state", drone_traj[-1])
     print(drone_traj.shape)
-    # np.save(os.path.join(model_path, "drone_traj.npy"), drone_traj)
 
     evaluator.eval_env.close()
 
-    # EVAL
-    plot_wing_pos_3d(
-        drone_traj,
-        target_point,
-        save_path=os.path.join(model_path, "coords.png")
-    )
+    # to save and plot:
+    # out_path = "../presentations/save_traj"
+    # np.save(os.path.join(out_path, "drone_traj.npy"), drone_traj)
+    # plot_angle_of_attack(drone_traj, out_path)
+    # plot_wing_pos_3d(
+    #     drone_traj,
+    #     target_point,
+    #     save_path=os.path.join(out_path, "coords.png")
+    # )
