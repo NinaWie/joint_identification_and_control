@@ -138,28 +138,40 @@ class TrainFixedWing(TrainBase):
     def train_both_models(
         self, current_state, action_seq, in_ref_state, ref_states
     ):
-        target_pos = self._compute_target_pos(current_state, in_ref_state)
 
         # zero the parameter gradients
-        self.optimizer_both.zero_grad()
+        self.optimizer_controller.zero_grad()
+        self.optimizer_dynamics.zero_grad()
 
         intermediate_states = torch.zeros(
+            current_state.size()[0], self.nr_actions_rnn, self.state_size
+        )
+        intermediate_detached = torch.zeros(
             current_state.size()[0], self.nr_actions_rnn, self.state_size
         )
         intermediate_eval = torch.zeros(
             current_state.size()[0], self.nr_actions_rnn, self.state_size
         )
         current_state_d2 = current_state.clone()
+        current_state_d1 = current_state.clone()
+
+        detached_action_seq = action_seq.detach()
 
         for k in range(self.nr_actions_rnn):
             # extract action
             action = action_seq[:, k]
+            detached_action = detached_action_seq[:, k]
+
             current_state = self.train_dynamics(
                 current_state, action, dt=self.delta_t
             )
-            current_state_d2 = self.eval_dynamics(
-                current_state_d2, action, dt=self.delta_t
+            current_state_d1 = self.train_dynamics(
+                current_state_d1, detached_action, dt=self.delta_t
             )
+            current_state_d2 = self.eval_dynamics(
+                current_state_d2, detached_action, dt=self.delta_t
+            )
+            intermediate_detached[:, k] = current_state_d1
             intermediate_states[:, k] = current_state
             intermediate_eval[:, k] = current_state_d2
 
@@ -172,18 +184,36 @@ class TrainFixedWing(TrainBase):
         #     current_state, action_seq[:, 0], dt=self.delta_t
         # )
         # in loss: torch.unsqueeze(next_state_d1, 1)
-        dyn_loss = torch.sum((intermediate_states - intermediate_eval)**2)
+
+        # print(dyn_loss, con_loss)
+        # loss = dyn_loss + con_loss
+
+        # TRAIN C
         con_loss = fixed_wing_mpc_loss(
-            intermediate_states, target_pos, action_seq
+            intermediate_states, ref_states, action_seq
         )
-        print(dyn_loss, con_loss)
-        loss = dyn_loss + con_loss
-        loss.backward()
-        self.optimizer_both.step()
+        dyn_loss_penalty = torch.sum(
+            (intermediate_states - intermediate_eval)**2
+        )
+        # add inverse dynamics loss and update
+        alpha = 0.1
+        adv_loss = con_loss - alpha * dyn_loss_penalty
+        adv_loss.backward()
+        self.optimizer_controller.step()
+
+        # TRAIN D
+        dyn_loss = torch.sum((intermediate_detached - intermediate_eval)**2)
+        dyn_loss.backward()
+        self.optimizer_dynamics.step()
+
+        print(
+            "dyn", dyn_loss.item(), "con", con_loss.item(), "adv",
+            adv_loss.item()
+        )
 
         self.results_dict["loss_dyn_per_step"].append(dyn_loss.item())
         self.results_dict["loss_con_per_step"].append(con_loss.item())
-        return loss
+        return adv_loss
 
     def evaluate_model(self, epoch):
         # EVALUATE
