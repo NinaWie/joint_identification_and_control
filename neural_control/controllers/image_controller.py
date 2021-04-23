@@ -132,8 +132,15 @@ def train_controller(model_save_path):
             for action_ind in range(nr_actions):
                 action = cmd_predicted[:, action_ind]
                 current_state = dyn(current_state, action)
+                if action_ind == 0:
+                    intermediate = current_state
 
-            loss_con = torch.sum((img_out - current_state)**2)
+            # subtract first cmd to enforce high cmd in beginning
+            loss_con = (
+                torch.sum((img_out - current_state)**2) +
+                # add loss of first state to allow receding horizon!
+                torch.sum((img_out - intermediate)**2)
+            )
             loss_con.backward()
             con_optimizer.step()
             epoch_loss += loss_con.item()
