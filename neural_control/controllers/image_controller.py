@@ -7,7 +7,34 @@ import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 
-from neural_control.dynamics.image_dynamics import ImageDataset, ImgDynamics
+from neural_control.dynamics.image_dynamics import (
+    ImageDataset, ImgDynamics, one_hot_to_cmd_knight, one_hot_to_cmd_ball
+)
+
+
+def number_moves_knight(x, y):
+    # switch if necessary
+    if x < y:
+        temp = x
+        x = y
+        y = temp
+
+    # 2 corner cases
+    if x == 1 and y == 0:
+        return 3
+    if x == 2 and y == 2:
+        return 4
+
+    delta = x - y
+
+    if y > delta:
+        return delta - 2 * np.floor((delta - y) / 3)
+    else:
+        return delta - 2 * np.floor((delta - y) / 4)
+
+
+def number_moves_ball(x, y):
+    return max([x, y])
 
 
 class ImgConDataset(ImageDataset):
@@ -30,7 +57,8 @@ class ImgConDataset(ImageDataset):
                 required_action = np.absolute(
                     np.array(self.centers[i]) - np.array(self.centers[j])
                 )
-                if np.all(required_action <= nr_actions):
+                moves_required = number_moves_knight(*tuple(required_action))
+                if moves_required <= nr_actions:
                     self.feasible_combinations.append((i, j))
         # how many feasible combinations do we have
         # self.nr_data = len(self.images)**2
@@ -71,7 +99,7 @@ def round_diff(x):
 
 class ImgController(torch.nn.Module):
 
-    def __init__(self, width, height, nr_actions=1, cmd_dim=2):
+    def __init__(self, width, height, nr_actions=1, cmd_dim=9):
         super(ImgController, self).__init__()
         self.nr_actions = nr_actions
         self.cmd_dim = cmd_dim
@@ -90,24 +118,30 @@ class ImgController(torch.nn.Module):
 
         x1 = torch.relu(self.lin1(both_images))
         x2 = torch.relu(self.lin2(x1))
-        x3 = torch.tanh(self.lin3(x2))
+        x3 = self.lin3(x2)
         cmd = x3.reshape((-1, self.nr_actions, self.cmd_dim))
+        cmd = torch.softmax(cmd, dim=2)
         return cmd
 
 
 # testing:
-dynamics_path = "neural_control/dynamics/image_model"
-nr_actions = 4
+dynamics_path = "neural_control/dynamics/image_dyn_knight"
+nr_actions = 1
 radius = 1
 img_width, img_height = (8, 8)
 learning_rate = 0.00005
-nr_epochs = 200
+nr_epochs = 400
 
 
 def train_controller(model_save_path):
     dyn = torch.load(dynamics_path)
 
-    dataset = ImgConDataset(width=8, height=8, radius=1, nr_actions=nr_actions)
+    dataset = ImgConDataset(
+        width=img_width,
+        height=img_height,
+        radius=radius,
+        nr_actions=nr_actions
+    )
     print("Number of data", len(dataset))
     trainloader = torch.utils.data.DataLoader(
         dataset, batch_size=8, shuffle=True, num_workers=0
@@ -152,7 +186,7 @@ def train_controller(model_save_path):
     torch.save(con, model_save_path)
 
 
-def test_controller(model_save_path, mode="receding"):
+def test_controller(model_save_path, mode="all"):
     """Run test of all possible combinations
 
     Args:
@@ -192,7 +226,7 @@ def test_controller(model_save_path, mode="receding"):
 
         # predict action, apply
         with torch.no_grad():
-            for i in range(4):
+            for i in range(nr_actions):
                 # predict with receding horizon
                 if mode == "receding":
                     pred_cmd = controller(current_state, img_2.float())[:, 0]
@@ -200,10 +234,11 @@ def test_controller(model_save_path, mode="receding"):
                     pred_cmd = pred_cmd_sequence[:, i]
 
                 cmd_np = pred_cmd[0].detach().numpy()
-                cmd_rounded = np.around(cmd_np)
+                cmd_argmax = np.argmax(cmd_np)
+
                 # apply
-                current_center = dataset.move_ball(
-                    current_center, cmd_rounded[0], cmd_rounded[1]
+                current_center = dataset.move_knight(
+                    current_center, cmd_argmax
                 )
                 # print(cmd_rounded, current_center)
                 current_state = get_torch_img(
