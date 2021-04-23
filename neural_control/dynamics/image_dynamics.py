@@ -1,14 +1,15 @@
 import numpy as np
 import os
+import argparse
 from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 
-img_width, img_height, radius = (10, 10, 1)
-nr_epochs = 200
-learning_rate = 0.0005
+img_width, img_height, radius = (8, 8, 1)
+nr_epochs = 400
+learning_rate = 0.0001
 
 ball_x_options = [-1, 0, 1]
 ball_y_options = [-1, 0, 1]
@@ -33,20 +34,26 @@ class ImageDataset(torch.utils.data.Dataset):
         self.height = height
         self.radius = radius
 
-        nr_cells = (width - 2 * radius) * (height - 2 * radius)
+        nr_cells = width * height
+        # (width - 2 * radius) * (height - 2 * radius)
         basic_images = np.zeros((nr_cells, width, height))
         centers = []
 
         count = 0
-        for i in range(radius, self.width - radius):
-            for j in range(radius, self.height - radius):
+        for i in range(self.width):
+            for j in range(self.height):
                 centers.append([i, j])
-                basic_images[count, i - radius:i + radius + 1,
-                             j - radius:j + radius + 1] = 1
+                # avoid going across borders
+                start_x = max([0, i - radius])
+                end_x = min([i + radius + 1, width])
+                start_y = max([0, j - radius])
+                end_y = min([j + radius + 1, height])
+
+                basic_images[count, start_x:end_x, start_y:end_y] = 1
                 count += 1
 
-        self.images = basic_images  # torch.from_numpy(basic_images).float()
-        self.centers = centers  # torch.tensor(centers).float()
+        self.images = basic_images
+        self.centers = centers
 
         # auxiliary array: get index from new center
         self.inverse_centers = {tuple(tup): j for j, tup in enumerate(centers)}
@@ -89,12 +96,9 @@ class ImageDataset(torch.utils.data.Dataset):
         new_pos = np.array(current_pos) + np.array(
             [knight_x_options[move_ind], knight_y_options[move_ind]]
         )
-        x = max([self.radius, min([new_pos[0], self.width - self.radius - 1])])
-        y = max(
-            [self.radius,
-             min([new_pos[1], self.height - self.radius - 1])]
-        )
-        return [int(x), int(y)]
+        x = int(new_pos[0] % self.width)
+        y = int(new_pos[1] % self.height)
+        return [x, y]
 
     def __len__(self):
         # can combine any center with any command
@@ -154,7 +158,6 @@ def train_dynamics(model_save_path):
         for i, data in enumerate(trainloader):
             optimizer.zero_grad()
             (cmd, img_in, img_out) = data
-            # print(
             img_out_predicted = dyn(img_in.float(), cmd.float())
 
             loss = torch.sum((img_out - img_out_predicted)**2)
@@ -169,24 +172,61 @@ def train_dynamics(model_save_path):
 def test_dynamics(model_save_path):
     dyn = torch.load(model_save_path)
 
+    # set some start center and a command
+    x, y = (0, 0)
+    cmd = 3
+
     test_img = torch.zeros(1, img_width, img_height)
-    test_img[0, 4:7, 3:6] = 1
+
+    start_x = max([0, x - radius])
+    end_x = min([x + radius + 1, img_width])
+    start_y = max([0, y - radius])
+    end_y = min([y + radius + 1, img_height])
+
+    test_img[0, start_x:end_x, start_y:end_y] = 1
     test_cmd = torch.zeros(1, 9)
-    test_cmd[0, 1] = 1
+    test_cmd[0, cmd] = 1
+
+    # run network
     pred_img = dyn(test_img, test_cmd)
 
-    print("command", one_hot_to_cmd_knight(test_cmd))
+    np_command = one_hot_to_cmd_knight(test_cmd)
+    print("command", np_command)
 
-    plt.subplot(1, 2, 1)
+    # compute desired out image
+    out_img = torch.zeros(1, img_width, img_height)
+    out_img[0, x + np_command[0] - radius:x + np_command[0] + 1 + radius,
+            y + np_command[1] - radius:y + np_command[1] + radius + 1] = 1
+
+    plt.subplot(1, 3, 1)
     plt.imshow(test_img[0].numpy())
-    plt.subplot(1, 2, 2)
+    plt.title("Start state")
+    plt.subplot(1, 3, 2)
+    plt.imshow(out_img[0].numpy())
+    plt.title("Desired output")
+    plt.subplot(1, 3, 3)
     plt.imshow(pred_img[0].detach().numpy())
+    plt.title("Predicted")
+    plt.tight_layout()
     plt.show()
 
 
 if __name__ == "__main__":
-    model_save_path = os.path.join(
-        Path(__file__).parent.absolute(), "image_dyn_knight"
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-s",
+        "--save",
+        type=str,
+        default="test_model",
+        help="Name to save or load model"
     )
-    # train_dynamics(model_save_path)
-    test_dynamics(model_save_path)
+    parser.add_argument(
+        "-t", "--train", action="store_true", help="if 1 then train"
+    )
+    args = parser.parse_args()
+
+    model_path = os.path.join(Path(__file__).parent.absolute(), args.save)
+    if args.train:
+        train_dynamics(model_path)
+    else:
+        test_dynamics(model_path)
