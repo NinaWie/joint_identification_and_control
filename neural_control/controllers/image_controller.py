@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import argparse
 from pathlib import Path
 import torch
 import torch.nn as nn
@@ -11,20 +12,49 @@ from neural_control.dynamics.image_dynamics import ImageDataset, ImgDynamics
 
 class ImgConDataset(ImageDataset):
 
-    def __init__(self, width=20, height=20, radius=1):
+    def __init__(self, width=20, height=20, radius=1, nr_actions=4):
         super().__init__(width=width, height=height, radius=radius)
 
-        # we can combine all images with each other
-        self.nr_data = len(self.images)**2
         self.nr_images = len(self.images)
+
+        self.feasible_combinations = []
+        for i in range(self.nr_images):
+            for j in range(self.nr_images):
+                required_action = np.absolute(
+                    np.array(self.centers[i]) - np.array(self.centers[j])
+                )
+                if np.all(required_action <= nr_actions):
+                    self.feasible_combinations.append((i, j))
+        # how many feasible combinations do we have
+        # self.nr_data = len(self.images)**2
+        self.nr_data = len(self.feasible_combinations)
 
     def __len__(self):
         return self.nr_data
 
     def __getitem__(self, index):
-        img_1 = self.images[index // self.nr_images]
-        img_2 = self.images[index % self.nr_images]
+        (img_1_index, img_2_index) = self.feasible_combinations[index]
+        img_1 = self.images[img_1_index]
+        img_2 = self.images[img_2_index]
+        # print(self.centers[img_1_index], self.centers[img_2_index])
         return img_1, img_2
+
+
+def get_img(img_width, img_height, center, radius):
+    img = np.zeros((img_width, img_height))
+    img[center[0] - radius:center[0] + radius + 1,
+        center[1] - radius:center[1] + radius + 1] = 1
+    return img
+
+
+def get_torch_img(np_img):
+    return torch.tensor([np_img.tolist()]).float()
+
+
+def round_diff(x):
+    slope = 10
+    e = torch.exp(slope * (x - .5))
+    return e / (e + 1)
 
 
 class ImgController(torch.nn.Module):
@@ -55,14 +85,16 @@ class ImgController(torch.nn.Module):
 
 # testing:
 dynamics_path = "neural_control/dynamics/image_model"
-nr_actions = 4
-learning_rate = 0.00001
+nr_actions = 1
+learning_rate = 0.0001
+nr_epochs = 100
 
 
 def train_controller(model_save_path):
     dyn = torch.load(dynamics_path)
 
-    dataset = ImgConDataset(width=8, height=8, radius=1)
+    dataset = ImgConDataset(width=8, height=8, radius=1, nr_actions=nr_actions)
+    print("Number of data", len(dataset))
     trainloader = torch.utils.data.DataLoader(
         dataset, batch_size=8, shuffle=True, num_workers=0
     )
@@ -70,7 +102,7 @@ def train_controller(model_save_path):
     con = ImgController(8, 8, nr_actions=nr_actions)
     con_optimizer = optim.SGD(con.parameters(), lr=learning_rate, momentum=0.9)
 
-    for epoch in range(100):
+    for epoch in range(nr_epochs):
         epoch_loss = 0
         for i, data in enumerate(trainloader):
             con_optimizer.zero_grad()
@@ -107,11 +139,13 @@ def test_controller(model_save_path):
     test_img[0, 4:7, 3:6] = 1
 
     test_img_out = torch.zeros(1, 8, 8)
-    test_img_out[0, 5:8, 2:5] = 1
+    test_img_out[0, 4:7, 2:5] = 1
 
     pred_cmd = con(test_img, test_img_out)
     print("predicted command", pred_cmd)
-    pred_img = dyn(test_img, pred_cmd[:, 0])
+    current_state = test_img.clone().float()
+    for action_ind in range(nr_actions):
+        current_state = dyn(current_state, pred_cmd[:, action_ind])
 
     plt.subplot(1, 3, 1)
     plt.imshow(test_img[0].numpy())
@@ -120,11 +154,26 @@ def test_controller(model_save_path):
     plt.imshow(test_img_out[0].detach().numpy())
     plt.title("Desired out img")
     plt.subplot(1, 3, 3)
-    plt.imshow(pred_img[0].detach().numpy())
+    plt.imshow(current_state[0].detach().numpy())
     plt.show()
 
 
 if __name__ == "__main__":
-    model_save_path = "trained_models/img/four_action"
-    train_controller(model_save_path)
-    # test_controller(model_save_path)
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-s",
+        "--save",
+        type=str,
+        default="test_model",
+        help="Name to save or load model"
+    )
+    parser.add_argument(
+        "-t", "--train", action="store_true", help="if 1 then train"
+    )
+    args = parser.parse_args()
+
+    model_path = "trained_models/img/" + args.save
+    if args.train:
+        train_controller(model_path)
+    else:
+        test_controller(model_path)
