@@ -12,9 +12,16 @@ from neural_control.dynamics.image_dynamics import ImageDataset, ImgDynamics
 
 class ImgConDataset(ImageDataset):
 
-    def __init__(self, width=20, height=20, radius=1, nr_actions=4):
+    def __init__(
+        self,
+        width=20,
+        height=20,
+        radius=1,
+        nr_actions=4,
+        return_centers=False
+    ):
         super().__init__(width=width, height=height, radius=radius)
-
+        self.return_centers = return_centers
         self.nr_images = len(self.images)
 
         self.feasible_combinations = []
@@ -37,6 +44,11 @@ class ImgConDataset(ImageDataset):
         img_1 = self.images[img_1_index]
         img_2 = self.images[img_2_index]
         # print(self.centers[img_1_index], self.centers[img_2_index])
+        if self.return_centers:
+            return (
+                img_1, img_2, self.centers[img_1_index],
+                self.centers[img_2_index]
+            )
         return img_1, img_2
 
 
@@ -86,6 +98,8 @@ class ImgController(torch.nn.Module):
 # testing:
 dynamics_path = "neural_control/dynamics/image_model"
 nr_actions = 4
+radius = 1
+img_width, img_height = (8, 8)
 learning_rate = 0.00005
 nr_epochs = 200
 
@@ -99,7 +113,7 @@ def train_controller(model_save_path):
         dataset, batch_size=8, shuffle=True, num_workers=0
     )
 
-    con = ImgController(8, 8, nr_actions=nr_actions)
+    con = ImgController(img_width, img_height, nr_actions=nr_actions)
     con_optimizer = optim.SGD(con.parameters(), lr=learning_rate, momentum=0.9)
 
     for epoch in range(nr_epochs):
@@ -131,7 +145,73 @@ def train_controller(model_save_path):
     torch.save(con, model_save_path)
 
 
-def test_controller(model_save_path):
+def test_controller(model_save_path, mode="receding"):
+    """Run test of all possible combinations
+
+    Args:
+        model_save_path ([type]): Path to laod model from
+        mode (str, optional): Receding horizon or all at once.
+            Defaults to "receding".
+
+    Returns:
+        [type]: [description]
+    """
+
+    # helper function
+    def center_to_np(center):
+        return np.array([center[0].item(), center[1].item()])
+
+    # initialize controller and loader
+    controller = torch.load(model_save_path)
+    dataset = ImgConDataset(
+        width=img_width,
+        height=img_height,
+        radius=radius,
+        nr_actions=nr_actions,
+        return_centers=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        dataset, batch_size=1, shuffle=False, num_workers=0
+    )
+
+    correct = 0
+    for (img_1, img_2, center_1, center_2) in testloader:
+
+        current_state = img_1.clone().float()
+        current_center = center_1
+
+        pred_cmd_sequence = controller(current_state, img_2.float())
+        # print(pred_cmd_sequence)
+
+        # predict action, apply
+        with torch.no_grad():
+            for i in range(4):
+                # predict with receding horizon
+                if mode == "receding":
+                    pred_cmd = controller(current_state, img_2.float())[:, 0]
+                else:
+                    pred_cmd = pred_cmd_sequence[:, i]
+
+                cmd_np = pred_cmd[0].detach().numpy()
+                cmd_rounded = np.around(cmd_np)
+                # apply
+                current_center = dataset.move_ball(
+                    current_center, cmd_rounded[0], cmd_rounded[1]
+                )
+                # print(cmd_rounded, current_center)
+                current_state = get_torch_img(
+                    get_img(img_width, img_height, current_center, radius)
+                )
+        if np.all(center_to_np(center_2) == current_center):
+            correct += 1
+
+    print(
+        "Correct", correct, "all", len(testloader), "Accuracy:",
+        correct / len(testloader)
+    )
+
+
+def test_with_dyn_model(model_save_path):
     con = torch.load(model_save_path)
     dyn = torch.load(dynamics_path)
 
