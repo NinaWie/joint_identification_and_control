@@ -6,6 +6,25 @@ import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 
+img_width, img_height, radius = (10, 10, 1)
+nr_epochs = 200
+learning_rate = 0.0005
+
+ball_x_options = [-1, 0, 1]
+ball_y_options = [-1, 0, 1]
+knight_x_options = [0, 2, 1, -1, -2, -2, -1, 1, 2]
+knight_y_options = [0, 1, 2, 2, 1, -1, -2, -2, -1]
+
+
+def one_hot_to_cmd_ball(one_hot):
+    idx = np.argmax(one_hot)
+    return (ball_x_options[idx // 3], ball_y_options[idx % 3])
+
+
+def one_hot_to_cmd_knight(one_hot):
+    idx = np.argmax(one_hot)
+    return (knight_x_options[idx], knight_y_options[idx])
+
 
 class ImageDataset(torch.utils.data.Dataset):
 
@@ -34,13 +53,7 @@ class ImageDataset(torch.utils.data.Dataset):
 
         # commands: currently just x and y control, can be -1, 0, 1 for left,
         # stay, right
-        control_options = [-1, 0, 1]
-        self.commands = np.array(
-            [
-                [move_x, move_y] for move_x in control_options
-                for move_y in control_options
-            ]
-        )
+        self.commands = np.arange(9)
 
         # TODO: could precompute dataset: indices of out img for each inp_img -
         # command combination
@@ -49,12 +62,14 @@ class ImageDataset(torch.utils.data.Dataset):
         self.nr_data = len(centers) * len(self.commands)
         self.nr_commands = len(self.commands)
 
-    def move_ball(self, center, u1, u2):
+    def move_ball(self, center, command_index):
         """
         center: current center of the ball
         u1: control in left right direction
         u2: control in up down
         """
+        u1 = ball_x_options[command_index // 3]
+        u2 = ball_y_options[command_index % 3]
         x = max(
             [self.radius,
              min([center[0] + u1, self.width - self.radius - 1])]
@@ -64,6 +79,20 @@ class ImageDataset(torch.utils.data.Dataset):
                 self.radius,
                 min([center[1] + u2, self.height - self.radius - 1])
             ]
+        )
+        return [int(x), int(y)]
+
+    def move_knight(self, current_pos, move_ind):
+        """
+        Move ind defines one of nine moves
+        """
+        new_pos = np.array(current_pos) + np.array(
+            [knight_x_options[move_ind], knight_y_options[move_ind]]
+        )
+        x = max([self.radius, min([new_pos[0], self.width - self.radius - 1])])
+        y = max(
+            [self.radius,
+             min([new_pos[1], self.height - self.radius - 1])]
         )
         return [int(x), int(y)]
 
@@ -77,18 +106,18 @@ class ImageDataset(torch.utils.data.Dataset):
 
         img_index = self.inverse_centers[tuple(chosen_center)]
 
-        next_center = self.move_ball(
-            chosen_center, chosen_command[0], chosen_command[1]
-        )
+        next_center = self.move_knight(chosen_center, chosen_command)
         next_img_center = self.inverse_centers[tuple(next_center)]
 
-        return chosen_command, self.images[img_index], self.images[
-            next_img_center]
+        one_hot_cmd = np.zeros(self.nr_commands)
+        one_hot_cmd[chosen_command] = 1
+        return one_hot_cmd, self.images[img_index], self.images[next_img_center
+                                                                ]
 
 
 class ImgDynamics(torch.nn.Module):
 
-    def __init__(self, width, height, cmd_dim=2):
+    def __init__(self, width, height, cmd_dim=9):
         super(ImgDynamics, self).__init__()
         self.lin1 = nn.Linear(width * height + cmd_dim, 128)
         self.lin2 = nn.Linear(128, 64)
@@ -106,19 +135,19 @@ class ImgDynamics(torch.nn.Module):
         return x4
 
 
-def train_dynamics(model_save_path, nr_epochs=100):
+def train_dynamics(model_save_path):
     """Trains a model to learn the dynamics of the images
 
     Args:
         nr_epochs (int, optional): Defaults to 100.
     """
-    dataset = ImageDataset(width=8, height=8, radius=1)
+    dataset = ImageDataset(width=img_width, height=img_height, radius=radius)
     trainloader = torch.utils.data.DataLoader(
         dataset, batch_size=8, shuffle=True, num_workers=0
     )
 
-    dyn = ImgDynamics(8, 8)
-    optimizer = optim.SGD(dyn.parameters(), lr=0.001, momentum=0.9)
+    dyn = ImgDynamics(img_width, img_height)
+    optimizer = optim.SGD(dyn.parameters(), lr=learning_rate, momentum=0.9)
 
     for epoch in range(nr_epochs):
         epoch_loss = 0
@@ -140,10 +169,13 @@ def train_dynamics(model_save_path, nr_epochs=100):
 def test_dynamics(model_save_path):
     dyn = torch.load(model_save_path)
 
-    test_img = torch.zeros(1, 8, 8)
+    test_img = torch.zeros(1, img_width, img_height)
     test_img[0, 4:7, 3:6] = 1
-    test_cmd = torch.tensor([[-2, -2]])
+    test_cmd = torch.zeros(1, 9)
+    test_cmd[0, 1] = 1
     pred_img = dyn(test_img, test_cmd)
+
+    print("command", one_hot_to_cmd_knight(test_cmd))
 
     plt.subplot(1, 2, 1)
     plt.imshow(test_img[0].numpy())
@@ -154,7 +186,7 @@ def test_dynamics(model_save_path):
 
 if __name__ == "__main__":
     model_save_path = os.path.join(
-        Path(__file__).parent.absolute(), "image_model"
+        Path(__file__).parent.absolute(), "image_dyn_knight"
     )
     # train_dynamics(model_save_path)
     test_dynamics(model_save_path)
