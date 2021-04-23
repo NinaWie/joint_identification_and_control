@@ -85,9 +85,9 @@ class ImgController(torch.nn.Module):
 
 # testing:
 dynamics_path = "neural_control/dynamics/image_model"
-nr_actions = 1
-learning_rate = 0.0001
-nr_epochs = 100
+nr_actions = 4
+learning_rate = 0.00005
+nr_epochs = 200
 
 
 def train_controller(model_save_path):
@@ -139,22 +139,37 @@ def test_controller(model_save_path):
     test_img[0, 4:7, 3:6] = 1
 
     test_img_out = torch.zeros(1, 8, 8)
-    test_img_out[0, 4:7, 2:5] = 1
+    test_img_out[0, 0:3, 0:3] = 1
 
-    pred_cmd = con(test_img, test_img_out)
-    print("predicted command", pred_cmd)
     current_state = test_img.clone().float()
-    for action_ind in range(nr_actions):
-        current_state = dyn(current_state, pred_cmd[:, action_ind])
+    # apply all at once
+    # pred_cmd = con(test_img, test_img_out)
+    # print("predicted command", pred_cmd)
+    # for action_ind in range(nr_actions):
+    #     current_state = dyn(current_state, pred_cmd[:, action_ind])
 
-    plt.subplot(1, 3, 1)
-    plt.imshow(test_img[0].numpy())
-    plt.title("Input img")
-    plt.subplot(1, 3, 2)
-    plt.imshow(test_img_out[0].detach().numpy())
-    plt.title("Desired out img")
-    plt.subplot(1, 3, 3)
-    plt.imshow(current_state[0].detach().numpy())
+    plt.figure(figsize=(10, 10))
+    # Apply in receding horizon
+    for i in range(nr_actions):
+        pred_cmd = con(current_state, test_img_out)
+        current_state_before = current_state.clone()
+        print("predicted command", pred_cmd[0, 0])
+        current_state = dyn(current_state, pred_cmd[:, 0])
+
+        print(1 + i * 4)
+        plt.subplot(4, 3, 1 + i * 3)
+        plt.imshow(current_state_before[0].detach().numpy())
+        plt.title("Input img")
+        plt.subplot(4, 3, 2 + i * 3)
+        plt.imshow(test_img_out[0].detach().numpy())
+        plt.title("Target img")
+        plt.subplot(4, 3, 3 + i * 3)
+        plt.imshow(current_state[0].detach().numpy())
+        plt.title(
+            "Applying learnt\n command " +
+            str(np.around(pred_cmd[0, 0].detach().numpy(), 2).tolist())
+        )
+    plt.tight_layout()
     plt.show()
 
 
