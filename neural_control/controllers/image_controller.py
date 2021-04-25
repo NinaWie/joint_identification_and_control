@@ -126,11 +126,11 @@ class ImgController(torch.nn.Module):
 
 # testing:
 dynamics_path = "neural_control/dynamics/image_dyn_knight"
-nr_actions = 1
+nr_actions = 2
 radius = 1
 img_width, img_height = (8, 8)
-learning_rate = 0.00005
-nr_epochs = 400
+learning_rate = 0.0001
+nr_epochs = 1000
 
 
 def train_controller(model_save_path):
@@ -166,14 +166,14 @@ def train_controller(model_save_path):
             for action_ind in range(nr_actions):
                 action = cmd_predicted[:, action_ind]
                 current_state = dyn(current_state, action)
-                if action_ind == 0:
-                    intermediate = current_state
+                # if action_ind == 0:
+                #     intermediate = current_state
 
             # subtract first cmd to enforce high cmd in beginning
             loss_con = (
-                torch.sum((img_out - current_state)**2) +
+                torch.sum((img_out - current_state)**2)  # +
                 # add loss of first state to allow receding horizon!
-                torch.sum((img_out - intermediate)**2)
+                # torch.sum((img_out - intermediate)**2)
             )
             loss_con.backward()
             con_optimizer.step()
@@ -257,11 +257,24 @@ def test_with_dyn_model(model_save_path):
     con = torch.load(model_save_path)
     dyn = torch.load(dynamics_path)
 
-    test_img = torch.zeros(1, 8, 8)
-    test_img[0, 4:7, 3:6] = 1
+    state = (5, 4)
+    target = (1, 2)
 
+    x, y = state
+    test_img = torch.zeros(1, 8, 8)
+    start_x = max([0, x - radius])
+    end_x = min([x + radius + 1, img_width])
+    start_y = max([0, y - radius])
+    end_y = min([y + radius + 1, img_height])
+    test_img[0, start_x:end_x, start_y:end_y] = 1
+
+    x, y = target
     test_img_out = torch.zeros(1, 8, 8)
-    test_img_out[0, 0:3, 0:3] = 1
+    start_x = max([0, x - radius])
+    end_x = min([x + radius + 1, img_width])
+    start_y = max([0, y - radius])
+    end_y = min([y + radius + 1, img_height])
+    test_img_out[0, start_x:end_x, start_y:end_y] = 1
 
     current_state = test_img.clone().float()
     # apply all at once
@@ -275,22 +288,25 @@ def test_with_dyn_model(model_save_path):
     for i in range(nr_actions):
         pred_cmd = con(current_state, test_img_out)
         current_state_before = current_state.clone()
-        print("predicted command", pred_cmd[0, 0])
-        current_state = dyn(current_state, pred_cmd[:, 0])
 
-        print(1 + i * 4)
-        plt.subplot(4, 3, 1 + i * 3)
+        np_cmd = one_hot_to_cmd_knight(pred_cmd[0, 0].detach().numpy())
+        np.set_printoptions(suppress=1, precision=3)
+        print("orig command", pred_cmd[0, 0].detach().numpy())
+        print("predicted command", np_cmd)
+
+        transform_cmd = torch.zeros(pred_cmd[:, 0].size())
+        transform_cmd[0, np.argmax(pred_cmd[:, 0].detach().numpy())] = 1
+        current_state = dyn(current_state, transform_cmd)
+
+        plt.subplot(nr_actions, 3, 1 + i * 3)
         plt.imshow(current_state_before[0].detach().numpy())
-        plt.title("Input img")
-        plt.subplot(4, 3, 2 + i * 3)
+        plt.title("Input img\n" + str(state))
+        plt.subplot(nr_actions, 3, 2 + i * 3)
         plt.imshow(test_img_out[0].detach().numpy())
-        plt.title("Target img")
-        plt.subplot(4, 3, 3 + i * 3)
+        plt.title("Target img\n" + str(target))
+        plt.subplot(nr_actions, 3, 3 + i * 3)
         plt.imshow(current_state[0].detach().numpy())
-        plt.title(
-            "Applying learnt\n command " +
-            str(np.around(pred_cmd[0, 0].detach().numpy(), 2).tolist())
-        )
+        plt.title("Applying learnt\n command " + str(np_cmd))
     plt.tight_layout()
     plt.show()
 
