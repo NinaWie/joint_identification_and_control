@@ -7,14 +7,15 @@ import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 
-img_width, img_height, radius = (8, 8, 1)
-nr_epochs = 400
-learning_rate = 0.0001
+img_width, img_height, radius = (8, 8, 0)
+nr_epochs = 300
+learning_rate = 0.01
 
 ball_x_options = [-1, 0, 1]
 ball_y_options = [-1, 0, 1]
 knight_x_options = [0, 2, 1, -1, -2, -2, -1, 1, 2]
 knight_y_options = [0, 1, 2, 2, 1, -1, -2, -2, -1]
+image_bounds = np.array([img_width, img_height])
 
 
 def one_hot_to_cmd_ball(one_hot):
@@ -96,9 +97,14 @@ class ImageDataset(torch.utils.data.Dataset):
         new_pos = np.array(current_pos) + np.array(
             [knight_x_options[move_ind], knight_y_options[move_ind]]
         )
-        x = int(new_pos[0] % self.width)
-        y = int(new_pos[1] % self.height)
-        return [x, y]
+        if np.all(new_pos >= 0) and np.all(new_pos < image_bounds):
+            return new_pos.astype(int)
+        else:
+            return current_pos
+        # # previous version: crossing the borders
+        # x = int(new_pos[0] % self.width)
+        # y = int(new_pos[1] % self.height)
+        # return [x, y]
 
     def __len__(self):
         # can combine any center with any command
@@ -111,22 +117,27 @@ class ImageDataset(torch.utils.data.Dataset):
         img_index = self.inverse_centers[tuple(chosen_center)]
 
         next_center = self.move_knight(chosen_center, chosen_command)
-        next_img_center = self.inverse_centers[tuple(next_center)]
+        next_center_class = next_center[0] * self.width + next_center[1]
+        # next_img_center = self.inverse_centers[tuple(next_center)]
 
         one_hot_cmd = np.zeros(self.nr_commands)
         one_hot_cmd[chosen_command] = 1
-        return one_hot_cmd, self.images[img_index], self.images[next_img_center
-                                                                ]
+        return one_hot_cmd, self.images[img_index], next_center_class
 
 
 class ImgDynamics(torch.nn.Module):
 
-    def __init__(self, width, height, cmd_dim=9):
+    def __init__(self, width, height, cmd_dim=9, trainable=True):
         super(ImgDynamics, self).__init__()
         self.lin1 = nn.Linear(width * height + cmd_dim, 128)
         self.lin2 = nn.Linear(128, 64)
         self.lin3 = nn.Linear(64, 128)
         self.lin4 = nn.Linear(128, width * height)
+
+        self.trainable = trainable
+        if not trainable:
+            for param in self.parameters():
+                param.requires_grad = False
 
     def forward(self, x, cmd):
         inp = x.reshape((-1, x.size()[1] * x.size()[2]))
@@ -134,8 +145,10 @@ class ImgDynamics(torch.nn.Module):
         x1 = torch.relu(self.lin1(img_and_cmd))
         x2 = torch.relu(self.lin2(x1))
         x3 = torch.relu(self.lin3(x2))
-        x4 = torch.sigmoid(self.lin4(x3))
-        x4 = x4.reshape((-1, x.size()[1], x.size()[2]))
+        x4 = self.lin4(x3)
+        if not self.trainable:
+            x4 = torch.softmax(x4, dim=1)
+            x4 = x4.reshape((-1, x.size()[1], x.size()[2]))
         return x4
 
 
@@ -152,19 +165,31 @@ def train_dynamics(model_save_path):
 
     dyn = ImgDynamics(img_width, img_height)
     optimizer = optim.SGD(dyn.parameters(), lr=learning_rate, momentum=0.9)
+    entropy_loss = nn.CrossEntropyLoss()
 
     for epoch in range(nr_epochs):
         epoch_loss = 0
         for i, data in enumerate(trainloader):
             optimizer.zero_grad()
-            (cmd, img_in, img_out) = data
+            (cmd, img_in, center_out) = data
             img_out_predicted = dyn(img_in.float(), cmd.float())
 
-            loss = torch.sum((img_out - img_out_predicted)**2)
+            # # previous version: center loss
+            # center_loss = 0
+            # for k in range(8):
+            #     center_loss += (
+            #         img_out_predicted[k, center_out[k, 0], center_out[k, 1]] -
+            #         1
+            #     )**2
+            # torch.sum(
+            #     (img_out - img_out_predicted)**2
+            # ) + 10 * center_loss
+            loss = entropy_loss(img_out_predicted, center_out)
+
             loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
-        print(f"Epoch {epoch} loss {round(epoch_loss / i, 2)}")
+        print(f"Epoch {epoch} loss {round(epoch_loss*100 / i, 2)}")
 
     torch.save(dyn, model_save_path)
 
@@ -173,8 +198,8 @@ def test_dynamics(model_save_path):
     dyn = torch.load(model_save_path)
 
     # set some start center and a command
-    x, y = (0, 0)
-    cmd = 3
+    x, y = (4, 5)
+    cmd = 2
 
     test_img = torch.zeros(1, img_width, img_height)
 
@@ -184,11 +209,17 @@ def test_dynamics(model_save_path):
     end_y = min([y + radius + 1, img_height])
 
     test_img[0, start_x:end_x, start_y:end_y] = 1
+
     test_cmd = torch.zeros(1, 9)
     test_cmd[0, cmd] = 1
+    # test_cmd = torch.rand(1, 9)
+    # print("random cmd", test_cmd)
 
     # run network
     pred_img = dyn(test_img, test_cmd)
+    pred_img = torch.softmax(pred_img,
+                             dim=1).reshape((-1, img_width, img_height))
+    # print(pred_img)
 
     np_command = one_hot_to_cmd_knight(test_cmd)
     print("command", np_command)
