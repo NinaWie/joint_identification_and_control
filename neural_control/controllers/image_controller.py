@@ -7,34 +7,17 @@ import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 
-from neural_control.dynamics.image_dynamics import (
-    ImageDataset, ImgDynamics, one_hot_to_cmd_knight, one_hot_to_cmd_ball
+from neural_control.dynamics.image_dynamics import (ImageDataset, ImgDynamics)
+from neural_control.controllers.utils_image import (
+    img_height, img_width, number_moves_knight, number_moves_ball,
+    get_torch_img, get_img, radius, test_qualitatively
 )
 
-
-def number_moves_knight(x, y):
-    # switch if necessary
-    if x < y:
-        temp = x
-        x = y
-        y = temp
-
-    # 2 corner cases
-    if x == 1 and y == 0:
-        return 3
-    if x == 2 and y == 2:
-        return 4
-
-    delta = x - y
-
-    if y > delta:
-        return delta - 2 * np.floor((delta - y) / 3)
-    else:
-        return delta - 2 * np.floor((delta - y) / 4)
-
-
-def number_moves_ball(x, y):
-    return max([x, y])
+# testing:
+dynamics_path = "neural_control/dynamics/img_dyn_knight_single"
+nr_actions = 1
+learning_rate = 0.001
+nr_epochs = 1000
 
 
 class ImgConDataset(ImageDataset):
@@ -80,23 +63,6 @@ class ImgConDataset(ImageDataset):
         return img_1, img_2
 
 
-def get_img(img_width, img_height, center, radius):
-    img = np.zeros((img_width, img_height))
-    img[center[0] - radius:center[0] + radius + 1,
-        center[1] - radius:center[1] + radius + 1] = 1
-    return img
-
-
-def get_torch_img(np_img):
-    return torch.tensor([np_img.tolist()]).float()
-
-
-def round_diff(x):
-    slope = 10
-    e = torch.exp(slope * (x - .5))
-    return e / (e + 1)
-
-
 class ImgController(torch.nn.Module):
 
     def __init__(self, width, height, nr_actions=1, cmd_dim=9):
@@ -110,6 +76,10 @@ class ImgController(torch.nn.Module):
         self.lin3 = nn.Linear(64, cmd_dim * nr_actions)
 
     def forward(self, img_1, img_2):
+        # self.conv1 = nn.Conv2d(3, 6, 5)
+        # self.pool = nn.MaxPool2d(2, 2)
+        # self.conv2 = nn.Conv2d(6, 16, 5)
+        # self.fc1 = nn.Linear(16 * 5 * 5, 120)
         img_1 = img_1.reshape((-1, img_1.size()[1] * img_1.size()[2]))
         img_2 = img_2.reshape((-1, img_2.size()[1] * img_2.size()[2]))
         img_1_layer = torch.relu(self.lin_img_1(img_1))
@@ -124,17 +94,11 @@ class ImgController(torch.nn.Module):
         return cmd
 
 
-# testing:
-dynamics_path = "neural_control/dynamics/image_dyn_knight"
-nr_actions = 2
-radius = 1
-img_width, img_height = (8, 8)
-learning_rate = 0.0001
-nr_epochs = 1000
-
-
 def train_controller(model_save_path):
     dyn = torch.load(dynamics_path)
+    dyn.trainable = False
+    for param in dyn.parameters():
+        param.requires_grad = False
 
     dataset = ImgConDataset(
         width=img_width,
@@ -149,6 +113,8 @@ def train_controller(model_save_path):
 
     con = ImgController(img_width, img_height, nr_actions=nr_actions)
     con_optimizer = optim.SGD(con.parameters(), lr=learning_rate, momentum=0.9)
+
+    losses = []
 
     for epoch in range(nr_epochs):
         epoch_loss = 0
@@ -166,20 +132,15 @@ def train_controller(model_save_path):
             for action_ind in range(nr_actions):
                 action = cmd_predicted[:, action_ind]
                 current_state = dyn(current_state, action)
-                # if action_ind == 0:
-                #     intermediate = current_state
 
             # subtract first cmd to enforce high cmd in beginning
-            loss_con = (
-                torch.sum((img_out - current_state)**2)  # +
-                # add loss of first state to allow receding horizon!
-                # torch.sum((img_out - intermediate)**2)
-            )
+            loss_con = (torch.sum((img_out - current_state)**2))
             loss_con.backward()
             con_optimizer.step()
             epoch_loss += loss_con.item()
 
         print(f"Epoch {epoch} loss {round(epoch_loss / i, 2)}")
+        losses.append(epoch_loss / i)
         if epoch % 20 == 0:
             print("example command:", cmd_predicted[0])
 
@@ -246,69 +207,15 @@ def test_controller(model_save_path, mode="all"):
                 )
         if np.all(center_to_np(center_2) == current_center):
             correct += 1
+        # else:
+        #     print(
+        #         current_center, center_to_np(center_2), center_to_np(center_1)
+        #     )
 
     print(
         "Correct", correct, "all", len(testloader), "Accuracy:",
         correct / len(testloader)
     )
-
-
-def test_with_dyn_model(model_save_path):
-    con = torch.load(model_save_path)
-    dyn = torch.load(dynamics_path)
-
-    state = (5, 4)
-    target = (1, 2)
-
-    x, y = state
-    test_img = torch.zeros(1, 8, 8)
-    start_x = max([0, x - radius])
-    end_x = min([x + radius + 1, img_width])
-    start_y = max([0, y - radius])
-    end_y = min([y + radius + 1, img_height])
-    test_img[0, start_x:end_x, start_y:end_y] = 1
-
-    x, y = target
-    test_img_out = torch.zeros(1, 8, 8)
-    start_x = max([0, x - radius])
-    end_x = min([x + radius + 1, img_width])
-    start_y = max([0, y - radius])
-    end_y = min([y + radius + 1, img_height])
-    test_img_out[0, start_x:end_x, start_y:end_y] = 1
-
-    current_state = test_img.clone().float()
-    # apply all at once
-    # pred_cmd = con(test_img, test_img_out)
-    # print("predicted command", pred_cmd)
-    # for action_ind in range(nr_actions):
-    #     current_state = dyn(current_state, pred_cmd[:, action_ind])
-
-    plt.figure(figsize=(10, 10))
-    # Apply in receding horizon
-    for i in range(nr_actions):
-        pred_cmd = con(current_state, test_img_out)
-        current_state_before = current_state.clone()
-
-        np_cmd = one_hot_to_cmd_knight(pred_cmd[0, 0].detach().numpy())
-        np.set_printoptions(suppress=1, precision=3)
-        print("orig command", pred_cmd[0, 0].detach().numpy())
-        print("predicted command", np_cmd)
-
-        transform_cmd = torch.zeros(pred_cmd[:, 0].size())
-        transform_cmd[0, np.argmax(pred_cmd[:, 0].detach().numpy())] = 1
-        current_state = dyn(current_state, transform_cmd)
-
-        plt.subplot(nr_actions, 3, 1 + i * 3)
-        plt.imshow(current_state_before[0].detach().numpy())
-        plt.title("Input img\n" + str(state))
-        plt.subplot(nr_actions, 3, 2 + i * 3)
-        plt.imshow(test_img_out[0].detach().numpy())
-        plt.title("Target img\n" + str(target))
-        plt.subplot(nr_actions, 3, 3 + i * 3)
-        plt.imshow(current_state[0].detach().numpy())
-        plt.title("Applying learnt\n command " + str(np_cmd))
-    plt.tight_layout()
-    plt.show()
 
 
 if __name__ == "__main__":
@@ -327,6 +234,9 @@ if __name__ == "__main__":
 
     model_path = "trained_models/img/" + args.save
     if args.train:
-        train_controller(model_path)
+        losses = train_controller(model_path)
+        plt.plot(losses)
+        plt.show()
     else:
         test_controller(model_path)
+    test_qualitatively(model_path, dynamics_path, nr_actions)

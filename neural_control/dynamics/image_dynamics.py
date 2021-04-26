@@ -7,25 +7,13 @@ import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 
-img_width, img_height, radius = (8, 8, 0)
+from neural_control.controllers.utils_image import (
+    img_height, img_width, knight_x_options, knight_y_options, ball_x_options,
+    ball_y_options, radius, one_hot_to_cmd_knight, image_bounds
+)
+
 nr_epochs = 300
 learning_rate = 0.01
-
-ball_x_options = [-1, 0, 1]
-ball_y_options = [-1, 0, 1]
-knight_x_options = [0, 2, 1, -1, -2, -2, -1, 1, 2]
-knight_y_options = [0, 1, 2, 2, 1, -1, -2, -2, -1]
-image_bounds = np.array([img_width, img_height])
-
-
-def one_hot_to_cmd_ball(one_hot):
-    idx = np.argmax(one_hot)
-    return (ball_x_options[idx // 3], ball_y_options[idx % 3])
-
-
-def one_hot_to_cmd_knight(one_hot):
-    idx = np.argmax(one_hot)
-    return (knight_x_options[idx], knight_y_options[idx])
 
 
 class ImageDataset(torch.utils.data.Dataset):
@@ -135,9 +123,6 @@ class ImgDynamics(torch.nn.Module):
         self.lin4 = nn.Linear(128, width * height)
 
         self.trainable = trainable
-        if not trainable:
-            for param in self.parameters():
-                param.requires_grad = False
 
     def forward(self, x, cmd):
         inp = x.reshape((-1, x.size()[1] * x.size()[2]))
