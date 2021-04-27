@@ -124,18 +124,17 @@ class NewImgDataset(ImageDataset):
         img_index = self.inverse_centers[tuple(chosen_center)]
 
         # construct command
-        rand_cmd = torch.rand(9)**2
+        if index % 5 == 0:
+            cmd_ind = self.commands[index % self.nr_commands]
+            rand_cmd = torch.zeros(9)
+            rand_cmd[cmd_ind] = 1
+        else:
+            rand_cmd = torch.rand(9)**2
 
-        gt_img = np.zeros((self.width, self.height))
-        for i, cmd_sig in enumerate(rand_cmd):
-            if cmd_sig > 0.2:
-                new_center = self.move_knight(chosen_center, i)
-                gt_img[tuple(list(new_center))] += cmd_sig
-        gt_img = np.clip(gt_img, 0, 1)
+        new_center = self.move_knight(chosen_center, np.argmax(rand_cmd))
 
-        return rand_cmd, self.images[img_index], gt_img.reshape(
-            (self.width * self.height)
-        )
+        return rand_cmd, self.images[
+            img_index], new_center[0] * self.width + new_center[1]
 
 
 class ImgDynamics(torch.nn.Module):
@@ -181,26 +180,10 @@ def train_dynamics(model_save_path):
         epoch_loss = 0
         for i, data in enumerate(trainloader):
             optimizer.zero_grad()
-            (cmd, img_in, img_out) = data
+            (cmd, img_in, center_out) = data
             img_out_predicted = dyn(img_in.float(), cmd.float())
 
-            # # previous version: center loss
-            # center_loss = 0
-            # for k in range(8):
-            #     center_loss += (
-            #         img_out_predicted[k, center_out[k, 0], center_out[k, 1]] -
-            #         1
-            #     )**2
-            # print(cmd[0])
-            # print(img_in[0])
-            # print(img_out[0])  #.reshape(8, 8))
-            # print()
-            # loss = torch.sum(
-            #     (img_out - img_out_predicted)**2
-            # )  # + 10 * center_loss
-            loss = entropy_loss(
-                img_out_predicted, torch.argmax(img_out, dim=1)
-            )
+            loss = entropy_loss(img_out_predicted, center_out)
 
             loss.backward()
             optimizer.step()
@@ -226,10 +209,14 @@ def test_dynamics(dyn=None, model_save_path=None):
     )
     correct = 0
     for (cmd, img_in, center_out) in testloader:
+        # ATTENTION: only testing accuracy on one hots - otherwise comment:
+        one_hot_cmd = torch.zeros(cmd.size())
+        one_hot_cmd[0, torch.argmax(cmd)] = 1
+
         with torch.no_grad():
-            img_out_predicted = dyn(img_in.float(), cmd.float())
+            img_out_predicted = dyn(img_in.float(), one_hot_cmd.float())
         max_arg = torch.argmax(img_out_predicted)
-        if max_arg == torch.argmax(center_out):
+        if max_arg == center_out:
             correct += 1
     print(
         "Correct", correct, "all", len(testloader), "Accuracy:",
@@ -240,40 +227,34 @@ def test_dynamics(dyn=None, model_save_path=None):
 def test_qualitative(model_save_path):
     dyn = torch.load(model_save_path)
 
-    # set some start center and a command
-    x, y = (4, 5)
-    cmd = 2
-
-    test_img = torch.zeros(1, img_width, img_height)
-
-    start_x = max([0, x - radius])
-    end_x = min([x + radius + 1, img_width])
-    start_y = max([0, y - radius])
-    end_y = min([y + radius + 1, img_height])
-
-    test_img[0, start_x:end_x, start_y:end_y] = 1
-
-    test_cmd = torch.zeros(1, 9)
-    test_cmd[0, cmd] = 1
-    test_cmd = torch.rand(1, 9)**2
-    print("random cmd", test_cmd)
+    dataset = NewImgDataset(width=img_width, height=img_height, radius=radius)
+    testloader = torch.utils.data.DataLoader(
+        dataset, batch_size=1, shuffle=True, num_workers=0
+    )
+    for i, (test_cmd, img_in, center_out) in enumerate(testloader):
+        if i > 0:
+            break
+    # # optionally check what happens if it's very evenly distributed
+    # test_cmd = torch.softmax(test_cmd, dim=1)
 
     # run network
-    pred_img = dyn(test_img, test_cmd)
+    pred_img = dyn(img_in.float(), test_cmd.float())
     pred_img = torch.softmax(pred_img,
                              dim=1).reshape((-1, img_width, img_height))
-    # print(pred_img)
 
     np_command = one_hot_to_cmd_knight(test_cmd)
+    print("raw cmd", test_cmd)
     print("command", np_command)
 
     # compute desired out image
+    target_cen_x, target_cen_y = [
+        center_out // img_width, center_out % img_width
+    ]
     out_img = torch.zeros(1, img_width, img_height)
-    out_img[0, x + np_command[0] - radius:x + np_command[0] + 1 + radius,
-            y + np_command[1] - radius:y + np_command[1] + radius + 1] = 1
+    out_img[0, target_cen_x, target_cen_y] = 1
 
     plt.subplot(1, 3, 1)
-    plt.imshow(test_img[0].numpy())
+    plt.imshow(img_in[0].numpy())
     plt.title("Start state")
     plt.subplot(1, 3, 2)
     plt.imshow(out_img[0].numpy())
