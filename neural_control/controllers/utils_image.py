@@ -68,7 +68,7 @@ def test_qualitatively(model_save_path, dynamics_path, nr_actions):
     dyn.trainable = False
 
     state = (4, 5)
-    target = (2, 4)
+    target = (1, 2)
 
     x, y = state
     test_img = torch.zeros(1, 8, 8)
@@ -104,8 +104,9 @@ def test_qualitatively(model_save_path, dynamics_path, nr_actions):
         print("raw command", pred_cmd[0, 0].detach().numpy())
         print("predicted command", np_cmd)
 
-        transform_cmd = torch.zeros(pred_cmd[:, 0].size())
-        transform_cmd[0, np.argmax(pred_cmd[:, 0].detach().numpy())] = 1
+        transform_cmd = pred_cmd[:, 0]
+        # transform_cmd = torch.zeros(pred_cmd[:, 0].size())
+        # transform_cmd[0, np.argmax(pred_cmd[:, 0].detach().numpy())] = 1
         current_state = dyn(current_state, transform_cmd)
 
         plt.subplot(nr_actions, 3, 1 + i * 3)

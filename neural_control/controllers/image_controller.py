@@ -11,14 +11,14 @@ from torch.distributions import Categorical
 from neural_control.dynamics.image_dynamics import (ImageDataset, ImgDynamics)
 from neural_control.controllers.utils_image import (
     img_height, img_width, number_moves_knight, number_moves_ball,
-    get_torch_img, get_img, radius, test_qualitatively
+    get_torch_img, get_img, radius, test_qualitatively, round_diff
 )
 
 # testing:
 dynamics_path = "neural_control/dynamics/img_dyn_knight_rand"
-nr_actions = 1
-learning_rate = 0.0005
-nr_epochs = 1000
+nr_actions = 2
+learning_rate = 0.025
+nr_epochs = 2000
 
 
 class ImgConDataset(ImageDataset):
@@ -116,6 +116,8 @@ def train_controller(model_save_path):
 
     losses = []
     min_loss = np.inf
+    entropy_loss = nn.CrossEntropyLoss()
+    bce_loss = nn.BCELoss()
 
     for epoch in range(nr_epochs):
         epoch_loss = 0
@@ -137,17 +139,26 @@ def train_controller(model_save_path):
             # print(action[0])
             # print(current_state[0].detach().numpy())
 
-            # subtract first cmd to enforce high cmd in beginning
-            loss_con = (torch.sum((img_out - current_state)**2))
+            current_state_flat = current_state.reshape(
+                (-1, img_width * img_height)
+            )
+            target_flat = img_out.reshape((-1, img_width * img_height)).float()
+            # gt_argmax = torch.argmax(target_flat, dim=1)
+            # loss_con = entropy_loss(current_state_flat, gt_argmax)
+            # loss_con = (torch.sum((img_out - current_state)**2))
+            loss_con = bce_loss(current_state_flat, target_flat)
+
             loss_con.backward()
             con_optimizer.step()
             epoch_loss += loss_con.item()
 
         losses.append(epoch_loss / i)
         if epoch % 20 == 0:
-            print(f"Epoch {epoch} loss {round(epoch_loss / i, 2)}")
+            print()
+            print(f"Epoch {epoch} loss {round(epoch_loss / i * 100, 2)}")
             print("example command:", cmd_predicted[0])
             if losses[-1] <= min_loss:
+                min_loss = losses[-1]
                 torch.save(con, model_save_path + "_min")
             test_controller(model_save_path=None, con=con)
 
