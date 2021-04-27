@@ -15,9 +15,9 @@ from neural_control.controllers.utils_image import (
 )
 
 # testing:
-dynamics_path = "neural_control/dynamics/img_dyn_knight_rand_2"
-nr_actions = 2
-learning_rate = 0.001
+dynamics_path = "neural_control/dynamics/img_dyn_knight_rand"
+nr_actions = 1
+learning_rate = 0.0005
 nr_epochs = 1000
 
 
@@ -70,28 +70,27 @@ class ImgController(torch.nn.Module):
         super(ImgController, self).__init__()
         self.nr_actions = nr_actions
         self.cmd_dim = cmd_dim
+        self.conv1 = nn.Conv2d(2, 6, 3)
+        self.conv2 = nn.Conv2d(6, 10, 3)
         self.lin_img_1 = nn.Linear(width * height, 128)
         self.lin_img_2 = nn.Linear(width * height, 128)
-        self.lin1 = nn.Linear(256, 128)
+        self.lin1 = nn.Linear(160, 128)
         self.lin2 = nn.Linear(128, 64)
         self.lin3 = nn.Linear(64, cmd_dim * nr_actions)
 
     def forward(self, img_1, img_2):
-        # self.conv1 = nn.Conv2d(3, 6, 5)
-        # self.pool = nn.MaxPool2d(2, 2)
-        # self.conv2 = nn.Conv2d(6, 16, 5)
-        # self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        img_1 = img_1.reshape((-1, img_1.size()[1] * img_1.size()[2]))
-        img_2 = img_2.reshape((-1, img_2.size()[1] * img_2.size()[2]))
-        img_1_layer = torch.relu(self.lin_img_1(img_1))
-        img_2_layer = torch.relu(self.lin_img_2(img_2))
-        both_images = torch.cat([img_1_layer, img_2_layer], dim=1)
+        both_images = torch.cat(
+            (torch.unsqueeze(img_1, 1), torch.unsqueeze(img_2, 1)), dim=1
+        )
+        conv1 = torch.relu(self.conv1(both_images))
+        conv2 = torch.relu(self.conv2(conv1))
+        flattened = conv2.reshape((-1, 160))
 
-        x1 = torch.relu(self.lin1(both_images))
+        x1 = torch.relu(self.lin1(flattened))
         x2 = torch.relu(self.lin2(x1))
         x3 = self.lin3(x2)
         cmd = x3.reshape((-1, self.nr_actions, self.cmd_dim))
-        cmd = torch.sigmoid(cmd)**2
+        cmd = torch.softmax(cmd, dim=2)
         return cmd
 
 
@@ -116,6 +115,7 @@ def train_controller(model_save_path):
     con_optimizer = optim.SGD(con.parameters(), lr=learning_rate, momentum=0.9)
 
     losses = []
+    min_loss = np.inf
 
     for epoch in range(nr_epochs):
         epoch_loss = 0
@@ -133,6 +133,9 @@ def train_controller(model_save_path):
             for action_ind in range(nr_actions):
                 action = cmd_predicted[:, action_ind]
                 current_state = dyn(current_state, action)
+            # np.set_printoptions(precision=2, suppress=1)
+            # print(action[0])
+            # print(current_state[0].detach().numpy())
 
             # subtract first cmd to enforce high cmd in beginning
             loss_con = (torch.sum((img_out - current_state)**2))
@@ -144,12 +147,15 @@ def train_controller(model_save_path):
         if epoch % 20 == 0:
             print(f"Epoch {epoch} loss {round(epoch_loss / i, 2)}")
             print("example command:", cmd_predicted[0])
+            if losses[-1] <= min_loss:
+                torch.save(con, model_save_path + "_min")
+            test_controller(model_save_path=None, con=con)
 
     torch.save(con, model_save_path)
     return losses
 
 
-def test_controller(model_save_path, mode="receding"):
+def test_controller(model_save_path=None, con=None, mode="receding"):
     """Run test of all possible combinations
 
     Args:
@@ -166,7 +172,10 @@ def test_controller(model_save_path, mode="receding"):
         return np.array([center[0].item(), center[1].item()])
 
     # initialize controller and loader
-    controller = torch.load(model_save_path)
+    if con is not None:
+        controller = con
+    else:
+        controller = torch.load(model_save_path)
     dataset = ImgConDataset(
         width=img_width,
         height=img_height,
@@ -240,5 +249,5 @@ if __name__ == "__main__":
         plt.plot(losses)
         plt.show()
     else:
-        test_controller(model_path)
-    test_qualitatively(model_path, dynamics_path, nr_actions)
+        test_controller(model_path + "_min")
+    test_qualitatively(model_path + "_min", dynamics_path, nr_actions)
