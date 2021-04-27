@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
+from torch.distributions import Categorical
 
 from neural_control.dynamics.image_dynamics import (ImageDataset, ImgDynamics)
 from neural_control.controllers.utils_image import (
@@ -14,7 +15,7 @@ from neural_control.controllers.utils_image import (
 )
 
 # testing:
-dynamics_path = "neural_control/dynamics/img_dyn_knight_single"
+dynamics_path = "neural_control/dynamics/img_dyn_knight_rand_2"
 nr_actions = 1
 learning_rate = 0.001
 nr_epochs = 1000
@@ -90,7 +91,7 @@ class ImgController(torch.nn.Module):
         x2 = torch.relu(self.lin2(x1))
         x3 = self.lin3(x2)
         cmd = x3.reshape((-1, self.nr_actions, self.cmd_dim))
-        cmd = torch.softmax(cmd, dim=2)
+        cmd = torch.sigmoid(cmd)**2
         return cmd
 
 
@@ -139,12 +140,13 @@ def train_controller(model_save_path):
             con_optimizer.step()
             epoch_loss += loss_con.item()
 
-        print(f"Epoch {epoch} loss {round(epoch_loss / i, 2)}")
         losses.append(epoch_loss / i)
         if epoch % 20 == 0:
+            print(f"Epoch {epoch} loss {round(epoch_loss / i, 2)}")
             print("example command:", cmd_predicted[0])
 
     torch.save(con, model_save_path)
+    return losses
 
 
 def test_controller(model_save_path, mode="all"):
@@ -196,6 +198,7 @@ def test_controller(model_save_path, mode="all"):
 
                 cmd_np = pred_cmd[0].detach().numpy()
                 cmd_argmax = np.argmax(cmd_np)
+                print(cmd_argmax)
 
                 # apply
                 current_center = dataset.move_knight(

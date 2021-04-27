@@ -9,10 +9,10 @@ import matplotlib.pyplot as plt
 
 from neural_control.controllers.utils_image import (
     img_height, img_width, knight_x_options, knight_y_options, ball_x_options,
-    ball_y_options, radius, one_hot_to_cmd_knight, image_bounds
+    ball_y_options, radius, one_hot_to_cmd_knight, image_bounds, round_diff
 )
 
-nr_epochs = 300
+nr_epochs = 2000
 learning_rate = 0.01
 
 
@@ -113,6 +113,31 @@ class ImageDataset(torch.utils.data.Dataset):
         return one_hot_cmd, self.images[img_index], next_center_class
 
 
+class NewImgDataset(ImageDataset):
+
+    def __init__(self, width=20, height=20, radius=1):
+        super().__init__(width=width, height=height, radius=radius)
+
+    def __getitem__(self, index):
+        # retrieve state image
+        chosen_center = self.centers[index // self.nr_commands]
+        img_index = self.inverse_centers[tuple(chosen_center)]
+
+        # construct command
+        rand_cmd = torch.rand(9)**2
+
+        gt_img = np.zeros((self.width, self.height))
+        for i, cmd_sig in enumerate(rand_cmd):
+            if cmd_sig > 0.2:
+                new_center = self.move_knight(chosen_center, i)
+                gt_img[tuple(list(new_center))] += cmd_sig
+        gt_img = np.clip(gt_img, 0, 1)
+
+        return rand_cmd, self.images[img_index], gt_img.reshape(
+            (self.width * self.height)
+        )
+
+
 class ImgDynamics(torch.nn.Module):
 
     def __init__(self, width, height, cmd_dim=9, trainable=True):
@@ -143,7 +168,7 @@ def train_dynamics(model_save_path):
     Args:
         nr_epochs (int, optional): Defaults to 100.
     """
-    dataset = ImageDataset(width=img_width, height=img_height, radius=radius)
+    dataset = NewImgDataset(width=img_width, height=img_height, radius=radius)
     trainloader = torch.utils.data.DataLoader(
         dataset, batch_size=8, shuffle=True, num_workers=0
     )
@@ -156,7 +181,7 @@ def train_dynamics(model_save_path):
         epoch_loss = 0
         for i, data in enumerate(trainloader):
             optimizer.zero_grad()
-            (cmd, img_in, center_out) = data
+            (cmd, img_in, img_out) = data
             img_out_predicted = dyn(img_in.float(), cmd.float())
 
             # # previous version: center loss
@@ -166,20 +191,53 @@ def train_dynamics(model_save_path):
             #         img_out_predicted[k, center_out[k, 0], center_out[k, 1]] -
             #         1
             #     )**2
-            # torch.sum(
+            # print(cmd[0])
+            # print(img_in[0])
+            # print(img_out[0])  #.reshape(8, 8))
+            # print()
+            # loss = torch.sum(
             #     (img_out - img_out_predicted)**2
-            # ) + 10 * center_loss
-            loss = entropy_loss(img_out_predicted, center_out)
+            # )  # + 10 * center_loss
+            loss = entropy_loss(
+                img_out_predicted, torch.argmax(img_out, dim=1)
+            )
 
             loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
-        print(f"Epoch {epoch} loss {round(epoch_loss*100 / i, 2)}")
+        if epoch % 30 == 0:
+            print(f"Epoch {epoch} loss {round(epoch_loss*100 / i, 2)}")
+            test_dynamics(dyn=dyn)
 
     torch.save(dyn, model_save_path)
 
 
-def test_dynamics(model_save_path):
+def test_dynamics(dyn=None, model_save_path=None):
+    """
+    Run test of all possible combinations
+    """
+
+    # initialize controller and loader
+    if dyn is None:
+        dyn = torch.load(model_save_path)
+    dataset = NewImgDataset(width=img_width, height=img_height, radius=radius)
+    testloader = torch.utils.data.DataLoader(
+        dataset, batch_size=1, shuffle=False, num_workers=0
+    )
+    correct = 0
+    for (cmd, img_in, center_out) in testloader:
+        with torch.no_grad():
+            img_out_predicted = dyn(img_in.float(), cmd.float())
+        max_arg = torch.argmax(img_out_predicted)
+        if max_arg == torch.argmax(center_out):
+            correct += 1
+    print(
+        "Correct", correct, "all", len(testloader), "Accuracy:",
+        correct / len(testloader)
+    )
+
+
+def test_qualitative(model_save_path):
     dyn = torch.load(model_save_path)
 
     # set some start center and a command
@@ -197,8 +255,8 @@ def test_dynamics(model_save_path):
 
     test_cmd = torch.zeros(1, 9)
     test_cmd[0, cmd] = 1
-    # test_cmd = torch.rand(1, 9)
-    # print("random cmd", test_cmd)
+    test_cmd = torch.rand(1, 9)**2
+    print("random cmd", test_cmd)
 
     # run network
     pred_img = dyn(test_img, test_cmd)
@@ -245,4 +303,5 @@ if __name__ == "__main__":
     if args.train:
         train_dynamics(model_path)
     else:
-        test_dynamics(model_path)
+        test_dynamics(model_save_path=model_path)
+        test_qualitative(model_path)

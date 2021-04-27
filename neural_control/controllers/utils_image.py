@@ -57,8 +57,7 @@ def get_torch_img(np_img):
     return torch.tensor([np_img.tolist()]).float()
 
 
-def round_diff(x):
-    slope = 10
+def round_diff(x, slope=10):
     e = torch.exp(slope * (x - .5))
     return e / (e + 1)
 
@@ -68,8 +67,8 @@ def test_qualitatively(model_save_path, dynamics_path, nr_actions):
     dyn = torch.load(dynamics_path)
     dyn.trainable = False
 
-    state = (5, 2)
-    target = (5, 2)
+    state = (4, 5)
+    target = (5, 7)
 
     x, y = state
     test_img = torch.zeros(1, 8, 8)
