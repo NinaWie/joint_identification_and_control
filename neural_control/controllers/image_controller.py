@@ -16,7 +16,7 @@ from neural_control.controllers.utils_image import (
 
 # testing:
 dynamics_path = "neural_control/dynamics/img_dyn_knight_rand_2"
-nr_actions = 1
+nr_actions = 2
 learning_rate = 0.001
 nr_epochs = 1000
 
@@ -149,7 +149,7 @@ def train_controller(model_save_path):
     return losses
 
 
-def test_controller(model_save_path, mode="all"):
+def test_controller(model_save_path, mode="receding"):
     """Run test of all possible combinations
 
     Args:
@@ -198,7 +198,6 @@ def test_controller(model_save_path, mode="all"):
 
                 cmd_np = pred_cmd[0].detach().numpy()
                 cmd_argmax = np.argmax(cmd_np)
-                print(cmd_argmax)
 
                 # apply
                 current_center = dataset.move_knight(

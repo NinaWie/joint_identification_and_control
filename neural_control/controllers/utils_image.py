@@ -68,7 +68,7 @@ def test_qualitatively(model_save_path, dynamics_path, nr_actions):
     dyn.trainable = False
 
     state = (4, 5)
-    target = (5, 7)
+    target = (6, 1)
 
     x, y = state
     test_img = torch.zeros(1, 8, 8)
