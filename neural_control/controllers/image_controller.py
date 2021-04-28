@@ -19,8 +19,8 @@ from neural_control.controllers.utils_image import (
 # testing:
 dynamics_path = "neural_control/dynamics/img_knight_cmd"
 nr_actions = 1
-learning_rate = 0.001
-nr_epochs = 2000
+learning_rate = 0.0001
+nr_epochs = 5000
 
 knight_x_torch = torch.tensor([0, 2, 1, -1, -2, -2, -1, 1, 2])
 knight_y_torch = torch.tensor([0, 1, 2, 2, 1, -1, -2, -2, -1])
@@ -107,7 +107,7 @@ class ImgController(torch.nn.Module):
         return action
 
 
-def train_controller(model_save_path):
+def train_controller(model_save_path, load_model_from=None):
     dyn = torch.load(dynamics_path)
     dyn.trainable = False
     for param in dyn.parameters():
@@ -125,7 +125,12 @@ def train_controller(model_save_path):
     )
 
     con = ImgController(img_width, img_height, nr_actions=nr_actions)
-    con_optimizer = optim.SGD(con.parameters(), lr=learning_rate, momentum=0.9)
+    if load_model_from is not None:
+        con = torch.load(load_model_from)
+    con_optimizer = optim.Adam(
+        con.parameters(), lr=learning_rate, weight_decay=1e-3
+    )
+    # SGD(con.parameters(), lr=learning_rate, momentum=0.9)
 
     losses = []
     min_loss = np.inf
@@ -145,6 +150,9 @@ def train_controller(model_save_path):
 
             # pass through dynamics
             current_state = img_in.float()
+            target_flat = img_out.reshape((-1, img_width * img_height)).float()
+
+            loss_con = 0
             for action_ind in range(nr_actions):
                 action = cmd_predicted[:, action_ind]
                 ### sampling
@@ -162,19 +170,19 @@ def train_controller(model_save_path):
                 # print(torch.exp(m.log_prob(action_ind)))
                 ###
                 current_state = dyn(current_state, action)
+                current_state_flat = current_state.reshape(
+                    (-1, img_width * img_height)
+                )
+                loss_con += bce_loss(current_state_flat, target_flat)
             # np.set_printoptions(precision=2, suppress=1)
             # print(action[0])
             # print(current_state[0].detach().numpy())
             # print(img_out[0])
 
-            current_state_flat = current_state.reshape(
-                (-1, img_width * img_height)
-            )
-            target_flat = img_out.reshape((-1, img_width * img_height)).float()
             # gt_argmax = torch.argmax(target_flat, dim=1)
             # loss_con = entropy_loss(current_state_flat, gt_argmax)
             # loss_con = (torch.sum((img_out - current_state)**2))
-            loss_con = bce_loss(current_state_flat, target_flat)
+            # loss_con = bce_loss(current_state_flat, target_flat)
 
             loss_con.backward()
             con_optimizer.step()
@@ -194,7 +202,7 @@ def train_controller(model_save_path):
     return losses
 
 
-def test_controller(model_save_path=None, con=None, mode="receding"):
+def test_controller(model_save_path=None, con=None, mode="all"):
     """Run test of all possible combinations
 
     Args:
@@ -239,6 +247,8 @@ def test_controller(model_save_path=None, con=None, mode="receding"):
 
         pred_cmd_sequence = controller(current_state, img_2.float())
         # print(pred_cmd_sequence)
+        # print()
+        # print(center_to_np(center_1), "to", center_to_np(center_2))
 
         # predict action, apply
         with torch.no_grad():
@@ -253,16 +263,18 @@ def test_controller(model_save_path=None, con=None, mode="receding"):
                 # cmd_argmax = np.argmax(cmd_np)
                 # print("command in testing", one_hot_to_cmd_knight(cmd_np))
                 # print(pred_cmd.size(), current_state.size())
+                # # apply
+                # current_center = dataset.move_knight(
+                #     current_center, cmd_argmax
+                # )
                 out_dist = dyn(current_state, pred_cmd)
                 current_center = torch.argmax(out_dist)
                 current_center_x = current_center // img_height
                 current_center_y = current_center % img_height
-                current_center = (current_center_x, current_center_y)
-                # apply
-                # current_center = dataset.move_knight(
-                #     current_center, cmd_argmax
-                # )
-                # print(cmd_rounded, current_center)
+                current_center = (
+                    current_center_x.item(), current_center_y.item()
+                )
+                # print(pred_cmd, current_center)
                 current_state = get_torch_img(
                     get_img(img_width, img_height, current_center, radius)
                 )
@@ -295,6 +307,10 @@ if __name__ == "__main__":
 
     model_path = "trained_models/img/" + args.save
     if args.train:
+        # losses = train_controller(
+        #     model_path,
+        #     load_model_from="trained_models/img/con_knight_cmd_2_further_min"
+        # )
         losses = train_controller(model_path)
         plt.plot(losses)
         plt.show()
