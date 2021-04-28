@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 import torch
 import torch.nn as nn
+from torch.nn.functional import one_hot
 import torch.optim as optim
 import matplotlib.pyplot as plt
 from torch.distributions import Categorical
@@ -11,14 +12,18 @@ from torch.distributions import Categorical
 from neural_control.dynamics.image_dynamics import (ImageDataset, ImgDynamics)
 from neural_control.controllers.utils_image import (
     img_height, img_width, number_moves_knight, number_moves_ball,
-    get_torch_img, get_img, radius, test_qualitatively, round_diff
+    get_torch_img, get_img, radius, test_qualitatively, round_diff,
+    one_hot_to_cmd_knight
 )
 
 # testing:
-dynamics_path = "neural_control/dynamics/img_dyn_knight_rand"
-nr_actions = 2
-learning_rate = 0.025
+dynamics_path = "neural_control/dynamics/img_knight_cmd"
+nr_actions = 1
+learning_rate = 0.001
 nr_epochs = 2000
+
+knight_x_torch = torch.tensor([0, 2, 1, -1, -2, -2, -1, 1, 2])
+knight_y_torch = torch.tensor([0, 1, 2, 2, 1, -1, -2, -2, -1])
 
 
 class ImgConDataset(ImageDataset):
@@ -52,6 +57,7 @@ class ImgConDataset(ImageDataset):
         return self.nr_data
 
     def __getitem__(self, index):
+        # index = 2000
         (img_1_index, img_2_index) = self.feasible_combinations[index]
         img_1 = self.images[img_1_index]
         img_2 = self.images[img_2_index]
@@ -90,8 +96,15 @@ class ImgController(torch.nn.Module):
         x2 = torch.relu(self.lin2(x1))
         x3 = self.lin3(x2)
         cmd = x3.reshape((-1, self.nr_actions, self.cmd_dim))
-        cmd = torch.softmax(cmd, dim=2)
-        return cmd
+        action_probs = torch.softmax(cmd, dim=2)
+        x_vals = torch.unsqueeze(
+            torch.sum(action_probs * knight_x_torch, dim=2), dim=2
+        )
+        y_vals = torch.unsqueeze(
+            torch.sum(action_probs * knight_y_torch, dim=2), dim=2
+        )
+        action = torch.cat((x_vals, y_vals), dim=2)
+        return action
 
 
 def train_controller(model_save_path):
@@ -134,10 +147,25 @@ def train_controller(model_save_path):
             current_state = img_in.float()
             for action_ind in range(nr_actions):
                 action = cmd_predicted[:, action_ind]
+                ### sampling
+                # replace action above with probs
+                # m = Categorical(probs)
+                # action_ind = m.sample()
+                # action = one_hot(action_ind, num_classes=9)
+                # action = action * (
+                #     torch.unsqueeze(torch.exp(m.log_prob(action_ind)), 1)
+                # )
+                # print("probs", probs[0])
+                # print(probs.size(), action_ind.size(), action.size())
+                # print("action ind", action_ind)
+                # print("action", action)
+                # print(torch.exp(m.log_prob(action_ind)))
+                ###
                 current_state = dyn(current_state, action)
             # np.set_printoptions(precision=2, suppress=1)
             # print(action[0])
             # print(current_state[0].detach().numpy())
+            # print(img_out[0])
 
             current_state_flat = current_state.reshape(
                 (-1, img_width * img_height)
@@ -187,6 +215,8 @@ def test_controller(model_save_path=None, con=None, mode="receding"):
         controller = con
     else:
         controller = torch.load(model_save_path)
+
+    dyn = torch.load(dynamics_path)
     dataset = ImgConDataset(
         width=img_width,
         height=img_height,
@@ -199,7 +229,10 @@ def test_controller(model_save_path=None, con=None, mode="receding"):
     )
 
     correct = 0
-    for (img_1, img_2, center_1, center_2) in testloader:
+    for k, (img_1, img_2, center_1, center_2) in enumerate(testloader):
+        # if k > 0:
+        #     break
+        # print(center_1, center_2)
 
         current_state = img_1.clone().float()
         current_center = center_1
@@ -216,13 +249,19 @@ def test_controller(model_save_path=None, con=None, mode="receding"):
                 else:
                     pred_cmd = pred_cmd_sequence[:, i]
 
-                cmd_np = pred_cmd[0].detach().numpy()
-                cmd_argmax = np.argmax(cmd_np)
-
+                # cmd_np = pred_cmd[0].detach().numpy()
+                # cmd_argmax = np.argmax(cmd_np)
+                # print("command in testing", one_hot_to_cmd_knight(cmd_np))
+                # print(pred_cmd.size(), current_state.size())
+                out_dist = dyn(current_state, pred_cmd)
+                current_center = torch.argmax(out_dist)
+                current_center_x = current_center // img_height
+                current_center_y = current_center % img_height
+                current_center = (current_center_x, current_center_y)
                 # apply
-                current_center = dataset.move_knight(
-                    current_center, cmd_argmax
-                )
+                # current_center = dataset.move_knight(
+                #     current_center, cmd_argmax
+                # )
                 # print(cmd_rounded, current_center)
                 current_state = get_torch_img(
                     get_img(img_width, img_height, current_center, radius)

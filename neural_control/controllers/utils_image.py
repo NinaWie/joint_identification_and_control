@@ -36,6 +36,12 @@ def number_moves_ball(x, y):
     return max([x, y])
 
 
+def dice_loss(pred, target):
+    numerator = 2 * torch.sum(pred * target)
+    denominator = torch.sum(pred + target)
+    return 1 - (numerator + 1) / (denominator + 1)
+
+
 def one_hot_to_cmd_ball(one_hot):
     idx = np.argmax(one_hot)
     return (ball_x_options[idx // 3], ball_y_options[idx % 3])
@@ -62,13 +68,32 @@ def round_diff(x, slope=10):
     return e / (e + 1)
 
 
+def add_grid(ax):
+    ax.set_xticks(np.arange(-.5, img_width, 1 + 2 * radius))
+    ax.set_yticks(np.arange(-.5, img_height, 1 + 2 * radius))
+    ax.grid(color='w', linestyle='-', linewidth=1)
+    plt.grid(True)
+    ax.xaxis.set_ticklabels([])
+    ax.yaxis.set_ticklabels([])
+    ax.xaxis.set_ticks_position('none')
+    ax.yaxis.set_ticks_position('none')
+
+
 def test_qualitatively(model_save_path, dynamics_path, nr_actions):
+    """
+    ATTENTION: currently in receding horizon!
+
+    Args:
+        model_save_path ([type]): [description]
+        dynamics_path ([type]): [description]
+        nr_actions ([type]): [description]
+    """
     con = torch.load(model_save_path)
     dyn = torch.load(dynamics_path)
     dyn.trainable = False
 
     state = (4, 5)
-    target = (1, 2)
+    target = (2, 4)
 
     x, y = state
     test_img = torch.zeros(1, 8, 8)
@@ -96,6 +121,10 @@ def test_qualitatively(model_save_path, dynamics_path, nr_actions):
     plt.figure(figsize=(10, 10))
     # Apply in receding horizon
     for i in range(nr_actions):
+        input_center = torch.argmax(current_state).item()
+        input_center_x = input_center // img_height
+        input_center_y = input_center % img_height
+
         pred_cmd = con(current_state, test_img_out)
         current_state_before = current_state.clone()
 
@@ -107,16 +136,21 @@ def test_qualitatively(model_save_path, dynamics_path, nr_actions):
         transform_cmd = pred_cmd[:, 0]
         # transform_cmd = torch.zeros(pred_cmd[:, 0].size())
         # transform_cmd[0, np.argmax(pred_cmd[:, 0].detach().numpy())] = 1
+        # print(current_state)
+        # print(transform_cmd)
         current_state = dyn(current_state, transform_cmd)
 
-        plt.subplot(nr_actions, 3, 1 + i * 3)
-        plt.imshow(current_state_before[0].detach().numpy())
-        plt.title("Input img\n" + str(state))
-        plt.subplot(nr_actions, 3, 2 + i * 3)
-        plt.imshow(test_img_out[0].detach().numpy())
-        plt.title("Target img\n" + str(target))
-        plt.subplot(nr_actions, 3, 3 + i * 3)
-        plt.imshow(current_state[0].detach().numpy())
-        plt.title("Applying learnt\n command " + str(np_cmd))
+        ax1 = plt.subplot(nr_actions, 3, 1 + i * 3)
+        ax1.imshow(current_state_before[0].detach().numpy())
+        add_grid(ax1)
+        ax1.set_title("Input img\n" + str((input_center_x, input_center_y)))
+        ax2 = plt.subplot(nr_actions, 3, 2 + i * 3)
+        ax2.imshow(test_img_out[0].detach().numpy())
+        add_grid(ax2)
+        ax2.set_title("Target img\n" + str(target))
+        ax3 = plt.subplot(nr_actions, 3, 3 + i * 3)
+        ax3.imshow(current_state[0].detach().numpy())
+        add_grid(ax3)
+        ax3.set_title("Applying learnt\n command " + str(np_cmd))
     plt.tight_layout()
     plt.show()

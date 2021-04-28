@@ -9,10 +9,10 @@ import matplotlib.pyplot as plt
 
 from neural_control.controllers.utils_image import (
     img_height, img_width, knight_x_options, knight_y_options, ball_x_options,
-    ball_y_options, radius, one_hot_to_cmd_knight, image_bounds, round_diff
+    ball_y_options, radius, one_hot_to_cmd_knight, image_bounds, add_grid
 )
 
-nr_epochs = 2000
+nr_epochs = 150
 learning_rate = 0.01
 
 
@@ -108,9 +108,15 @@ class ImageDataset(torch.utils.data.Dataset):
         next_center_class = next_center[0] * self.width + next_center[1]
         # next_img_center = self.inverse_centers[tuple(next_center)]
 
-        one_hot_cmd = np.zeros(self.nr_commands)
-        one_hot_cmd[chosen_command] = 1
-        return one_hot_cmd, self.images[img_index], next_center_class
+        cmd_out = np.array(
+            [
+                knight_x_options[chosen_command],
+                knight_y_options[chosen_command]
+            ]
+        )
+        # one_hot_cmd = np.zeros(self.nr_commands)
+        # one_hot_cmd[chosen_command] = 1
+        return cmd_out, self.images[img_index], next_center_class
 
 
 class NewImgDataset(ImageDataset):
@@ -139,7 +145,7 @@ class NewImgDataset(ImageDataset):
 
 class ImgDynamics(torch.nn.Module):
 
-    def __init__(self, width, height, cmd_dim=9, trainable=True):
+    def __init__(self, width, height, cmd_dim=2, trainable=True):
         super(ImgDynamics, self).__init__()
         self.lin1 = nn.Linear(width * height + cmd_dim, 128)
         self.lin2 = nn.Linear(128, 64)
@@ -167,7 +173,7 @@ def train_dynamics(model_save_path):
     Args:
         nr_epochs (int, optional): Defaults to 100.
     """
-    dataset = NewImgDataset(width=img_width, height=img_height, radius=radius)
+    dataset = ImageDataset(width=img_width, height=img_height, radius=radius)
     trainloader = torch.utils.data.DataLoader(
         dataset, batch_size=8, shuffle=True, num_workers=0
     )
@@ -203,15 +209,16 @@ def test_dynamics(dyn=None, model_save_path=None):
     # initialize controller and loader
     if dyn is None:
         dyn = torch.load(model_save_path)
-    dataset = NewImgDataset(width=img_width, height=img_height, radius=radius)
+    dataset = ImageDataset(width=img_width, height=img_height, radius=radius)
     testloader = torch.utils.data.DataLoader(
         dataset, batch_size=1, shuffle=False, num_workers=0
     )
     correct = 0
     for (cmd, img_in, center_out) in testloader:
         # ATTENTION: only testing accuracy on one hots - otherwise comment:
-        one_hot_cmd = torch.zeros(cmd.size())
-        one_hot_cmd[0, torch.argmax(cmd)] = 1
+        # one_hot_cmd = torch.zeros(cmd.size())
+        # one_hot_cmd[0, torch.argmax(cmd)] = 1
+        one_hot_cmd = cmd
 
         with torch.no_grad():
             img_out_predicted = dyn(img_in.float(), one_hot_cmd.float())
@@ -227,7 +234,7 @@ def test_dynamics(dyn=None, model_save_path=None):
 def test_qualitative(model_save_path):
     dyn = torch.load(model_save_path)
 
-    dataset = NewImgDataset(width=img_width, height=img_height, radius=radius)
+    dataset = ImageDataset(width=img_width, height=img_height, radius=radius)
     testloader = torch.utils.data.DataLoader(
         dataset, batch_size=1, shuffle=True, num_workers=0
     )
@@ -236,6 +243,7 @@ def test_qualitative(model_save_path):
             break
     # # optionally check what happens if it's very evenly distributed
     # test_cmd = torch.softmax(test_cmd, dim=1)
+    test_cmd = torch.tensor([[2, 2]])
 
     # run network
     pred_img = dyn(img_in.float(), test_cmd.float())
@@ -244,7 +252,7 @@ def test_qualitative(model_save_path):
 
     np_command = one_hot_to_cmd_knight(test_cmd)
     print("raw cmd", test_cmd)
-    print("command", np_command)
+    # print("command", np_command)
 
     # compute desired out image
     target_cen_x, target_cen_y = [
@@ -253,15 +261,18 @@ def test_qualitative(model_save_path):
     out_img = torch.zeros(1, img_width, img_height)
     out_img[0, target_cen_x, target_cen_y] = 1
 
-    plt.subplot(1, 3, 1)
-    plt.imshow(img_in[0].numpy())
-    plt.title("Start state")
-    plt.subplot(1, 3, 2)
-    plt.imshow(out_img[0].numpy())
-    plt.title("Desired output")
-    plt.subplot(1, 3, 3)
-    plt.imshow(pred_img[0].detach().numpy())
-    plt.title("Predicted")
+    ax1 = plt.subplot(1, 3, 1)
+    ax1.imshow(img_in[0].numpy())
+    add_grid(ax1)
+    ax1.set_title("Start state")
+    ax2 = plt.subplot(1, 3, 2)
+    ax2.imshow(out_img[0].numpy())
+    add_grid(ax2)
+    ax2.set_title("Desired output")
+    ax3 = plt.subplot(1, 3, 3)
+    ax3.imshow(pred_img[0].detach().numpy())
+    add_grid(ax3)
+    ax3.set_title("Predicted")
     plt.tight_layout()
     plt.show()
 
