@@ -68,5 +68,5 @@ if __name__ == "__main__":
     train_dynamics(
         baseline_model,
         config,
-        not_trainable=never_trainable + ["vel_drag_factor"]
+        not_trainable=never_trainable  # "all"
     )

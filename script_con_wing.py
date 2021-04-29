@@ -45,7 +45,7 @@ if __name__ == "__main__":
     # config["epoch_size"] = 1000
     config["learning_rate_controller"] = 0.00001
 
-    config["modified_params"] =  {"residual_factor": 0.0001}
+    config["modified_params"] = {"residual_factor": 0.0001}
 
     load_dyn_path = "trained_models/wing/train_residual_matrix/dynamics_model"
 

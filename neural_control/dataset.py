@@ -255,7 +255,9 @@ class WingDataset(DroneDataset):
             states = np.random.rand(num_samples, 12)
             ref_states = np.random.rand(num_samples, 3)
         else:
-            states, ref_states = sample_training_data(num_samples, **self.kwargs)
+            states, ref_states = sample_training_data(
+                num_samples, **self.kwargs
+            )
         return states, ref_states
 
     def _compute_target_pos(self, current_state, ref_vector):
@@ -308,6 +310,5 @@ class WingDataset(DroneDataset):
         # transform to the input states
         ref_states = self._compute_target_pos(states, normed_ref_vector)
         relative_ref = ref_states[:, -1] - states[:, :3]
-
 
         return normed_states, states, relative_ref, ref_states

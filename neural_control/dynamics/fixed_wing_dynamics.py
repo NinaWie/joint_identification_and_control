@@ -327,7 +327,7 @@ class LearntFixedWingDynamics(torch.nn.Module, FixedWingDynamics):
                 # make inertia separately
                 continue
             # # code to avoid training the parameters
-            if key in not_trainable:
+            if not_trainable == "all" or key in not_trainable:
                 requires_grad = False
             dict_pytorch[key] = torch.nn.Parameter(
                 torch.tensor([val]), requires_grad=requires_grad
