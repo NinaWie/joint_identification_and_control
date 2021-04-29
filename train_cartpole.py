@@ -10,6 +10,7 @@ from evaluate_cartpole import Evaluator
 from neural_control.models.resnet_like_model import Net
 from neural_control.plotting import plot_loss, plot_success
 from neural_control.environments.cartpole_env import construct_states
+from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
 
 SAVE_PATH = "trained_models/cartpole/current_model"
 NR_EVAL_ITERS = 10
@@ -30,7 +31,9 @@ optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 (
     episode_length_mean, episode_length_std, loss_list, pole_angle_mean,
     pole_angle_std, eval_value
-) = (list(), list(), list(), list(), list(), list())
+) = (list(), list(), list(), list(), list(), np.inf)
+
+dynamics = CartpoleDynamics()
 
 NR_EPOCHS = 200
 # TRAIN:
@@ -59,12 +62,11 @@ for epoch in range(NR_EPOCHS):
         break
     performance_swingup = swing_up_mean[0] + swing_up_mean[
         2] + (251 - episode_length_mean[-1]) * 0.01
-    if epoch > 0 and performance_swingup < np.min(eval_value):
-        # curr_loss < np.min(loss_list):
+    if epoch > 0 and performance_swingup <= eval_value:
+        eval_value = performance_swingup
         print("New best model")
         torch.save(net, os.path.join(SAVE_PATH, "model_pendulum" + str(epoch)))
     print()
-    eval_value.append(performance_swingup)
 
     # Renew dataset dynamically
     if epoch % 3 == 0:
@@ -83,17 +85,23 @@ for epoch in range(NR_EPOCHS):
         running_loss = 0.0
         for i, data in enumerate(trainloader, 0):
             # get the inputs; data is a list of [inputs, labels]
-            inputs, labels = data
+            inputs, state = data
 
             # zero the parameter gradients
             optimizer.zero_grad()
 
             # forward + backward + optimize
-            outputs = net(inputs)
+            action = net(inputs)
             lam = epoch / NR_EPOCHS
-            loss = cartpole_loss(
-                outputs, labels, lambda_factor=lam, printout=0
-            )
+
+            # bring action into -1 1 range
+            action = torch.sigmoid(action) - .5
+
+            # update state iteratively for each proposed action
+            for i in range(action.size()[1]):
+                state = dynamics(state, action[:, i])
+
+            loss = cartpole_loss(state, lambda_factor=lam, printout=0)
             loss.backward()
             optimizer.step()
             # print statistics

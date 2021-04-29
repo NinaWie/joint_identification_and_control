@@ -6,6 +6,7 @@ permalink: https://perma.cc/C9ZM-652R
 import logging
 import math
 import numpy as np
+import torch
 import time
 logger = logging.getLogger(__name__)
 try:
@@ -20,7 +21,9 @@ class CartPoleEnv():
         'video.frames_per_second': 50
     }
 
-    def __init__(self):
+    def __init__(self, dynamics, dt=0.02):
+        self.dynamics = dynamics
+        self.dt = dt
         self.gravity = 9.8
         self.masscart = 1.0
         self.masspole = 0.1
@@ -45,7 +48,14 @@ class CartPoleEnv():
 
         self.steps_beyond_done = None
 
-    def _step(self, action):
+    def _step(self, action, is_torch=True):
+        torch_state = torch.tensor([list(self.state)])
+        if not is_torch:
+            action = torch.tensor([list(action)])
+        self.state = self.dynamics(torch_state, action, dt=self.dt)[0].numpy()
+        return self.state
+
+    def _step_old(self, action):
         """
         Update state after action
         """

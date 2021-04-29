@@ -5,10 +5,12 @@ import numpy as np
 import torch
 
 from neural_control.environments.cartpole_env import CartPoleEnv
+from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
 from neural_control.models.resnet_like_model import Net
 from neural_control.drone_loss import cartpole_loss
 
 APPLY_UNTIL = 3
+
 
 def raw_states_to_torch(
     states, normalize=False, std=None, mean=None, return_std=False
@@ -41,13 +43,15 @@ def raw_states_to_torch(
     # if we computed mean and std here, return it
     if return_std:
         return states_to_torch, mean, std
-    return states_to_torch.to(device)
+    return states_to_torch
 
 
 class Evaluator:
 
     def __init__(self, std=1):
         self.std = std
+        self.dynamics = CartpoleDynamics()
+        self.eval_env = CartPoleEnv(self.dynamics)
 
     def make_swingup(
         self, net, nr_iters=10, max_iters=100, success_over=20, render=False
@@ -58,7 +62,6 @@ class Evaluator:
         data_collection = []
         # average over 50 runs # 10 is length of action sequence
         success = []  # np.zeros((success_over * 10 * nr_iters, 4))
-        eval_env = CartPoleEnv()
         collect_loss = []
         with torch.no_grad():
             for it in range(nr_iters):
@@ -67,14 +70,14 @@ class Evaluator:
                 random_hanging_state[2] = (-1) * (
                     (np.random.rand() > .5) * 2 - 1
                 ) * (1 - (np.random.rand() * .2)) * np.pi
-                eval_env.state = random_hanging_state
+                self.eval_env.state = random_hanging_state
 
                 # # Set angle to somewhere on top
-                # eval_env.state[2] = (np.random.rand(1) - .5) * .2
+                # self.eval_env.state[2] = (np.random.rand(1) - .5) * .2
 
                 # set x position to zero
                 # random_hanging_state[0] = 0 TODO
-                new_state = eval_env.state
+                new_state = self.eval_env.state
 
                 # Start balancing
                 for j in range(max_iters + success_over):
@@ -92,13 +95,15 @@ class Evaluator:
                     #     print("state before", new_state)
                     # print("new action seq", action_seq[0].numpy())
                     # print()
-                    for action in action_seq[0].numpy()[:APPLY_UNTIL]:
+                    for action_ind in range(APPLY_UNTIL):
                         # run action in environment
-                        new_state, _, _, _ = eval_env._step(action)
+                        new_state = self.eval_env._step(
+                            action_seq[:, action_ind]
+                        )
                         data_collection.append(new_state)
                         # print(new_state)
                         if render:
-                            eval_env._render()
+                            self.eval_env._render()
                             time.sleep(.1)
                         if j >= max_iters:
                             success.append(new_state)
@@ -107,7 +112,7 @@ class Evaluator:
                         #     made_it = 1
                         #     break
                 # success[it] = made_it
-                eval_env._reset()
+                self.eval_env._reset()
         success = np.absolute(np.array(success))
         mean_rounded = [round(m, 2) for m in np.mean(success, axis=0)]
         std_rounded = [round(m, 2) for m in np.std(success, axis=0)]
@@ -117,18 +122,17 @@ class Evaluator:
         """
         Measure success --> how long can we balance the pole on top
         """
-        eval_env = CartPoleEnv()
         with torch.no_grad():
             success = np.zeros(nr_iters)
             # observe also the oscillation
             avg_angle = np.zeros(nr_iters)
             for it in range(nr_iters):
                 # only set the theta to the top, and reduce speed
-                eval_env.state = eval_env.state * .25
-                eval_env.state[2] = (np.random.rand(1) - .5) * .2
+                self.eval_env.state = self.eval_env.state * .25
+                self.eval_env.state[2] = (np.random.rand(1) - .5) * .2
                 is_fine = False
                 episode_length_counter = 0
-                new_state = eval_env.state
+                new_state = self.eval_env.state
 
                 angles = list()
                 # Start balancing
@@ -140,10 +144,10 @@ class Evaluator:
                     action_seq = torch.sigmoid(net(torch_state)) - .5
                     for action in action_seq[0].numpy()[:APPLY_UNTIL]:
                         # run action in environment
-                        new_state, _, is_fine, _ = eval_env._step(action)
+                        new_state, _, is_fine, _ = self.eval_env._step(action)
                         angles.append(np.absolute(new_state[2]))
                         if render:
-                            eval_env._render()
+                            self.eval_env._render()
                             time.sleep(.1)
                         # track number of timesteps until failure
                         episode_length_counter += 1
@@ -153,7 +157,7 @@ class Evaluator:
                         break
                 avg_angle[it] = np.mean(angles)
                 success[it] = episode_length_counter
-                eval_env._reset()
+                self.eval_env._reset()
         return success, avg_angle
 
 
@@ -162,10 +166,10 @@ def run_saved_arr(path):
     Load a saved sequence of states and visualize it
     """
     states = np.load(path)
-    eval_env = CartPoleEnv()
+    self.eval_env = CartPoleEnv()
     for state in states:
-        eval_env.state = state
-        eval_env._render()
+        self.eval_env.state = state
+        self.eval_env._render()
         time.sleep(.1)
 
 

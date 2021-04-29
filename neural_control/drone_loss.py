@@ -1,10 +1,10 @@
 import torch
 import numpy as np
 from neural_control.plotting import print_state_ref_div
-from neural_control.dynamics.cartpole_dynamics import simulate_cartpole
 device = "cpu"
 torch.autograd.set_detect_anomaly(True)
 zero_tensor = torch.zeros(3).to(device)
+torch.pi = torch.acos(torch.zeros(1)).item() * 2
 
 rates_prior = torch.tensor([.5, .5, .5])
 
@@ -102,16 +102,8 @@ def fixed_wing_last_loss(drone_states, linear_reference, action, printout=0):
     return loss
 
 
-def cartpole_loss(action, state, lambda_factor=.4, printout=0):
+def cartpole_loss(state, lambda_factor=.4, printout=0):
 
-    # bring action into -1 1 range
-    action = torch.sigmoid(action) - .5
-
-    nr_actions = action.size()[1]
-
-    # update state iteratively for each proposed action
-    for i in range(nr_actions):
-        state = simulate_cartpole(state, action[:, i])
     abs_state = torch.abs(state)
 
     pos_loss = state[:, 0]**2
