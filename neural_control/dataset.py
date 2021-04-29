@@ -10,40 +10,6 @@ from neural_control.dynamics.fixed_wing_dynamics import FixedWingDynamics
 device = "cpu"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def raw_states_to_torch(
-    states, normalize=False, std=None, mean=None, return_std=False
-):
-    """
-    Helper function to convert numpy state array to normalized tensors
-    Argument states:
-            One state (list of length 4) or array with x states (x times 4)
-    """
-    # either input one state at a time (evaluation) or an array
-    if len(states.shape) == 1:
-        states = np.expand_dims(states, 0)
-
-    # save mean and std column wise
-    if normalize:
-        # can't use mean!
-        if std is None:
-            std = np.std(states, axis=0)
-        if mean is None:
-            mean = np.mean(states, axis=0)
-        states = (states - mean) / std
-        # assert np.all(np.isclose(np.std(states, axis=0), 1))
-    else:
-        std = 1
-
-    # np.save("data_backup/quad_data.npy", states)
-
-    states_to_torch = torch.from_numpy(states).float()
-
-    # if we computed mean and std here, return it
-    if return_std:
-        return states_to_torch, mean, std
-    return states_to_torch.to(device)
-
-
 class DroneDataset(torch.utils.data.Dataset):
 
     def __init__(self, num_states, self_play, mean=None, std=None, **kwargs):
@@ -55,19 +21,6 @@ class DroneDataset(torch.utils.data.Dataset):
         self.total_dataset_size = self.num_sampled_states + self.num_self_play
 
         self.kwargs = kwargs
-
-        states, ref_states = self.sample_data(self.total_dataset_size)
-
-        if mean is None:
-            # sample states
-            mean = np.mean(states, axis=0)
-            std = np.std(states, axis=0)
-
-        self.mean = torch.tensor(mean).float()
-        self.std = torch.tensor(std).float()
-
-        (self.normed_states, self.states, self.in_ref_states,
-         self.ref_states) = self.prepare_data(states, ref_states)
 
         # count where to add new evaluation data
         self.eval_counter = 0
@@ -137,6 +90,10 @@ class QuadDataset(DroneDataset):
 
     def __init__(self, num_states, self_play, mean=None, std=None, **kwargs):
         super().__init__(num_states, self_play, mean=mean, std=std, **kwargs)
+
+        states, ref_states = self.sample_data(self.total_dataset_size)
+        (self.normed_states, self.states, self.in_ref_states,
+         self.ref_states) = self.prepare_data(states, ref_states)
 
     def sample_data(self, num_states):
         states, ref_states = full_state_training_data(
@@ -260,16 +217,45 @@ class WingDataset(DroneDataset):
         delta_t=0.05,
         nr_actions=10,
         **kwargs
-    ):        
+    ):
         self.dt = delta_t
         self.nr_actions = nr_actions
         super().__init__(num_states, self_play, mean=mean, std=std, **kwargs)
+        if self.mean is None:
+            self.mean = torch.tensor(
+                [
+                    26.69862174987793, 0.3841058909893036, 0.32479792833328247,
+                    11.525899887084961, -0.00016766408225521445,
+                    0.16617104411125183, 0.007394296582788229, 0.018172707409,
+                    0.020353179425001144, -0.0005361468647606671,
+                    0.01662314310669899, 0.004487641621381044
+                ]
+            ).float()
+            self.std = torch.tensor(
+                [
+                    16.626325607299805, 0.8449159860610962, 0.8879243731498718,
+                    0.6243225932121277, 0.28072822093963623, 0.29176747798,
+                    0.04499124363064766, 0.10370047390460968, 0.049977313727,
+                    0.06449887901544571, 0.27508440613746643, 0.05634994804859
+                ]
+            ).float()
+        else:
+            self.mean = torch.tensor(self.mean)
+            self.std = torch.tensor(self.std)
+        states, ref_states = self.sample_data(self.total_dataset_size)
+        (self.normed_states, self.states, self.in_ref_states,
+         self.ref_states) = self.prepare_data(states, ref_states)
 
     def sample_data(self, num_samples):
         """
         Interface to training data function of fixed wing drone
         """
-        states, ref_states = sample_training_data(num_samples, **self.kwargs)
+        if self.num_sampled_states < 5:
+            # actually no sampling, only self play
+            states = np.random.rand(num_samples, 12)
+            ref_states = np.random.rand(num_samples, 3)
+        else:
+            states, ref_states = sample_training_data(num_samples, **self.kwargs)
         return states, ref_states
 
     def _compute_target_pos(self, current_state, ref_vector):
@@ -277,9 +263,7 @@ class WingDataset(DroneDataset):
         # speed = torch.sqrt(torch.sum(current_state[:, 3:6]**2, dim=1))
         vec_len_per_step = 12 * self.dt
         # form auxiliary array with linear reference for loss computation
-        target_pos = torch.zeros(
-            (current_state.size()[0], self.nr_actions, 3)
-        )
+        target_pos = torch.zeros((current_state.size()[0], self.nr_actions, 3))
         for i in range(self.nr_actions):
             for j in range(3):
                 target_pos[:, i, j] = current_state[:, j] + (

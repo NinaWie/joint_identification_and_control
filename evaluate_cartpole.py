@@ -5,11 +5,43 @@ import numpy as np
 import torch
 
 from neural_control.environments.cartpole_env import CartPoleEnv
-from neural_control.dataset import raw_states_to_torch
 from neural_control.models.resnet_like_model import Net
 from neural_control.drone_loss import cartpole_loss
 
 APPLY_UNTIL = 3
+
+def raw_states_to_torch(
+    states, normalize=False, std=None, mean=None, return_std=False
+):
+    """
+    Helper function to convert numpy state array to normalized tensors
+    Argument states:
+            One state (list of length 4) or array with x states (x times 4)
+    """
+    # either input one state at a time (evaluation) or an array
+    if len(states.shape) == 1:
+        states = np.expand_dims(states, 0)
+
+    # save mean and std column wise
+    if normalize:
+        # can't use mean!
+        if std is None:
+            std = np.std(states, axis=0)
+        if mean is None:
+            mean = np.mean(states, axis=0)
+        states = (states - mean) / std
+        # assert np.all(np.isclose(np.std(states, axis=0), 1))
+    else:
+        std = 1
+
+    # np.save("data_backup/quad_data.npy", states)
+
+    states_to_torch = torch.from_numpy(states).float()
+
+    # if we computed mean and std here, return it
+    if return_std:
+        return states_to_torch, mean, std
+    return states_to_torch.to(device)
 
 
 class Evaluator:

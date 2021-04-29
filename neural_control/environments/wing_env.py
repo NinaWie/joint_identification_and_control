@@ -121,8 +121,12 @@ def sample_training_data(
     num_samples, dt=0.01, take_every=10, traj_len=500, vec_std=.15, **kwargs
 ):
     """
+    Artificial data generation:
     Fly some trajectories in order to sample drone states
     Then add random unit vectors in all directions
+    NOTE: This method is not used in the training of the baseline model.
+    The baseline model is exclusively trained on data acquired accoridng to
+    the curriculum learning
     """
     use_at_each = 20
     # # sample unit vectors

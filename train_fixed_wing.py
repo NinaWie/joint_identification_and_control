@@ -148,7 +148,12 @@ class TrainFixedWing(TrainBase):
         # eval_env.run_mpc_ref("rand", nr_test=5, max_steps=500)
         # run without mpc for evaluation
         with torch.no_grad():
-            suc_mean, suc_std = evaluator.run_eval(nr_test=10)
+            if epoch == 0:
+                # sample to fill all required self play data
+                while self.state_data.eval_counter < self.config["self_play"]:
+                    suc_mean, suc_std = evaluator.run_eval(nr_test=5)
+            else:
+                suc_mean, suc_std = evaluator.run_eval(nr_test=10)
 
         self.sample_new_data(epoch)
 
