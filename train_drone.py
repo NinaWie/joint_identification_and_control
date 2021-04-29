@@ -190,7 +190,7 @@ def train_control(base_model, config):
     trainer.run_control(config)
 
 
-def train_dynamics(base_model, config):
+def train_dynamics(base_model, config, trainable_params=1):
     """First train dynamcs, then train controller with estimated dynamics
 
     Args:
@@ -200,8 +200,16 @@ def train_dynamics(base_model, config):
     modified_params = config["modified_params"]
     config["sample_in"] = "train_env"
 
+    config["thresh_div_start"] = 1
+    config["thresh_div_end"] = 3
+    config["thresh_stable_start"] = 2
+    config["l2_lambda"] = 0
+    # return the divergence, not the stable steps
+    config["return_div"] = 1
+    config["suc_up_down"] = -1
+
     # train environment is learnt
-    train_dynamics = LearntDynamics()
+    train_dynamics = LearntDynamics(trainable_params=trainable_params)
     eval_dynamics = FlightmareDynamics(modified_params)
 
     trainer = TrainDrone(train_dynamics, eval_dynamics, config)
@@ -237,21 +245,23 @@ if __name__ == "__main__":
     with open("configs/quad_config.json", "r") as infile:
         config = json.load(infile)
 
-    # mod_params = {"mass": 1}
-    # # {'translational_drag': np.array([0.7, 0.7, 0.7])}
-    # config["modified_params"] = mod_params
+    ##### For finetune dynamics
+    mod_params = {'translational_drag': np.array([0.7, 0.7, 0.7])}
+    config["modified_params"] = mod_params
+    # define whether the parameters are trainable
+    trainable_params = 1
 
-    baseline_model = None  # "trained_models/quad/"
+    baseline_model = "trained_models/quad/current_model"
     # config["thresh_div_start"] = 1
     # config["thresh_stable_start"] = 1.5
 
-    config["save_name"] = "mpc_loss"
+    config["save_name"] = "train_trans_new_params_res"
 
     config["nr_epochs"] = 400
 
     # TRAIN
-    train_control(baseline_model, config)
-    # train_dynamics(baseline_model, config)
+    # train_control(baseline_model, config)
+    train_dynamics(baseline_model, config, trainable_params)
     # train_sampling_finetune(baseline_model, config)
     # FINE TUNING parameters:
     # self.thresh_div_start = 1

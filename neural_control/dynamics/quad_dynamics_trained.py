@@ -9,7 +9,7 @@ from neural_control.dynamics.quad_dynamics_flightmare import (
 
 class LearntDynamics(nn.Module, FlightmareDynamics):
 
-    def __init__(self, initial_params={}):
+    def __init__(self, initial_params={}, trainable_params=True):
         FlightmareDynamics.__init__(self, initial_params)
         super(LearntDynamics, self).__init__()
 
@@ -18,38 +18,34 @@ class LearntDynamics(nn.Module, FlightmareDynamics):
             torch.diag(torch.ones(4)), requires_grad=True
         )
         self.linear_state_1 = nn.Linear(16, 64)
-        torch.nn.init.constant_(self.linear_state_1.weight, 0)
-        torch.nn.init.constant_(self.linear_state_1.bias, 0)
+        std = 0.0001
+        torch.nn.init.normal_(self.linear_state_1.weight, mean=0.0, std=std)
+        torch.nn.init.normal_(self.linear_state_1.bias, mean=0.0, std=std)
 
-        self.linear_state_2 = nn.Linear(64, 12)
-        torch.nn.init.constant_(self.linear_state_2.weight, 0)
-        torch.nn.init.constant_(self.linear_state_2.bias, 0)
+        self.linear_state_2 = nn.Linear(64, 12, bias=False)
+        torch.nn.init.normal_(self.linear_state_2.weight, mean=0.0, std=std)
 
         # VARIABLES - dynamics parameters
-        # self.torch_translational_drag = torch.Variable(torch.from_numpy(
-        #     self.copter_params.translational_drag
-        # ))
-        # self.torch_rotational_drag = torch.Variable(torch.from_numpy(
-        #     self.copter_params.rotational_drag
-        # ))
-        self.mass = nn.Parameter(
-            torch.tensor([self.mass]),
-            requires_grad=True  # , name="mass"
-        )
-        self.torch_inertia_vector = nn.Parameter(
-            torch.from_numpy(self.inertia_vector).float(),
-            requires_grad=True,
-            # name="inertia"
-        )
-        self.torch_kinv_vector = nn.Parameter(
-            torch.tensor(self.kinv_ang_vel_tau).float(),
-            requires_grad=True,
-            # name="kinv"
-        )
-
-        # derivations from params
-        self.torch_inertia_J = torch.diag(self.torch_inertia_vector)
-        self.torch_kinv_ang_vel_tau = torch.diag(self.torch_kinv_vector)
+        if trainable_params:
+            self.torch_translational_drag = nn.Parameter(
+                self.torch_translational_drag
+            )
+            self.torch_rotational_drag = nn.Parameter(self.torch_rotational_drag)
+            self.mass = nn.Parameter(
+                torch.tensor([self.mass]),
+                requires_grad=True
+            )
+            self.torch_inertia_vector = nn.Parameter(
+                torch.from_numpy(self.inertia_vector).float(),
+                requires_grad=True,
+            )
+            self.torch_kinv_vector = nn.Parameter(
+                torch.tensor(self.kinv_ang_vel_tau).float(),
+                requires_grad=True,
+            )
+            # derivations from params
+            self.torch_inertia_J = torch.diag(self.torch_inertia_vector)
+            self.torch_kinv_ang_vel_tau = torch.diag(self.torch_kinv_vector)
 
     def state_transformer(self, state, action):
         state_action = torch.cat((state, action), dim=1)
@@ -59,9 +55,10 @@ class LearntDynamics(nn.Module, FlightmareDynamics):
         return new_state
 
     def forward(self, state, action, dt):
-        action_transformed = torch.matmul(
-            self.linear_at, torch.unsqueeze(action, 2)
-        )[:, :, 0]
+        # action_transformed = torch.matmul(
+        #     self.linear_at, torch.unsqueeze(action, 2)
+        # )[:, :, 0]
+        action_transformed = action
         # run through D1
         new_state = self.simulate_quadrotor(action_transformed, state, dt)
         # run through T

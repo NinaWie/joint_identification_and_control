@@ -227,6 +227,7 @@ class QuadEvaluator():
         max_steps: int = 200,
         thresh_div=1,
         thresh_stable=1,
+        return_div=0,
         **kwargs
     ):
         """
@@ -267,6 +268,8 @@ class QuadEvaluator():
             "%s: Steps until divergence: %3.2f (%3.2f)" %
             (reference, np.mean(stable), np.std(stable))
         )
+        if return_div:
+            return np.mean(div), np.std(div)
         return np.mean(stable), np.std(stable)
 
     def collect_training_data(self, outpath="data/jan_2021.npy"):
@@ -364,7 +367,7 @@ if __name__ == "__main__":
     # params["dt"] = .05
     # params["max_drone_dist"] = 1
     params["speed_factor"] = .4
-    modified_params = {}  # {"mass": 1}
+    modified_params = {}
     # {"rotational_drag": np.array([.1, .1, .1])}
     # {"mass": 1}
     # {"translational_drag": np.array([.7, .7, .7])}
