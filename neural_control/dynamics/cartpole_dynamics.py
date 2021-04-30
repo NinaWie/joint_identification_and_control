@@ -1,4 +1,7 @@
 import torch
+import numpy as np
+import casadi as ca
+
 from neural_control.dynamics.learnt_dynamics import LearntDynamics
 
 # target state means that theta is zero --> only third position matters
@@ -108,3 +111,69 @@ class LearntCartpoleDynamics(LearntDynamics, CartpoleDynamics):
 
     def simulate(self, state, action, dt):
         return self.simulate_cartpole(state, action, dt)
+
+
+class CartpoleDynamicsMPC(CartpoleDynamics):
+
+    def __init__(self, modified_params={}):
+        CartpoleDynamics.__init__(self, modified_params=modified_params)
+
+    def simulate_cartpole(self, dt):
+        (x, x_dot, theta, theta_dot) = (
+            ca.SX.sym("x"), ca.SX.sym("x_dot"), ca.SX.sym("theta"),
+            ca.SX.sym("theta_dot")
+        )
+        action = ca.SX.sym("action")
+        x_state = ca.vertcat(x, x_dot, theta, theta_dot)
+
+        # helper variables
+        force = self.cfg["max_force_mag"] * action
+        costheta = ca.cos(theta)
+        sintheta = ca.sin(theta)
+        sig = self.cfg["muc"] * ca.sign(x_dot)
+
+        # add and multiply
+        temp = force + self.cfg["polemass_length"] * theta_dot**2 * sintheta
+
+        # divide
+        thetaacc = (
+            gravity * sintheta - (costheta * (temp - sig)) -
+            (self.cfg["mup"] * theta_dot / self.cfg["polemass_length"])
+        ) / (
+            self.cfg["length"] * (
+                4.0 / 3.0 - self.cfg["masspole"] * costheta * costheta /
+                self.cfg["total_mass"]
+            )
+        )
+        wind_drag = self.cfg["wind"] * costheta
+
+        # add velocity of cart
+        x_acc = (
+            temp - (self.cfg['polemass_length'] * thetaacc * costheta) - sig
+        ) / self.cfg["total_mass"]
+
+        x_state_dot = ca.vertcat(x_dot, x_acc, theta_dot, thetaacc + wind_drag)
+        X = x_state + dt * x_state_dot
+
+        F = ca.Function('F', [x_state, action], [X], ['x', 'u'], ['ode'])
+        return F
+
+
+if __name__ == "__main__":
+    state_test_np = np.array([0.5, 1.3, 0.1, 0.4])
+    state_test = torch.unsqueeze(torch.from_numpy(state_test_np), 0).float()
+    action_test_np = np.array([0.4])
+    action_test = torch.unsqueeze(torch.from_numpy(action_test_np), 0).float()
+
+    normal_dyn = CartpoleDynamics()
+    next_state = normal_dyn(state_test, action_test, 0.02)
+    print("------------")
+    print(next_state[0])
+
+    # test: compare to mpc
+    # if test doesnt work, remove clamp!!
+    mpc_dyn = CartpoleDynamicsMPC()
+    F = mpc_dyn.simulate_cartpole(0.02)
+    mpc_state = F(state_test_np, action_test_np)
+    print("--------------------")
+    print(mpc_state)

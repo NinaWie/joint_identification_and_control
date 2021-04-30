@@ -342,15 +342,8 @@ class FixedWingDynamicsMPC(FixedWingDynamics):
 
     def __init__(self, modified_params={}):
 
-        # transform loaded torch parameters into normal
-        numpy_modified_params = {}
-        for key, val in modified_params.items():
-            if "cfg." in key:
-                raw_key = key[4:]
-                raw_val = val[0].item()
-                numpy_modified_params[raw_key] = raw_val
         # change the config accordingly
-        super().__init__(numpy_modified_params)
+        super().__init__(modified_params)
 
         # if I is loaded, it's not in the config
         if "I" in modified_params.keys():

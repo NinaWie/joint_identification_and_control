@@ -16,6 +16,7 @@ from neural_control.plotting import plot_loss, plot_success
 from neural_control.environments.cartpole_env import (
     construct_states, CartPoleEnv
 )
+from neural_control.controllers.network_wrapper import CartpoleWrapper
 from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
 
 
@@ -122,17 +123,18 @@ class TrainCartpole(TrainBase):
             print(f"sampled new data {len(state_data)}")
 
     def evaluate_balance(self, epoch):
+        controller = CartpoleWrapper(self.net, **self.config)
         # EVALUATION:
-        evaluator = Evaluator(self.eval_env, **self.config)
+        evaluator = Evaluator(controller, self.eval_env)
         # Start in upright position and see how long it is balaned
         success_mean, success_std, data = evaluator.evaluate_in_environment(
-            self.net, nr_iters=10
+            nr_iters=10
         )
         self.save_model(epoch, success_mean, success_std)
         return data
 
     def evaluate_swingup(self, epoch):
-        evaluator = Evaluator(self.eval_env, **self.config)
+        evaluator = Evaluator(self.eval_env)
         success_mean, success_std, _ = evaluator.evaluate_in_environment(
             self.net, nr_iters=10
         )

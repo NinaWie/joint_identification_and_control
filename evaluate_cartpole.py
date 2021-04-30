@@ -7,52 +7,19 @@ import torch
 
 from neural_control.environments.cartpole_env import CartPoleEnv
 from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
+from neural_control.controllers.mpc import MPC
+from neural_control.controllers.network_wrapper import CartpoleWrapper
 from neural_control.models.resnet_like_model import Net
 
 APPLY_UNTIL = 1
 
 
-def raw_states_to_torch(
-    states, normalize=False, std=None, mean=None, return_std=False
-):
-    """
-    Helper function to convert numpy state array to normalized tensors
-    Argument states:
-            One state (list of length 4) or array with x states (x times 4)
-    """
-    # either input one state at a time (evaluation) or an array
-    if len(states.shape) == 1:
-        states = np.expand_dims(states, 0)
-
-    # save mean and std column wise
-    if normalize:
-        # can't use mean!
-        if std is None:
-            std = np.std(states, axis=0)
-        if mean is None:
-            mean = np.mean(states, axis=0)
-        states = (states - mean) / std
-        # assert np.all(np.isclose(np.std(states, axis=0), 1))
-    else:
-        std = 1
-
-    # np.save("data_backup/quad_data.npy", states)
-
-    states_to_torch = torch.from_numpy(states).float()
-
-    # if we computed mean and std here, return it
-    if return_std:
-        return states_to_torch, mean, std
-    return states_to_torch
-
-
 class Evaluator:
 
-    def __init__(self, eval_env, std=1, action_dim=1, nr_actions=3, **kwargs):
-        self.std = std
+    def __init__(self, controller, eval_env):
+        self.controller = controller
         self.eval_env = eval_env
-        self.nr_actions = nr_actions
-        self.action_dim = action_dim
+        self.mpc = isinstance(self.controller, MPC)
 
     def make_swingup(
         self, net, nr_iters=10, max_iters=100, success_over=20, render=False
@@ -84,7 +51,7 @@ class Evaluator:
                     # and normalize
                     torch_state = raw_states_to_torch(new_state, std=self.std)
                     # Predict optimal action:
-                    predicted_action = net(torch_state)
+                    action_seq = net(torch_state)
                     # print([round(act, 2) for act in action_seq[0].numpy()])
                     # if render:
                     #     print("state before", new_state)
@@ -114,7 +81,7 @@ class Evaluator:
         return mean_rounded, std_rounded, data_collection
 
     def evaluate_in_environment(
-        self, net, nr_iters=1, max_steps=250, render=False, burn_in_steps=50
+        self, nr_iters=1, max_steps=250, render=False, burn_in_steps=50
     ):
         """
         Measure success --> how long can we balance the pole on top
@@ -134,16 +101,13 @@ class Evaluator:
                 for i in range(max_steps):
                     # Transform state in the same way as the training data
                     # and normalize
-                    torch_state = raw_states_to_torch(new_state, std=self.std)
                     # Predict optimal action:
-                    action_seq = net(torch_state)
-                    action_seq = torch.reshape(
-                        action_seq, (-1, self.nr_actions, self.action_dim)
-                    )
+                    action_seq = self.controller.predict_actions(new_state, 0)
+
                     for action_ind in range(APPLY_UNTIL):
                         # run action in environment
                         new_state = self.eval_env._step(
-                            action_seq[:, action_ind]
+                            action_seq[:, action_ind], is_torch=self.mpc == 0
                         )
                         data_collection.append(new_state)
                         if i > burn_in_steps:
@@ -178,6 +142,26 @@ def run_saved_arr(path):
         time.sleep(.1)
 
 
+def load_model(model_name, epoch):
+    with open(
+        os.path.join("trained_models", "cartpole", model_name, "config.json"),
+        "r"
+    ) as infile:
+        config = json.load(infile)
+
+    path_load = os.path.join(
+        "trained_models", "cartpole", model_name, "model_pendulum" + epoch
+    )
+    if not os.path.exists(path_load):
+        path_load = os.path.join(
+            "trained_models", "cartpole", model_name, "model_cartpole" + epoch
+        )
+    net = torch.load(path_load)
+    net.eval()
+    controller_model = CartpoleWrapper(net, **config)
+    return controller_model
+
+
 if __name__ == "__main__":
     # make as args:
     parser = argparse.ArgumentParser("Model directory as argument")
@@ -198,32 +182,25 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    MODEL_NAME = args.model
-
-    with open(
-        os.path.join("trained_models", "cartpole", MODEL_NAME, "config.json"),
-        "r"
-    ) as infile:
-        config = json.load(infile)
-
-    path_load = os.path.join(
-        "trained_models", "cartpole", MODEL_NAME, "model_pendulum" + args.epoch
-    )
-    if not os.path.exists(path_load):
-        path_load = os.path.join(
-            "trained_models", "cartpole", MODEL_NAME,
-            "model_cartpole" + args.epoch
+    if args.model == "mpc":
+        load_dynamics = None
+        controller_model = MPC(
+            horizon=10,
+            dt=0.02,
+            dynamics="cartpole",
+            load_dynamics=load_dynamics
         )
-    net = torch.load(path_load)
-    net.eval()
+    else:
+        controller_model = load_model(args.model, args.epoch)
 
     modified_params = {}
 
+    # define dynamics and environmen
     dynamics = CartpoleDynamics(modified_params=modified_params)
     eval_env = CartPoleEnv(dynamics)
-    evaluator = Evaluator(eval_env, **config)
+    evaluator = Evaluator(controller_model, eval_env)
     # angles = evaluator.run_for_fixed_length(net, render=True)
-    success, suc_std, _ = evaluator.evaluate_in_environment(net, render=True)
+    success, suc_std, _ = evaluator.evaluate_in_environment(render=True)
     # try:
     #     swingup_mean, swingup_std, _, data_collection = evaluator.make_swingup(
     #         net, nr_iters=1, render=True, max_iters=500

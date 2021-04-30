@@ -71,7 +71,6 @@ class TrainBase:
         save_name="test_model",
         **kwargs
     ):
-        self.config = {}
         self.sample_in = sample_in
         self.delta_t = delta_t
         self.delta_t_train = delta_t_train
