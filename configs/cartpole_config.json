@@ -1,0 +1,28 @@
+{
+    "general": {
+        "system": "cartpole",
+        "ref_dim": 0,
+        "state_size": 4,
+        "batch_size": 8,
+        "nr_epochs": 200,
+        "sample_in": "eval_env"
+    },
+    "swingup": {
+        "nr_actions": 10,
+        "learning_rate_controller": 0.001,
+        "learning_rate_dynamics": 0.001,
+        "use_new_data": 1000,
+        "sample_data": 10000,
+        "action_dim": 1,
+        "suc_up_down": -1
+    },
+    "balance": {
+        "nr_actions": 3,
+        "learning_rate_controller": 0.01,
+        "learning_rate_dynamics": 0.001,
+        "sample_data": 1000,
+        "action_dim": 1,
+        "suc_up_down": 1,
+        "use_new_data": 0
+    }
+}

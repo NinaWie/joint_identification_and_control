@@ -31,6 +31,8 @@ class CartpoleDynamics:
         """
         Compute new state from state and action
         """
+        # get action to range [-1, 1]
+        action = action * 2 - .5
         # get state
         x = state[:, 0]
         x_dot = state[:, 1]

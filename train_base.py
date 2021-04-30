@@ -257,6 +257,9 @@ class TrainBase:
                 )
             )
 
+        self.results_dict["mean_success"].append(success)
+        self.results_dict["std_success"].append(suc_std)
+
         # In any case do tensorboard logging
         for name, param in self.net.named_parameters():
             self.writer.add_histogram(name, param)

@@ -47,10 +47,9 @@ def raw_states_to_torch(
 
 class Evaluator:
 
-    def __init__(self, std=1, modified_params={}):
+    def __init__(self, eval_env, std=1, modified_params={}):
         self.std = std
-        self.dynamics = CartpoleDynamics(modified_params=modified_params)
-        self.eval_env = CartPoleEnv(self.dynamics)
+        self.eval_env = eval_env
 
     def make_swingup(
         self, net, nr_iters=10, max_iters=100, success_over=20, render=False
@@ -136,7 +135,7 @@ class Evaluator:
                     # and normalize
                     torch_state = raw_states_to_torch(new_state, std=self.std)
                     # Predict optimal action:
-                    action_seq = torch.sigmoid(net(torch_state)) - .5
+                    action_seq = torch.sigmoid(net(torch_state))
                     for action_ind in range(APPLY_UNTIL):
                         # run action in environment
                         new_state = self.eval_env._step(
@@ -147,7 +146,7 @@ class Evaluator:
                             angles.append(np.absolute(new_state[2]))
                         if render:
                             self.eval_env._render()
-                            time.sleep(.1)
+                            # time.sleep(.1)
                     if not self.eval_env.is_upright():
                         break
                         # track number of timesteps until failure
@@ -196,18 +195,22 @@ if __name__ == "__main__":
     # run a saver sequence
     # run_saved_arr("saved_states.npy")
     # exit()
-
-    net = torch.load(
-        os.path.join(
-            "trained_models", "cartpole", MODEL_NAME,
-            "model_pendulum" + args.epoch
-        )
+    path_load = os.path.join(
+        "trained_models", "cartpole", MODEL_NAME, "model_pendulum" + args.epoch
     )
+    if not os.path.exists(path_load):
+        path_load = os.path.join(
+            "trained_models", "cartpole", MODEL_NAME,
+            "model_cartpole" + args.epoch
+        )
+    net = torch.load(path_load)
     net.eval()
 
     modified_params = {}
 
-    evaluator = Evaluator(modified_params=modified_params)
+    dynamics = CartpoleDynamics(modified_params=modified_params)
+    eval_env = CartPoleEnv(dynamics)
+    evaluator = Evaluator(eval_env, modified_params=modified_params)
     # angles = evaluator.run_for_fixed_length(net, render=True)
     success, suc_std, _ = evaluator.evaluate_in_environment(net, render=True)
     # try:

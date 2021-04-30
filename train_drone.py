@@ -169,7 +169,7 @@ class TrainDrone(TrainBase):
         #     )
         # self.results_dict["eval_in_d2_mean"].append(suc_mean)
         # self.results_dict["eval_in_d2_std"].append(suc_std)
-        
+
         # print("--------- eval in base simulator (D1) -------------")
         # base_env = QuadRotorEnvBase(FlightmareDynamics(), self.delta_t)
         # evaluator = QuadEvaluator(controller, base_env, **self.config)
@@ -181,7 +181,6 @@ class TrainDrone(TrainBase):
         # self.results_dict["eval_in_d1_std"].append(suc_std)
         # self.state_data.num_self_play = tmp_self_play
 
-
         self.sample_new_data(epoch)
 
         # increase threshold
@@ -192,8 +191,6 @@ class TrainDrone(TrainBase):
         # save best model
         self.save_model(epoch, suc_mean, suc_std)
 
-        self.results_dict["mean_success"].append(suc_mean)
-        self.results_dict["std_success"].append(suc_std)
         self.results_dict["thresh_div"].append(self.config["thresh_div"])
         return suc_mean, suc_std
 

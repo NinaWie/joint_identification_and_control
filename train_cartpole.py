@@ -1,9 +1,10 @@
 import os
-import matplotlib.pyplot as plt
 import numpy as np
+import json
 import torch
 import torch.optim as optim
 
+from train_base import TrainBase
 from neural_control.dataset import CartpoleDataset
 from neural_control.drone_loss import (
     cartpole_loss_balance, cartpole_loss_swingup
@@ -11,136 +12,178 @@ from neural_control.drone_loss import (
 from evaluate_cartpole import Evaluator
 from neural_control.models.resnet_like_model import Net
 from neural_control.plotting import plot_loss, plot_success
-from neural_control.environments.cartpole_env import construct_states
+from neural_control.environments.cartpole_env import (
+    construct_states, CartPoleEnv
+)
 from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
 
-SAVE_PATH = "trained_models/cartpole/new"
-if not os.path.exists(SAVE_PATH):
-    os.makedirs(SAVE_PATH)
 
-SWINGUP = 0
-NR_EVAL_ITERS = 10
+class TrainCartpole(TrainBase):
+    """
+    Train a controller for a quadrotor
+    """
 
-if SWINGUP:
-    NR_SWINGUP_ITERS = 20
-    USE_NEW_DATA = 1000
-    SAMPLE_DATA = 10000
-    OUT_SIZE = 10
-else:
-    USE_NEW_DATA = 0
-    SAMPLE_DATA = 1000
-    OUT_SIZE = 3  # how many actions
-DIM = 4  # input dimension
+    def __init__(self, train_dynamics, eval_dynamics, config, swingup=0):
+        """
+        param sample_in: one of "train_env", "eval_env"
+        """
+        self.swingup = swingup
+        part_cfg = config["swingup"] if swingup else config["balance"]
+        self.config = {**config["general"], **part_cfg}
+        super().__init__(train_dynamics, eval_dynamics, **self.config)
+        self.eval_env = CartPoleEnv(eval_dynamics)
 
-net = Net(DIM, OUT_SIZE)
-# load network that is trained on standing data
-# net = torch.load(
-#     os.path.join("models", "minimize_x_brakingWUHU", "model_pendulum")
-# )
+    def initialize_model(
+        self, base_model=None, base_model_name="model_pendulum"
+    ):
+        if base_model is not None:
+            self.net = torch.load(os.path.join(base_model, base_model_name))
+        else:
+            self.net = Net(self.state_size, self.nr_actions)
+        self.state_data = CartpoleDataset(
+            num_states=self.config["sample_data"]
+        )
+        with open(os.path.join(self.save_path, "config.json"), "w") as outfile:
+            json.dump(self.config, outfile)
 
-optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+        self.init_optimizer()
 
-(
-    episode_length_mean, episode_length_std, loss_list, pole_angle_mean,
-    pole_angle_std, eval_value
-) = (list(), list(), list(), list(), list(), 0)
+    def train_controller_model(self, current_state, action):
+        # zero the parameter gradients
+        self.optimizer_controller.zero_grad()
 
-dynamics = CartpoleDynamics()
+        for i in range(action.size()[1]):
+            current_state = self.train_dynamics(current_state, action[:, i])
+        if self.swingup:
+            loss = cartpole_loss_swingup(current_state)
+        else:
+            loss = cartpole_loss_balance(current_state)
 
-NR_EPOCHS = 200
-# TRAIN:
-for epoch in range(NR_EPOCHS):
+        loss.backward()
+        self.optimizer_controller.step()
+        return loss
 
-    # EVALUATION:
-    evaluator = Evaluator()
-    # Start in upright position and see how long it is balaned
-    success_mean, success_std, new_data = evaluator.evaluate_in_environment(
-        net, nr_iters=NR_EVAL_ITERS
-    )
+    def run_epoch(self, train="controller"):
+        # tic_epoch = time.time()
+        running_loss = 0
+        for i, data in enumerate(self.trainloader, 0):
+            # inputs are normalized states, current state is unnormalized in
+            # order to correctly apply the action
+            in_state, current_state = data
 
-    # Start in random position and run 100 times, then get average state
-    if SWINGUP:
+            actions = self.net(in_state)
+            actions = torch.sigmoid(actions)
+            action_seq = torch.reshape(
+                actions, (-1, self.nr_actions, self.action_dim)
+            )
+
+            if train == "controller":
+                loss = self.train_controller_model(current_state, action_seq)
+            else:
+                # should work for both recurrent and normal
+                loss = self.train_dynamics_model(current_state, action_seq)
+                self.count_finetune_data += len(current_state)
+
+            running_loss += loss.item()
+        # time_epoch = time.time() - tic
+        epoch_loss = running_loss / i
+        self.results_dict["loss"].append(epoch_loss)
+        self.results_dict["trained"].append(train)
+        print(f"Loss ({train}): {round(epoch_loss, 2)}")
+        self.writer.add_scalar("Loss/train", epoch_loss)
+        return epoch_loss
+
+    def evaluate_model(self, epoch):
+
+        if self.swingup:
+            new_data = self.evaluate_swingup(epoch)
+        else:
+            new_data = self.evaluate_balance(epoch)
+
+        # Renew dataset dynamically
+        if epoch % 3 == 0:
+            state_data = CartpoleDataset(num_states=self.config["sample_data"])
+            if self.config["use_new_data"] > 0 and epoch > 5:
+                # add the data generated during evaluation
+                rand_inds_include = np.random.permutation(
+                    len(new_data)
+                )[:self.config["use_new_data"]]
+                state_data.add_data(np.array(new_data)[rand_inds_include])
+            self.trainloader = torch.utils.data.DataLoader(
+                self.state_data, batch_size=8, shuffle=True, num_workers=0
+            )
+            print(f"------- new dataset {len(state_data)}---------")
+        print()
+
+    def evaluate_balance(self, epoch):
+        # EVALUATION:
+        evaluator = Evaluator(self.eval_env)
+        # Start in upright position and see how long it is balaned
+        success_mean, success_std, _ = evaluator.evaluate_in_environment(
+            self.net, nr_iters=10
+        )
+        self.save_model(epoch, success_mean, success_std)
+        # TODO: also do self play?
+        return []
+
+    def evaluate_swingup(self, epoch):
+        evaluator = Evaluator(self.eval_env)
+        success_mean, success_std, _ = evaluator.evaluate_in_environment(
+            self.net, nr_iters=10
+        )
         swing_up_mean, swing_up_std, new_data = evaluator.make_swingup(
-            net, nr_iters=NR_SWINGUP_ITERS
+            self.net, nr_iters=10
         )
         print(
-            "Average episode length: ", episode_length_mean[-1], "std:",
-            episode_length_std[-1], "swing up:", swing_up_mean, "std:",
-            swing_up_std
+            "Average episode length: ", success_mean, "std:", success_std,
+            "swing up:", swing_up_mean, "std:", swing_up_std
         )
         if swing_up_mean[0] < .5 and swing_up_mean[2] < .5 and np.sum(
             swing_up_mean
-        ) < 3 and np.sum(swing_up_std) < 1 and episode_length_mean[-1] > 180:
+        ) < 3 and np.sum(swing_up_std) < 1 and success_mean > 180:
             print("early stopping")
-            break
+        # TODO: save model when swingup performance metric is sufficient
         performance_swingup = swing_up_mean[0] + swing_up_mean[
-            2] + (251 - episode_length_mean[-1]) * 0.01
+            2] + (251 - success_mean) * 0.01
 
-    # save and output the evaluation results
-    episode_length_mean.append(success_mean)
-    episode_length_std.append(success_std)
+        self.save_model(epoch, swing_up_mean, swing_up_std)
+        return new_data
 
-    if epoch > 0 and success_mean >= eval_value:
-        eval_value = success_mean
-        print("New best model")
-        torch.save(net, os.path.join(SAVE_PATH, "model_pendulum" + str(epoch)))
-    print()
 
-    # Renew dataset dynamically
-    if epoch % 3 == 0:
-        state_data = CartpoleDataset(num_states=SAMPLE_DATA)
-        if USE_NEW_DATA > 0 and epoch > 5:
-            # add the data generated during evaluation
-            rand_inds_include = np.random.permutation(len(new_data)
-                                                      )[:USE_NEW_DATA]
-            state_data.add_data(np.array(new_data)[rand_inds_include])
-        trainloader = torch.utils.data.DataLoader(
-            state_data, batch_size=8, shuffle=True, num_workers=0
-        )
-        print(f"------- new dataset {len(state_data)}---------")
+def train_control(base_model, config, swingup=0):
+    """
+    Train a controller from scratch or with an initial model
+    """
+    modified_params = config["general"]["modified_params"]
+    train_dynamics = CartpoleDynamics(modified_params)
+    eval_dynamics = CartpoleDynamics(modified_params)
 
+    trainer = TrainCartpole(
+        train_dynamics, eval_dynamics, config, swingup=swingup
+    )
+    trainer.initialize_model(base_model)
     try:
-        running_loss = 0.0
-        for i, data in enumerate(trainloader, 0):
-            # get the inputs; data is a list of [inputs, labels]
-            inputs, state = data
+        for epoch in range(trainer.config["nr_epochs"]):
+            trainer.evaluate_model(epoch)
 
-            # zero the parameter gradients
-            optimizer.zero_grad()
-
-            # forward + backward + optimize
-            action = net(inputs)
-            lam = epoch / NR_EPOCHS
-
-            # bring action into -1 1 range
-            action = torch.sigmoid(action) - .5
-
-            # update state iteratively for each proposed action
-            for i in range(action.size()[1]):
-                state = dynamics(state, action[:, i])
-
-            if SWINGUP:
-                loss = cartpole_loss_swingup
-            else:
-                loss = cartpole_loss_balance(state)
-            loss.backward()
-            optimizer.step()
-            # print statistics
-            running_loss += loss.item()
+            trainer.run_epoch(train="controller")
     except KeyboardInterrupt:
-        break
+        pass
+    trainer.finalize()
 
-    # Print current loss and possibly save model:
-    curr_loss = running_loss / len(state_data)
-    print('[%d] loss: %.3f' % (epoch + 1, curr_loss))
-    loss_list.append(curr_loss)
 
-torch.save(net, os.path.join(SAVE_PATH, "model_pendulum"))
+if __name__ == "__main__":
+    # LOAD CONFIG - select balance or swigup
+    with open("configs/cartpole_config.json", "r") as infile:
+        config = json.load(infile)
 
-# PLOTTING
-plot_loss(loss_list, SAVE_PATH)
-plot_success(
-    np.arange(len(episode_length_mean)), episode_length_mean,
-    episode_length_std, SAVE_PATH
-)
-print('Finished Training')
+    baseline_model = None  # "trained_models/cartpole/current_model"
+    config["general"]["save_name"] = "train_balance"
+
+    mod_params = {}
+    config["general"]["modified_params"] = mod_params
+
+    # TRAIN
+    # config["nr_epochs"] = 20
+    train_control(baseline_model, config)
+    # train_dynamics(baseline_model, config)
