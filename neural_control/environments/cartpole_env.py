@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import time
 logger = logging.getLogger(__name__)
+from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
 try:
     from . import cartpole_rendering as rendering
 except:
@@ -24,19 +25,9 @@ class CartPoleEnv():
     def __init__(self, dynamics, dt=0.02):
         self.dynamics = dynamics
         self.dt = dt
-        self.gravity = 9.8
-        self.masscart = 1.0
-        self.masspole = 0.1
-        self.total_mass = (self.masspole + self.masscart)
-        self.length = 0.5  # actually half the pole's length
-        self.polemass_length = (self.masspole * self.length)
-        self.force_mag = 40.0  # prev 30 TODO
-        self.tau = 0.02  # seconds between state updates
-        self.muc = 0.0005
-        self.mup = 0.000002
 
         # Angle at which to fail the episode
-        self.theta_threshold_radians = 12 * 2 * math.pi / 360
+        self.theta_thresh = 12 * 2 * math.pi / 360
         self.x_threshold = 2.4
 
         # Angle limit set to 2 * theta_threshold_radians so failing observation
@@ -48,11 +39,21 @@ class CartPoleEnv():
 
         self.steps_beyond_done = None
 
+    def is_upright(self):
+        theta = self.state[2]
+        return theta > -self.theta_thresh and theta < self.theta_thresh
+
     def _step(self, action, is_torch=True):
         torch_state = torch.tensor([list(self.state)])
         if not is_torch:
-            action = torch.tensor([list(action)])
+            action = torch.tensor([action])
         self.state = self.dynamics(torch_state, action, dt=self.dt)[0].numpy()
+        # stay in bounds with theta
+        theta = self.state[2]
+        if theta > np.pi:
+            self.state[2] = theta - 2 * np.pi
+        if theta <= -np.pi:
+            self.state[2] = 2 * np.pi + theta
         return self.state
 
     def _step_old(self, action):
@@ -122,11 +123,20 @@ class CartPoleEnv():
         # gauss[0] = (np.random.rand(1) * 2 - 1) * self.x_threshold
         # gauss[2] = np.random.rand(1) * 2 - 1
         self.state = (np.random.rand(4) * 2 - 1) * self.state_limits
-        # self.state = (np.random.rand(4) * 2 - 1) * self.state_limits
         # this achieves the same as below because then min is -0.05
         # self.np_random.uniform(low=-0.05, high=0.05, size=(4, ))
         self.steps_beyond_done = None
         return np.array(self.state)
+
+    def _reset_upright(self):
+        """
+        reset state to a position of the pole close to the optimal upright pos
+        """
+        self._reset()
+        # generally lower speed
+        self.state = self.state * .25
+        # upright angle
+        self.state[2] = (np.random.rand(1) - .5) * .2
 
     def _render(self, mode='human', close=False):
         """
@@ -198,7 +208,8 @@ def construct_states(
     one_direction = 1
 
     # Sample states
-    env = CartPoleEnv()
+    dyn = CartpoleDynamics()
+    env = CartPoleEnv(dyn)
     data = []
     # randimized runs
     # while len(data) < num_data * randomized_runs:
@@ -211,13 +222,12 @@ def construct_states(
 
     # # after randomized runs: run balancing
     while len(data) < num_data:
-        fine = False
         # only theta between -0.5 and 0.5
         # env.state = env.state * .5  # TODO
         env.state[2] = (np.random.rand(1) - .5) * .2
-        while not fine:
+        while env.is_upright():
             action = np.random.rand() - 0.5
-            state, _, fine, _ = env._step(action)
+            state = env._step(action, is_torch=False)
             data.append(state)
         env._reset()
 

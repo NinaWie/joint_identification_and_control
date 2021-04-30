@@ -102,7 +102,16 @@ def fixed_wing_last_loss(drone_states, linear_reference, action, printout=0):
     return loss
 
 
-def cartpole_loss(state, lambda_factor=.4, printout=0):
+def cartpole_loss_balance(state):
+    abs_state = torch.abs(state)
+    angle_loss = 3 * abs_state[:, 2]
+    # high angle velocity is fine if angle itself is high
+    angle_vel_loss = .1 * abs_state[:, 3] * (torch.pi - abs_state[:, 2])**2
+    loss = .1 * (angle_loss + angle_vel_loss)
+    return torch.sum(loss)
+
+
+def cartpole_loss_swingup(state, lambda_factor=.4, printout=0):
 
     abs_state = torch.abs(state)
 

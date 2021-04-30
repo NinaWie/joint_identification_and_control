@@ -5,19 +5,31 @@ import torch
 import torch.optim as optim
 
 from neural_control.dataset import CartpoleDataset
-from neural_control.drone_loss import cartpole_loss
+from neural_control.drone_loss import (
+    cartpole_loss_balance, cartpole_loss_swingup
+)
 from evaluate_cartpole import Evaluator
 from neural_control.models.resnet_like_model import Net
 from neural_control.plotting import plot_loss, plot_success
 from neural_control.environments.cartpole_env import construct_states
 from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
 
-SAVE_PATH = "trained_models/cartpole/current_model"
-NR_EVAL_ITERS = 10
-NR_SWINGUP_ITERS = 20
-USE_NEW_DATA = 1000
+SAVE_PATH = "trained_models/cartpole/new"
+if not os.path.exists(SAVE_PATH):
+    os.makedirs(SAVE_PATH)
 
-OUT_SIZE = 10
+SWINGUP = 0
+NR_EVAL_ITERS = 10
+
+if SWINGUP:
+    NR_SWINGUP_ITERS = 20
+    USE_NEW_DATA = 1000
+    SAMPLE_DATA = 10000
+    OUT_SIZE = 10
+else:
+    USE_NEW_DATA = 0
+    SAMPLE_DATA = 1000
+    OUT_SIZE = 3  # how many actions
 DIM = 4  # input dimension
 
 net = Net(DIM, OUT_SIZE)
@@ -31,7 +43,7 @@ optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 (
     episode_length_mean, episode_length_std, loss_list, pole_angle_mean,
     pole_angle_std, eval_value
-) = (list(), list(), list(), list(), list(), np.inf)
+) = (list(), list(), list(), list(), list(), 0)
 
 dynamics = CartpoleDynamics()
 
@@ -42,36 +54,42 @@ for epoch in range(NR_EPOCHS):
     # EVALUATION:
     evaluator = Evaluator()
     # Start in upright position and see how long it is balaned
-    success, _ = evaluator.evaluate_in_environment(net, nr_iters=NR_EVAL_ITERS)
+    success_mean, success_std, new_data = evaluator.evaluate_in_environment(
+        net, nr_iters=NR_EVAL_ITERS
+    )
+
     # Start in random position and run 100 times, then get average state
-    swing_up_mean, swing_up_std, eval_loss, new_data = evaluator.make_swingup(
-        net, nr_iters=NR_SWINGUP_ITERS
-    )
+    if SWINGUP:
+        swing_up_mean, swing_up_std, new_data = evaluator.make_swingup(
+            net, nr_iters=NR_SWINGUP_ITERS
+        )
+        print(
+            "Average episode length: ", episode_length_mean[-1], "std:",
+            episode_length_std[-1], "swing up:", swing_up_mean, "std:",
+            swing_up_std
+        )
+        if swing_up_mean[0] < .5 and swing_up_mean[2] < .5 and np.sum(
+            swing_up_mean
+        ) < 3 and np.sum(swing_up_std) < 1 and episode_length_mean[-1] > 180:
+            print("early stopping")
+            break
+        performance_swingup = swing_up_mean[0] + swing_up_mean[
+            2] + (251 - episode_length_mean[-1]) * 0.01
+
     # save and output the evaluation results
-    episode_length_mean.append(round(np.mean(success), 3))
-    episode_length_std.append(round(np.std(success), 3))
-    print(
-        "Average episode length: ", episode_length_mean[-1], "std:",
-        episode_length_std[-1], "swing up:", swing_up_mean, "std:",
-        swing_up_std, "loss:", round(np.mean(eval_loss), 2)
-    )
-    if swing_up_mean[0] < .5 and swing_up_mean[2] < .5 and np.sum(
-        swing_up_mean
-    ) < 3 and np.sum(swing_up_std) < 1 and episode_length_mean[-1] > 180:
-        print("early stopping")
-        break
-    performance_swingup = swing_up_mean[0] + swing_up_mean[
-        2] + (251 - episode_length_mean[-1]) * 0.01
-    if epoch > 0 and performance_swingup <= eval_value:
-        eval_value = performance_swingup
+    episode_length_mean.append(success_mean)
+    episode_length_std.append(success_std)
+
+    if epoch > 0 and success_mean >= eval_value:
+        eval_value = success_mean
         print("New best model")
         torch.save(net, os.path.join(SAVE_PATH, "model_pendulum" + str(epoch)))
     print()
 
     # Renew dataset dynamically
     if epoch % 3 == 0:
-        state_data = CartpoleDataset(num_states=10000)
-        if epoch > 5:
+        state_data = CartpoleDataset(num_states=SAMPLE_DATA)
+        if USE_NEW_DATA > 0 and epoch > 5:
             # add the data generated during evaluation
             rand_inds_include = np.random.permutation(len(new_data)
                                                       )[:USE_NEW_DATA]
@@ -101,7 +119,10 @@ for epoch in range(NR_EPOCHS):
             for i in range(action.size()[1]):
                 state = dynamics(state, action[:, i])
 
-            loss = cartpole_loss(state, lambda_factor=lam, printout=0)
+            if SWINGUP:
+                loss = cartpole_loss_swingup
+            else:
+                loss = cartpole_loss_balance(state)
             loss.backward()
             optimizer.step()
             # print statistics
@@ -118,5 +139,8 @@ torch.save(net, os.path.join(SAVE_PATH, "model_pendulum"))
 
 # PLOTTING
 plot_loss(loss_list, SAVE_PATH)
-plot_success(episode_length_mean, episode_length_std, SAVE_PATH)
+plot_success(
+    np.arange(len(episode_length_mean)), episode_length_mean,
+    episode_length_std, SAVE_PATH
+)
 print('Finished Training')
