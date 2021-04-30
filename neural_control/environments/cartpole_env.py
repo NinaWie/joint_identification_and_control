@@ -132,9 +132,7 @@ class CartPoleEnv():
         """
         reset state to a position of the pole close to the optimal upright pos
         """
-        self._reset()
-        # generally lower speed
-        self.state = self.state * .25
+        self.state = np.zeros(4)
         # upright angle
         self.state[2] = (np.random.rand(1) - .5) * .2
 
@@ -223,10 +221,9 @@ def construct_states(
     # # after randomized runs: run balancing
     while len(data) < num_data:
         # only theta between -0.5 and 0.5
-        # env.state = env.state * .5  # TODO
-        env.state[2] = (np.random.rand(1) - .5) * .2
+        env._reset_upright()
         while env.is_upright():
-            action = np.random.rand() - 0.5
+            action = np.random.rand() * 2 - 0.5
             state = env._step(action, is_torch=False)
             data.append(state)
         env._reset()

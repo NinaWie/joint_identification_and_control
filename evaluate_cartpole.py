@@ -1,6 +1,7 @@
 import os
 import time
 import argparse
+import json
 import numpy as np
 import torch
 
@@ -47,9 +48,11 @@ def raw_states_to_torch(
 
 class Evaluator:
 
-    def __init__(self, eval_env, std=1, modified_params={}):
+    def __init__(self, eval_env, std=1, action_dim=1, nr_actions=3, **kwargs):
         self.std = std
         self.eval_env = eval_env
+        self.nr_actions = nr_actions
+        self.action_dim = action_dim
 
     def make_swingup(
         self, net, nr_iters=10, max_iters=100, success_over=20, render=False
@@ -83,7 +86,6 @@ class Evaluator:
                     torch_state = raw_states_to_torch(new_state, std=self.std)
                     # Predict optimal action:
                     predicted_action = net(torch_state)
-                    action_seq = torch.sigmoid(predicted_action) - .5
                     # print([round(act, 2) for act in action_seq[0].numpy()])
                     # if render:
                     #     print("state before", new_state)
@@ -135,7 +137,10 @@ class Evaluator:
                     # and normalize
                     torch_state = raw_states_to_torch(new_state, std=self.std)
                     # Predict optimal action:
-                    action_seq = torch.sigmoid(net(torch_state))
+                    action_seq = net(torch_state)
+                    action_seq = torch.reshape(
+                        action_seq, (-1, self.nr_actions, self.action_dim)
+                    )
                     for action_ind in range(APPLY_UNTIL):
                         # run action in environment
                         new_state = self.eval_env._step(
@@ -154,8 +159,10 @@ class Evaluator:
                 avg_angle[n] = np.mean(angles) if len(angles) > 0 else 100
                 success[n] = i
                 self.eval_env._reset()
-        print("Average Success", round(np.mean(success), 3))
-        return np.mean(success), np.std(success), data_collection
+        mean_err = np.mean(success)
+        std_err = np.std(success)
+        print("Average success: %3.2f (%3.2f)" % (mean_err, std_err))
+        return mean_err, std_err, data_collection
 
 
 def run_saved_arr(path):
@@ -190,11 +197,14 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    MODEL_NAME = args.model  # "theta_max_normalize"  # "best_model_2"
+    MODEL_NAME = args.model
 
-    # run a saver sequence
-    # run_saved_arr("saved_states.npy")
-    # exit()
+    with open(
+        os.path.join("trained_models", "cartpole", MODEL_NAME, "config.json"),
+        "r"
+    ) as infile:
+        config = json.load(infile)
+
     path_load = os.path.join(
         "trained_models", "cartpole", MODEL_NAME, "model_pendulum" + args.epoch
     )
@@ -210,7 +220,7 @@ if __name__ == "__main__":
 
     dynamics = CartpoleDynamics(modified_params=modified_params)
     eval_env = CartPoleEnv(dynamics)
-    evaluator = Evaluator(eval_env, modified_params=modified_params)
+    evaluator = Evaluator(eval_env, **config)
     # angles = evaluator.run_for_fixed_length(net, render=True)
     success, suc_std, _ = evaluator.evaluate_in_environment(net, render=True)
     # try:

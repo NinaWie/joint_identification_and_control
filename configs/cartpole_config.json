@@ -5,7 +5,8 @@
         "state_size": 4,
         "batch_size": 8,
         "nr_epochs": 200,
-        "sample_in": "eval_env"
+        "sample_in": "eval_env",
+        "resample_every": 5
     },
     "swingup": {
         "nr_actions": 10,

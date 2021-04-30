@@ -10,7 +10,8 @@ from neural_control.drone_loss import (
     cartpole_loss_balance, cartpole_loss_swingup
 )
 from evaluate_cartpole import Evaluator
-from neural_control.models.resnet_like_model import Net
+from neural_control.models.resnet_like_model import Net as SimpleResNet
+from neural_control.models.simple_model import Net as SimpleNet
 from neural_control.plotting import plot_loss, plot_success
 from neural_control.environments.cartpole_env import (
     construct_states, CartPoleEnv
@@ -39,7 +40,14 @@ class TrainCartpole(TrainBase):
         if base_model is not None:
             self.net = torch.load(os.path.join(base_model, base_model_name))
         else:
-            self.net = Net(self.state_size, self.nr_actions)
+            if self.swingup:
+                self.net = SimpleResNet(
+                    self.state_size, self.nr_actions * self.action_dim
+                )
+            else:
+                self.net = SimpleNet(
+                    self.state_size, self.nr_actions * self.action_dim
+                )
         self.state_data = CartpoleDataset(
             num_states=self.config["sample_data"]
         )
@@ -72,7 +80,6 @@ class TrainCartpole(TrainBase):
             in_state, current_state = data
 
             actions = self.net(in_state)
-            actions = torch.sigmoid(actions)
             action_seq = torch.reshape(
                 actions, (-1, self.nr_actions, self.action_dim)
             )
@@ -101,7 +108,7 @@ class TrainCartpole(TrainBase):
             new_data = self.evaluate_balance(epoch)
 
         # Renew dataset dynamically
-        if epoch % 3 == 0:
+        if epoch % self.resample_every == 0:
             state_data = CartpoleDataset(num_states=self.config["sample_data"])
             if self.config["use_new_data"] > 0 and epoch > 5:
                 # add the data generated during evaluation
@@ -112,22 +119,20 @@ class TrainCartpole(TrainBase):
             self.trainloader = torch.utils.data.DataLoader(
                 self.state_data, batch_size=8, shuffle=True, num_workers=0
             )
-            print(f"------- new dataset {len(state_data)}---------")
-        print()
+            print(f"sampled new data {len(state_data)}")
 
     def evaluate_balance(self, epoch):
         # EVALUATION:
-        evaluator = Evaluator(self.eval_env)
+        evaluator = Evaluator(self.eval_env, **self.config)
         # Start in upright position and see how long it is balaned
-        success_mean, success_std, _ = evaluator.evaluate_in_environment(
+        success_mean, success_std, data = evaluator.evaluate_in_environment(
             self.net, nr_iters=10
         )
         self.save_model(epoch, success_mean, success_std)
-        # TODO: also do self play?
-        return []
+        return data
 
     def evaluate_swingup(self, epoch):
-        evaluator = Evaluator(self.eval_env)
+        evaluator = Evaluator(self.eval_env, **self.config)
         success_mean, success_std, _ = evaluator.evaluate_in_environment(
             self.net, nr_iters=10
         )
@@ -156,7 +161,7 @@ def train_control(base_model, config, swingup=0):
     """
     modified_params = config["general"]["modified_params"]
     train_dynamics = CartpoleDynamics(modified_params)
-    eval_dynamics = CartpoleDynamics(modified_params)
+    eval_dynamics = CartpoleDynamics(modified_params, test_time=1)
 
     trainer = TrainCartpole(
         train_dynamics, eval_dynamics, config, swingup=swingup
@@ -165,7 +170,8 @@ def train_control(base_model, config, swingup=0):
     try:
         for epoch in range(trainer.config["nr_epochs"]):
             trainer.evaluate_model(epoch)
-
+            print()
+            print("Epoch", epoch)
             trainer.run_epoch(train="controller")
     except KeyboardInterrupt:
         pass
@@ -178,7 +184,7 @@ if __name__ == "__main__":
         config = json.load(infile)
 
     baseline_model = None  # "trained_models/cartpole/current_model"
-    config["general"]["save_name"] = "train_balance"
+    config["general"]["save_name"] = "train_balance_2"
 
     mod_params = {}
     config["general"]["modified_params"] = mod_params

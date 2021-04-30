@@ -10,16 +10,18 @@ cfg = {
     "masscart": 1.0,
     "masspole": 0.1,
     "length": 0.5,  # actually half the pole's length
-    "max_force_mag": 40.0,
+    "max_force_mag": 30.0,
     "muc": 0.0005,
     "mup": 0.000002,
+    "wind": 0
 }
 
 
 class CartpoleDynamics:
 
-    def __init__(self, modified_params={}):
+    def __init__(self, modified_params={}, test_time=0):
         self.cfg = cfg
+        self.test_time = test_time
         self.cfg.update(modified_params)
         self.cfg["total_mass"] = self.cfg["masspole"] + self.cfg["masscart"]
         self.cfg["polemass_length"] = self.cfg["masspole"] * self.cfg["length"]
@@ -32,7 +34,15 @@ class CartpoleDynamics:
         Compute new state from state and action
         """
         # get action to range [-1, 1]
-        action = action * 2 - .5
+        action = torch.sigmoid(action)
+        action = action * 2 - 1
+        # if self.test_time:
+        #     action = torch.tensor(
+        #         [-1]
+        #     ) if action[0, 0] > action[0, 1] else torch.tensor([-1])
+        # else:
+        #     action = torch.softmax(action, dim=1)
+        #     action = action[:, 0] * -1 + action[:, 1]
         # get state
         x = state[:, 0]
         x_dot = state[:, 1]
@@ -61,10 +71,11 @@ class CartpoleDynamics:
                 self.cfg["total_mass"]
             )
         )
+        wind_drag = self.cfg["wind"] * costheta
 
         # swapped these two lines
         theta = theta + dt * theta_dot
-        theta_dot = theta_dot + dt * thetaacc
+        theta_dot = theta_dot + dt * (thetaacc + wind_drag)
 
         # add velocity of cart
         xacc = (
