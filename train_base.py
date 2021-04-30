@@ -71,6 +71,7 @@ class TrainBase:
         save_name="test_model",
         **kwargs
     ):
+        self.config = {}
         self.sample_in = sample_in
         self.delta_t = delta_t
         self.delta_t_train = delta_t_train
@@ -157,7 +158,7 @@ class TrainBase:
         """
         Implemented in sub classes
         """
-        pass
+        return 0
 
     def train_dynamics_model(self, current_state, action_seq):
         # zero the parameter gradients
@@ -265,6 +266,15 @@ class TrainBase:
         self.writer.add_scalar("success_std", suc_std)
         self.writer.flush()
 
+    def evaluate_model(self, epoch):
+        """
+        Implemented in subclasses --> run system-specific evaluation
+
+        Args:
+            epoch (int): current epoch index
+        """
+        return 0
+
     def finalize(self):
         """
         Save model and plot loss and performance
@@ -292,6 +302,25 @@ class TrainBase:
         self.writer.close()
         print("finished and saved.")
 
+    def update_curriculum(self, successes):
+        current_possible_steps = 1000 / (
+            self.config["speed_factor"] / self.config["delta_t"]
+        )
+        successes.append(self.results_dict["mean_success"][-1])
+        print(
+            successes, "speed", round(self.config["speed_factor"], 2),
+            "thresh", round(self.config["thresh_div"], 2)
+        )
+        if len(successes) > 5 and np.all(
+            np.array(successes[-5:]) > current_possible_steps
+        ):
+            print(" -------------- increase speed --------- ")
+            self.config["speed_factor"] += 0.1
+            self.config["thresh_div"] = 0.1
+            successes = []
+            self.current_score = 0 if self.suc_up_down == 1 else np.inf
+        return successes
+
     def run_control(self, config, sampling_based_finetune=False, curriculum=1):
         if curriculum:
             self.config["speed_factor"] = 0.4
@@ -301,23 +330,7 @@ class TrainBase:
                 _ = self.evaluate_model(epoch)
 
                 if curriculum:
-                    current_possible_steps = 1000 / (
-                        self.config["speed_factor"] / self.config["delta_t"]
-                    )
-                    successes.append(self.results_dict["mean_success"][-1])
-                    print(
-                        successes, "speed",
-                        round(self.config["speed_factor"], 2), "thresh",
-                        round(self.config["thresh_div"], 2)
-                    )
-                    if len(successes) > 5 and np.all(
-                        np.array(successes[-5:]) > current_possible_steps
-                    ):
-                        print(" -------------- increase speed --------- ")
-                        self.config["speed_factor"] += 0.1
-                        self.config["thresh_div"] = 0.1
-                        successes = []
-                        self.current_score = 0 if self.suc_up_down == 1 else np.inf
+                    successes = self.update_curriculum(successes)
 
                 print(f"\nEpoch {epoch}")
                 self.run_epoch(train="controller")
