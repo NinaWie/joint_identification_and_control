@@ -32,7 +32,6 @@ class LearntDynamics(torch.nn.Module):
                                                                   2))[:, :, 0]
         # run through normal simulator f hat
         new_state = self.simulate(state, action, dt)
-        # TODO: need to implement function simulate in quadrotor and wing dyn
         # run through residual network delta
         added_new_state = self.state_transformer(state, action)
         return new_state + added_new_state

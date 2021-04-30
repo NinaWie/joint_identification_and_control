@@ -173,7 +173,6 @@ def train_control(base_model, config):
     Train a controller from scratch or with an initial model
     """
     modified_params = config["modified_params"]
-    # TODO: might be problematic
     train_dynamics = FixedWingDynamics(modified_params)
     eval_dynamics = FixedWingDynamics(modified_params)
 

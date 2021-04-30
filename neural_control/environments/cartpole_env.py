@@ -56,67 +56,6 @@ class CartPoleEnv():
             self.state[2] = 2 * np.pi + theta
         return self.state
 
-    def _step_old(self, action):
-        """
-        Update state after action
-        """
-        # compute force
-        force = self.force_mag * action
-        # get state and compute next state
-        x, x_dot, theta, theta_dot = self.state
-        costheta = math.cos(theta)
-        sintheta = math.sin(theta)
-        sig = self.muc * np.sign(x_dot)
-        temp = force + self.polemass_length * theta_dot * theta_dot * sintheta
-        thetaacc = (
-            self.gravity * sintheta - (costheta * (temp - sig)) -
-            (self.mup * theta_dot / self.polemass_length)
-        ) / (
-            self.length * (
-                4.0 / 3.0 -
-                self.masspole * costheta * costheta / self.total_mass
-            )
-        )
-        xacc = (
-            temp - (self.polemass_length * thetaacc * costheta) - sig
-        ) / self.total_mass
-        # TODO: swapped those! - is that okay?
-        x = x + self.tau * x_dot
-        x_dot = x_dot + self.tau * xacc
-        theta = theta + self.tau * theta_dot
-        theta_dot = theta_dot + self.tau * thetaacc
-        if theta > np.pi:
-            theta = theta - 2 * np.pi
-        if theta <= -np.pi:
-            theta = 2 * np.pi + theta
-        assert np.abs(theta) <= np.pi, "theta greater pi"
-
-        # change x such that it is not higher than 3
-        # x = ((x * 100 + 240) % 480 - 240) / 100
-        # assert np.abs(x) <= self.x_threshold
-        self.state = (x, x_dot, theta, theta_dot)
-
-        # Check whether still in feasible area etc
-        done =  theta < -self.theta_threshold_radians \
-                or theta > self.theta_threshold_radians
-        done = bool(done)
-
-        if not done:
-            reward = 1.0
-        elif self.steps_beyond_done is None:
-            # Pole just fell!
-            self.steps_beyond_done = 0
-            reward = 1.0
-        else:
-            # if self.steps_beyond_done == 0:
-            #     logger.warning(
-            #         "You are calling 'step()' even though this environment has already returned done = True. You should always call 'reset()' once you receive 'done = True' -- any further steps are undefined behavior."
-            #     )
-            self.steps_beyond_done += 1
-            reward = 0.0
-
-        return np.array(self.state), reward, done, {}
-
     def _reset(self):
         # sample uniformly in the states
         # gauss = np.random.normal(0, 1, 4) / 2.5

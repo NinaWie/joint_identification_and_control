@@ -240,7 +240,7 @@ def full_state_training_data(
     """
     ref_size = 9
     sample_freq = ref_length * 2
-    # TODO: might want to sample less frequently
+
     drone_states = np.zeros((len_data + 200, 12))
     ref_states = np.zeros((len_data + 200, ref_length, ref_size))
 

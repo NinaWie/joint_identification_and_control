@@ -117,7 +117,7 @@ def fixed_wing_dynamics_mpc(self, dt):
     # (see beard & mclain, 2012, p. 44 ff)
     V = ca.sqrt(u**2 + w**2)  # velocity norm
     alpha = ca.atan(w / u)  # angle of attack
-    # alpha = torch.clamp(alpha, -alpha_bound, alpha_bound) TODO
+    # alpha = torch.clamp(alpha, -alpha_bound, alpha_bound)
 
     # NOTE: usually all of Cl, Cd, Cm,... depend on alpha, q, delta_e
     # lift coefficient

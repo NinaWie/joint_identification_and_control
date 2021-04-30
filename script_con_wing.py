@@ -13,7 +13,6 @@ def finetune_control(base_model, config, load_dynamics):
     Train a controller from scratch or with an initial model
     """
     modified_params = config["modified_params"]
-    # TODO: might be problematic
     train_dynamics = LearntFixedWingDynamics()
     train_dynamics.load_state_dict(torch.load(load_dynamics))
     eval_dynamics = FixedWingDynamics(modified_params)

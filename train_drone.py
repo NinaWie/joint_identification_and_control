@@ -200,7 +200,6 @@ def train_control(base_model, config):
     Train a controller from scratch or with an initial model
     """
     modified_params = config["modified_params"]
-    # TODO: might be problematic
     print(modified_params)
     train_dynamics = FlightmareDynamics(modified_params=modified_params)
     eval_dynamics = FlightmareDynamics(modified_params=modified_params)

@@ -28,7 +28,6 @@ class SimpleWingEnv(gym.Env):
         self._state[3] = 11.5
 
     def reset(self):
-        # TODO: wrong at the moment
         # no need to randomize because relative position used anyway
         x_pos = 0
         z_pos = 0

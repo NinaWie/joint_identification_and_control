@@ -106,7 +106,7 @@ class MPC(object):
         # cost matrix for the action
         self._Q_u = np.diag([50, 1, 1, 1])
         self._Q_pen = np.diag([100, 100, 100, 0, 0, 0, 10, 10, 10, 1, 1, 1])
-        # initial state and control action TODO
+        # initial state and control action
         self._quad_s0 = (np.zeros(12)).tolist()
         self._quad_u0 = [.5, .5, .5, .5]
         # default u

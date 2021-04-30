@@ -65,7 +65,7 @@ class Evaluator:
         success = []  # np.zeros((success_over * 10 * nr_iters, 4))
         with torch.no_grad():
             for it in range(nr_iters):
-                # # Set angle to somewhere at the bottom # TODO
+                # # Set angle to somewhere at the bottom
                 random_hanging_state = (np.random.rand(4) - .5)
                 random_hanging_state[2] = (-1) * (
                     (np.random.rand() > .5) * 2 - 1
@@ -76,7 +76,6 @@ class Evaluator:
                 # self.eval_env.state[2] = (np.random.rand(1) - .5) * .2
 
                 # set x position to zero
-                # random_hanging_state[0] = 0 TODO
                 new_state = self.eval_env.state
 
                 # Start balancing

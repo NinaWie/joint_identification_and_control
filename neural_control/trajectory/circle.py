@@ -147,7 +147,6 @@ class Circle:
             ref_length=self.horizon,
             delta_t=self.dt
         )
-        # TODO: distance some factor?
         return reference
 
     def plot_circle(self):

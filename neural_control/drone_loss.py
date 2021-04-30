@@ -53,7 +53,6 @@ def quad_loss_last(states, last_ref_state, action_seq, printout=0):
 
     ang_vel_error = torch.sum(states[:, :, 9:11]**2
                               ) + yaw_factor * torch.sum(states[:, :, 11]**2)
-    # TODO: do on all intermediate states again?
 
     loss = (
         angvel_factor * ang_vel_error + pos_factor * position_loss +

@@ -43,7 +43,6 @@ class Random:
         # print(drone_state[:3], points_3d[:3])
         # points_3d[:, :3] = points_3d[:, :3] - points_3d[
         #     0, :3] + drone_state[:3]
-        # TODO merge: without it it looks nicer, but this was in merge
 
         self.reference = points_3d  # [:, :6]
         # np.zeros((len(points_3d), 9))
