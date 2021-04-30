@@ -146,14 +146,41 @@ class TrainDrone(TrainBase):
         # EVALUATE
         controller = NetworkWrapper(self.net, self.state_data, **self.config)
 
+        print("--------- eval in trained simulator (D1 modified) --------")
         evaluator = QuadEvaluator(controller, self.eval_env, **self.config)
-        # run with mpc to collect data
-        # eval_env.run_mpc_ref("rand", nr_test=5, max_steps=500)
-        # run without mpc for evaluation
         with torch.no_grad():
             suc_mean, suc_std = evaluator.run_eval(
                 "rand", nr_test=10, **self.config
             )
+        self.results_dict["eval_in_d1_trained_mean"].append(suc_mean)
+        self.results_dict["eval_in_d1_trained_std"].append(suc_std)
+
+        ### code to evaluate also in D1 and D2
+        ### need to ensure that eval_env is with train_dynamics
+        # # set self play to zero so no sampled data is added
+        # tmp_self_play = self.state_data.num_self_play
+        # self.state_data.num_self_play = 0
+        # print("--------- eval in real (D2) -------------")
+        # d2_env = QuadRotorEnvBase(self.eval_dynamics, self.delta_t)
+        # evaluator = QuadEvaluator(controller, d2_env, **self.config)
+        # with torch.no_grad():
+        #     suc_mean, suc_std = evaluator.run_eval(
+        #         "rand", nr_test=10, **self.config
+        #     )
+        # self.results_dict["eval_in_d2_mean"].append(suc_mean)
+        # self.results_dict["eval_in_d2_std"].append(suc_std)
+        
+        # print("--------- eval in base simulator (D1) -------------")
+        # base_env = QuadRotorEnvBase(FlightmareDynamics(), self.delta_t)
+        # evaluator = QuadEvaluator(controller, base_env, **self.config)
+        # with torch.no_grad():
+        #     suc_mean, suc_std = evaluator.run_eval(
+        #         "rand", nr_test=10, **self.config
+        #     )
+        # self.results_dict["eval_in_d1_mean"].append(suc_mean)
+        # self.results_dict["eval_in_d1_std"].append(suc_std)
+        # self.state_data.num_self_play = tmp_self_play
+
 
         self.sample_new_data(epoch)
 
@@ -246,7 +273,7 @@ if __name__ == "__main__":
         config = json.load(infile)
 
     ##### For finetune dynamics
-    mod_params = {'translational_drag': np.array([0.7, 0.7, 0.7])}
+    mod_params = {'translational_drag': np.array([0.3, 0.3, 0.3])}
     config["modified_params"] = mod_params
     # define whether the parameters are trainable
     trainable_params = 1

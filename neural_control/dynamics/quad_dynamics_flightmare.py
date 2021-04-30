@@ -74,7 +74,6 @@ class FlightmareDynamics(Dynamics):
     def linear_dynamics(self, force, attitude, velocity):
         """
         linear dynamics
-        no drag so far
         """
 
         world_to_body = self.world_to_body_matrix(attitude)
@@ -86,11 +85,14 @@ class FlightmareDynamics(Dynamics):
         )
         # print("thrust", thrust.size())
         # drag = velocity * TODO: dynamics.drag_coeff??
+        vel_body = torch.matmul(world_to_body, torch.unsqueeze(velocity, 2))[:, :, 0]
+        translational_drag = torch.matmul(
+            body_to_world, torch.unsqueeze(self.torch_translational_drag * vel_body, 2)
+        )[:, :, 0]
         thrust_min_grav = (
-            thrust[:, :, 0] + self.torch_gravity +
-            self.torch_translational_drag
+            thrust[:, :, 0] + self.torch_gravity - translational_drag
         )
-        return thrust_min_grav  # - drag
+        return thrust_min_grav
 
     def run_flight_control(self, thrust, av, body_rates, cross_prod):
         """

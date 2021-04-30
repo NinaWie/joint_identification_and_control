@@ -370,7 +370,7 @@ if __name__ == "__main__":
     modified_params = {}
     # {"rotational_drag": np.array([.1, .1, .1])}
     # {"mass": 1}
-    # {"translational_drag": np.array([.7, .7, .7])}
+    # {"translational_drag": np.array([.3, .3, .3])}
     # {
     #     "mass": 1,
     #     "frame_inertia": np.array([2, 2, 3]),
