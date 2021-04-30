@@ -12,7 +12,7 @@ from neural_control.dynamics.quad_dynamics_simple import SimpleDynamics
 from neural_control.dynamics.quad_dynamics_flightmare import (
     FlightmareDynamics
 )
-from neural_control.dynamics.quad_dynamics_trained import LearntDynamics
+from neural_control.dynamics.quad_dynamics_trained import LearntQuadDynamics
 from neural_control.controllers.network_wrapper import NetworkWrapper
 from neural_control.environments.drone_env import QuadRotorEnvBase
 from evaluate_drone import QuadEvaluator
@@ -233,7 +233,7 @@ def train_dynamics(base_model, config, trainable_params=1):
     config["suc_up_down"] = -1
 
     # train environment is learnt
-    train_dynamics = LearntDynamics(trainable_params=trainable_params)
+    train_dynamics = LearntQuadDynamics(trainable_params=trainable_params)
     eval_dynamics = FlightmareDynamics(modified_params)
 
     trainer = TrainDrone(train_dynamics, eval_dynamics, config)

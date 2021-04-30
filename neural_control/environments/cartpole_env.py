@@ -221,7 +221,8 @@ def construct_states(
     # # after randomized runs: run balancing
     while len(data) < num_data:
         # only theta between -0.5 and 0.5
-        env._reset_upright()
+        env._reset()
+        env.state[2] = (np.random.rand(1) - .5) * .2
         while env.is_upright():
             action = np.random.rand() * 2 - 0.5
             state = env._step(action, is_torch=False)

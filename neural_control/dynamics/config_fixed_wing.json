@@ -40,6 +40,6 @@
     "Cn_del_a": -0.041,
     "Cn_del_r": -0.077,
     "epsilon": 0.16534698176788384,
-    "vel_drag_factor": 1.0,
+    "vel_drag_factor": 0.0,
     "residual_factor": 0.0
 }

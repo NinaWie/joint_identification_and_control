@@ -33,9 +33,10 @@ class CartpoleDynamics:
         """
         Compute new state from state and action
         """
-        # get action to range [-1, 1]
-        action = torch.sigmoid(action)
-        action = action * 2 - 1
+        # # get action to range [-1, 1]
+        # action = torch.sigmoid(action)
+        # action = action * 2 - 1
+        # # Attempt to use discrete actions
         # if self.test_time:
         #     action = torch.tensor(
         #         [-1]
@@ -92,7 +93,7 @@ class LearntCartpoleDynamics(LearntDynamics, CartpoleDynamics):
 
     def __init__(self, modified_params={}, not_trainable=[]):
         CartpoleDynamics.__init__(self, modified_params=modified_params)
-        super(LearntCartpoleDynamics, self).__init__()
+        super(LearntCartpoleDynamics, self).__init__(4, 1)
 
         dict_pytorch = {}
         for key, val in self.cfg.items():

@@ -18,7 +18,7 @@
         "suc_up_down": -1
     },
     "balance": {
-        "nr_actions": 3,
+        "nr_actions": 5,
         "learning_rate_controller": 0.01,
         "learning_rate_dynamics": 0.001,
         "sample_data": 1000,

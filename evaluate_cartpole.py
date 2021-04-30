@@ -151,6 +151,7 @@ class Evaluator:
                             angles.append(np.absolute(new_state[2]))
                         if render:
                             self.eval_env._render()
+                            # test = self.eval_env._render(mode="rgb_array")
                             # time.sleep(.1)
                     if not self.eval_env.is_upright():
                         break
@@ -159,6 +160,7 @@ class Evaluator:
                 avg_angle[n] = np.mean(angles) if len(angles) > 0 else 100
                 success[n] = i
                 self.eval_env._reset()
+        # print(success)
         mean_err = np.mean(success)
         std_err = np.std(success)
         print("Average success: %3.2f (%3.2f)" % (mean_err, std_err))

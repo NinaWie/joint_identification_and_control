@@ -127,6 +127,8 @@ class FixedWingEvaluator:
     def run_eval(self, nr_test, return_dists=False):
         mean_div, not_div_time = [], []
         for i in range(nr_test):
+            # important! reset after every run
+            self.controller._initDynamics()
             target_point = [
                 np.random.rand(3) * np.array([70, 10, 10]) +
                 np.array([20, -5, -5])
@@ -217,7 +219,7 @@ if __name__ == "__main__":
 
     modified_params = {}
     # {"residual_factor": 0.0001}
-    # {"vel_drag_factor": 0.9}
+    # {"vel_drag_factor": 0.2}
     # {
     #     "CL0": 0.3,  # 0.39
     #     "CD0": 0.02,  #  0.0765,

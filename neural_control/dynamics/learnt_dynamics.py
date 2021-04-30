@@ -4,13 +4,14 @@ import torch.nn as nn
 
 class LearntDynamics(torch.nn.Module):
 
-    def __init__(
-        self,
-        state_size,
-        action_size,
-    ):
+    def __init__(self, state_size, action_size, transform_action=False):
         super(LearntDynamics, self).__init__()
-        # further layer for dynamic (non parameter) mismatch
+        self.transform_action = transform_action
+        if self.transform_action:
+            self.linear_at = nn.Parameter(
+                torch.diag(torch.ones(4)), requires_grad=True
+            )
+        # residual network
         self.linear_state_1 = nn.Linear(state_size + action_size, 64)
         std = 0.0001
         torch.nn.init.normal_(self.linear_state_1.weight, mean=0.0, std=std)
@@ -26,11 +27,9 @@ class LearntDynamics(torch.nn.Module):
         return new_state
 
     def forward(self, state, action, dt):
-        # TODO: add linear action transformer?
-        # action = torch.matmul(
-        #     self.linear_at, torch.unsqueeze(action, 2)
-        # )[:, :, 0]
-
+        if self.transform_action:
+            action = torch.matmul(self.linear_at, torch.unsqueeze(action,
+                                                                  2))[:, :, 0]
         # run through normal simulator f hat
         new_state = self.simulate(state, action, dt)
         # TODO: need to implement function simulate in quadrotor and wing dyn

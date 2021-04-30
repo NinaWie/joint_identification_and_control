@@ -29,8 +29,7 @@ except ImportError:
             pass
 
 
-from neural_control.dynamics.quad_dynamics_trained import LearntDynamics
-from neural_control.dynamics.fixed_wing_dynamics import LearntFixedWingDynamics
+from neural_control.dynamics.learnt_dynamics import LearntDynamics
 from neural_control.plotting import (
     plot_loss_episode_len, print_state_ref_div
 )
@@ -144,8 +143,7 @@ class TrainBase:
             lr=self.learning_rate_controller,
             momentum=0.9
         )
-        if isinstance(self.train_dynamics, LearntFixedWingDynamics
-                      ) or isinstance(self.train_dynamics, LearntDynamics):
+        if isinstance(self.train_dynamics, LearntDynamics):
             self.log_train_dyn = True
             self.optimizer_dynamics = optim.SGD(
                 self.train_dynamics.parameters(),
@@ -286,8 +284,7 @@ class TrainBase:
             json.dump(self.results_dict, ofile)
 
         # save dynamics model if applicable
-        if isinstance(self.train_dynamics, LearntFixedWingDynamics
-                      ) or isinstance(self.train_dynamics, LearntDynamics):
+        if isinstance(self.train_dynamics, LearntDynamics):
             torch.save(
                 self.train_dynamics.state_dict(),
                 os.path.join(self.save_path, "dynamics_model")
