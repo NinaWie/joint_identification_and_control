@@ -38,12 +38,7 @@ class TrainFixedWing(TrainBase):
         else:
             raise ValueError("sample in must be one of eval_env, train_env")
 
-    def initialize_model(
-        self,
-        base_model=None,
-        modified_params={},
-        base_model_name="model_wing"
-    ):
+    def initialize_model(self, base_model=None, base_model_name="model_wing"):
         # Load model or initialize model
         if base_model is not None:
             self.net = torch.load(os.path.join(base_model, base_model_name))
@@ -148,7 +143,7 @@ class TrainFixedWing(TrainBase):
         # eval_env.run_mpc_ref("rand", nr_test=5, max_steps=500)
         # run without mpc for evaluation
         with torch.no_grad():
-            if epoch == 0:
+            if epoch == 0 and self.config["self_play"] > 0:
                 # sample to fill all required self play data
                 while self.state_data.eval_counter < self.config["self_play"]:
                     suc_mean, suc_std = evaluator.run_eval(nr_test=5)
@@ -169,8 +164,6 @@ class TrainFixedWing(TrainBase):
         # save best model
         self.save_model(epoch, suc_mean, suc_std)
 
-        self.results_dict["mean_success"].append(suc_mean)
-        self.results_dict["std_success"].append(suc_std)
         self.results_dict["thresh_div"].append(self.config["thresh_div"])
         return suc_mean, suc_std
 
@@ -180,7 +173,6 @@ def train_control(base_model, config):
     Train a controller from scratch or with an initial model
     """
     modified_params = config["modified_params"]
-    # TODO: might be problematic
     train_dynamics = FixedWingDynamics(modified_params)
     eval_dynamics = FixedWingDynamics(modified_params)
 
@@ -188,7 +180,7 @@ def train_control(base_model, config):
     config["sample_in"] = "train_env"
 
     trainer = TrainFixedWing(train_dynamics, eval_dynamics, config)
-    trainer.initialize_model(base_model, modified_params=modified_params)
+    trainer.initialize_model(base_model)
 
     trainer.run_control(config, curriculum=0)
 
@@ -208,7 +200,7 @@ def train_sampling_finetune(base_model, config):
     eval_dynamics = FixedWingDynamics(modified_params=modified_params)
 
     trainer = TrainFixedWing(train_dynamics, eval_dynamics, config)
-    trainer.initialize_model(base_model, modified_params=modified_params)
+    trainer.initialize_model(base_model)
 
     # RUN
     trainer.run_control(config, sampling_based_finetune=True)

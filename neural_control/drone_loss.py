@@ -1,10 +1,10 @@
 import torch
 import numpy as np
 from neural_control.plotting import print_state_ref_div
-from neural_control.dynamics.cartpole_dynamics import simulate_cartpole
 device = "cpu"
 torch.autograd.set_detect_anomaly(True)
 zero_tensor = torch.zeros(3).to(device)
+torch.pi = torch.acos(torch.zeros(1)).item() * 2
 
 rates_prior = torch.tensor([.5, .5, .5])
 
@@ -53,7 +53,6 @@ def quad_loss_last(states, last_ref_state, action_seq, printout=0):
 
     ang_vel_error = torch.sum(states[:, :, 9:11]**2
                               ) + yaw_factor * torch.sum(states[:, :, 11]**2)
-    # TODO: do on all intermediate states again?
 
     loss = (
         angvel_factor * ang_vel_error + pos_factor * position_loss +
@@ -102,16 +101,17 @@ def fixed_wing_last_loss(drone_states, linear_reference, action, printout=0):
     return loss
 
 
-def cartpole_loss(action, state, lambda_factor=.4, printout=0):
+def cartpole_loss_balance(state):
+    abs_state = torch.abs(state)
+    angle_loss = 3 * abs_state[:, 2]
+    # high angle velocity is fine if angle itself is high
+    angle_vel_loss = .1 * abs_state[:, 3] * (torch.pi - abs_state[:, 2])**2
+    loss = .1 * (angle_loss + angle_vel_loss)
+    return torch.sum(loss)
 
-    # bring action into -1 1 range
-    action = torch.sigmoid(action) - .5
 
-    nr_actions = action.size()[1]
+def cartpole_loss_swingup(state, lambda_factor=.4, printout=0):
 
-    # update state iteratively for each proposed action
-    for i in range(nr_actions):
-        state = simulate_cartpole(state, action[:, i])
     abs_state = torch.abs(state)
 
     pos_loss = state[:, 0]**2

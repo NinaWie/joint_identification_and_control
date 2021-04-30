@@ -179,11 +179,6 @@ def smooth(x, window_len=11, window='hanning'):
     numpy.hanning, numpy.hamming, numpy.bartlett, numpy.blackman,
     numpy.convolve
     scipy.signal.lfilter
-
-    TODO: the window parameter could be the window itself if an array
-    instead of a string
-    NOTE: length(output) != length(input), to correct this: return y
-    [(window_len/2-1):-(window_len/2)] instead of just y.
     """
 
     if x.ndim != 1:
@@ -509,7 +504,6 @@ def compute_geometric_trajectory(quad, duration=30.0, dt=0.001):
         cs.sin(2.0 * cs.pi * freq_slow * t_adj)
     )
 
-    # TODO: define yaw trajectory
     pos = cs.vertcat(pos_x, pos_y, pos_z)
     vel = cs.jacobian(pos, t)
     acc = cs.jacobian(vel, t)

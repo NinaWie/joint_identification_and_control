@@ -56,9 +56,9 @@ class FlightmareDynamics(Dynamics):
         # print("motor_thrusts_des\n", motor_thrusts_des.size())
         motor_omega = self.thrust_to_omega(motor_thrusts_des)
 
-        # TODO clamp
+        # clamp??
 
-        # TODO: actually the old motor thrust is taken into account here,
+        # actually the old motor thrust is taken into account here,
         # but the factor c is super low (hoch -218)
         # so it doesn't actually matter, so I left it out
         # motor step response
@@ -68,7 +68,7 @@ class FlightmareDynamics(Dynamics):
         # convert back
         motor_thrusts = self.motorOmegaToThrust(motor_omega)
         # print("motor_thrusts\n", motor_thrusts.size())
-        # TODO: clamp?
+        # clamp??
         return motor_thrusts[:, :, 0]
 
     def linear_dynamics(self, force, attitude, velocity):
@@ -83,11 +83,11 @@ class FlightmareDynamics(Dynamics):
         thrust = 1 / self.mass * torch.matmul(
             body_to_world, torch.unsqueeze(force, 2)
         )
-        # print("thrust", thrust.size())
-        # drag = velocity * TODO: dynamics.drag_coeff??
-        vel_body = torch.matmul(world_to_body, torch.unsqueeze(velocity, 2))[:, :, 0]
+        vel_body = torch.matmul(world_to_body, torch.unsqueeze(velocity,
+                                                               2))[:, :, 0]
         translational_drag = torch.matmul(
-            body_to_world, torch.unsqueeze(self.torch_translational_drag * vel_body, 2)
+            body_to_world,
+            torch.unsqueeze(self.torch_translational_drag * vel_body, 2)
         )[:, :, 0]
         thrust_min_grav = (
             thrust[:, :, 0] + self.torch_gravity - translational_drag
@@ -156,7 +156,7 @@ class FlightmareDynamics(Dynamics):
         # # SIMULATE ROTORS
         # motor_thrusts_des = torch.matmul(b_allocation_inv,
         #            thrust_and_torque)[:, :, 0]
-        # # TODO: clamp?
+        # # clamp??
         # motor_thrusts = self.run_motors(dt, motor_thrusts_des)
         # force_torques = torch.matmul(
         #     b_allocation, torch.unsqueeze(motor_thrusts, 2)
@@ -223,7 +223,7 @@ class FlightmareDynamicsMPC(Dynamics):
     def __init__(self):
         super().__init__()
 
-        # TODO: run rotors params:
+        # # run rotors params:
         # kappa_ = 0.016
         # motor_tau_inv_ = 1 / 0.05
         # b_allocation = ca.SX(self.b_allocation_np)
@@ -268,7 +268,6 @@ class FlightmareDynamicsMPC(Dynamics):
         cross_prod = ca.cross(av, inertia_times_av)
 
         # run flight control
-        # force = thrust_scaled # TODO: why not using mass????
         # action to body torques
         omega_change = body_rates - av
         first_part = (
@@ -276,7 +275,7 @@ class FlightmareDynamicsMPC(Dynamics):
         )
         body_torques = first_part + cross_prod
 
-        # TODO simulate rotors?
+        # Insert here possibly: simulate rotors?
         # thrust_and_torque = ca.vertcat(force, body_torques)
 
         # linear dynamics

@@ -147,7 +147,6 @@ class QuadDataset(DroneDataset):
         )
 
         # for the reference, input is: relative pos, vel, vel-drone vel
-        # TODO: add rotation, leave out av?
         vel_minus_veldrone = torch_ref_states[:, :, 6:9] - subtract_drone_vel
         inp_ref_states = torch.cat(
             (

@@ -12,7 +12,7 @@ from neural_control.dynamics.quad_dynamics_simple import SimpleDynamics
 from neural_control.dynamics.quad_dynamics_flightmare import (
     FlightmareDynamics
 )
-from neural_control.dynamics.quad_dynamics_trained import LearntDynamics
+from neural_control.dynamics.quad_dynamics_trained import LearntQuadDynamics
 from neural_control.controllers.network_wrapper import NetworkWrapper
 from neural_control.environments.drone_env import QuadRotorEnvBase
 from evaluate_drone import QuadEvaluator
@@ -169,7 +169,7 @@ class TrainDrone(TrainBase):
         #     )
         # self.results_dict["eval_in_d2_mean"].append(suc_mean)
         # self.results_dict["eval_in_d2_std"].append(suc_std)
-        
+
         # print("--------- eval in base simulator (D1) -------------")
         # base_env = QuadRotorEnvBase(FlightmareDynamics(), self.delta_t)
         # evaluator = QuadEvaluator(controller, base_env, **self.config)
@@ -181,7 +181,6 @@ class TrainDrone(TrainBase):
         # self.results_dict["eval_in_d1_std"].append(suc_std)
         # self.state_data.num_self_play = tmp_self_play
 
-
         self.sample_new_data(epoch)
 
         # increase threshold
@@ -192,8 +191,6 @@ class TrainDrone(TrainBase):
         # save best model
         self.save_model(epoch, suc_mean, suc_std)
 
-        self.results_dict["mean_success"].append(suc_mean)
-        self.results_dict["std_success"].append(suc_std)
         self.results_dict["thresh_div"].append(self.config["thresh_div"])
         return suc_mean, suc_std
 
@@ -203,7 +200,6 @@ def train_control(base_model, config):
     Train a controller from scratch or with an initial model
     """
     modified_params = config["modified_params"]
-    # TODO: might be problematic
     print(modified_params)
     train_dynamics = FlightmareDynamics(modified_params=modified_params)
     eval_dynamics = FlightmareDynamics(modified_params=modified_params)
@@ -236,7 +232,7 @@ def train_dynamics(base_model, config, trainable_params=1):
     config["suc_up_down"] = -1
 
     # train environment is learnt
-    train_dynamics = LearntDynamics(trainable_params=trainable_params)
+    train_dynamics = LearntQuadDynamics(trainable_params=trainable_params)
     eval_dynamics = FlightmareDynamics(modified_params)
 
     trainer = TrainDrone(train_dynamics, eval_dynamics, config)

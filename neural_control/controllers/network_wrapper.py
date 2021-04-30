@@ -93,3 +93,52 @@ class FixedWingNetWrapper:
 
         self.action_counter += 1
         return suggested_action.detach().numpy()
+
+
+class CartpoleWrapper:
+
+    def __init__(self, model, nr_actions=3, action_dim=1, **kwargs):
+        self.nr_actions = nr_actions
+        self.action_dim = action_dim
+        self.net = model
+
+    def raw_states_to_torch(
+        self, states, normalize=False, std=None, mean=None, return_std=False
+    ):
+        """
+        Helper function to convert numpy state array to normalized tensors
+        Argument states:
+                One state (list of length 4) or array with x states (x times 4)
+        """
+        # either input one state at a time (evaluation) or an array
+        if len(states.shape) == 1:
+            states = np.expand_dims(states, 0)
+
+        # save mean and std column wise
+        if normalize:
+            # can't use mean!
+            if std is None:
+                std = np.std(states, axis=0)
+            if mean is None:
+                mean = np.mean(states, axis=0)
+            states = (states - mean) / std
+            # assert np.all(np.isclose(np.std(states, axis=0), 1))
+        else:
+            std = 1
+
+        # np.save("data_backup/quad_data.npy", states)
+
+        states_to_torch = torch.from_numpy(states).float()
+
+        # if we computed mean and std here, return it
+        if return_std:
+            return states_to_torch, mean, std
+        return states_to_torch
+
+    def predict_actions(self, state, ref_state):
+        torch_state = self.raw_states_to_torch(state)
+        action_seq = self.net(torch_state)
+        action_seq = torch.reshape(
+            action_seq, (-1, self.nr_actions, self.action_dim)
+        )
+        return action_seq

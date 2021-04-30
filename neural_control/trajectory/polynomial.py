@@ -177,7 +177,6 @@ class Polynomial:
             self.finished = True
         goal_pos = self.reference[self.target_ind]
 
-        # TODO: is the velocity simply the two subtracted? or times dt or so?
         goal_vel = (
             self.reference[self.target_ind + 1] -
             self.reference[self.target_ind]

@@ -6,6 +6,8 @@ import os
 import casadi as ca
 from pathlib import Path
 
+from neural_control.dynamics.learnt_dynamics import LearntDynamics
+
 # lower and upper bounds:
 alpha_bound = float(10 / 180 * np.pi)
 
@@ -140,14 +142,11 @@ class FixedWingDynamics:
 
         # # aerodynamic forces calculations
         # (see beard & mclain, 2012, p. 44 ff)
-        V = self.cfg["vel_drag_factor"] * torch.sqrt(
-            vel_u**2 + vel_v**2 + vel_w**2
-        )  # velocity norm
+        V = torch.sqrt(vel_u**2 + vel_v**2 + vel_w**2)  # velocity norm
         alpha = torch.arctan(vel_w / vel_u)  # angle of attack
-        alpha = torch.clamp(alpha, -alpha_bound, alpha_bound)  # TODO
+        alpha = torch.clamp(alpha, -alpha_bound, alpha_bound)
         beta = torch.arctan(vel_v / V)
         beta = torch.clamp(beta, -alpha_bound, alpha_bound)
-        # TODO: clamp beta?
 
         # NOTE: usually all of Cl, Cd, Cm,... depend on alpha, q, delta_e
         # lift coefficient
@@ -232,8 +231,9 @@ class FixedWingDynamics:
 
         # # Body fixed accelerations
         # see Small Unmanned Aircraft, Beard et al., 2012, p.36
-        uvw_dot = (1 / self.cfg["mass"]
-                   ) * f_xyz[:, :, 0] - torch.cross(omega, vel, dim=1)
+        uvw_dot = (1 / self.cfg["mass"]) * f_xyz[:, :, 0] - torch.cross(
+            omega, vel, dim=1
+        ) + self.cfg["vel_drag_factor"] * vel
 
         # # Change in pitch attitude (change in euler angles)
         # see Small Unmanned Aircraft, Beard et al., 2012, p.36
@@ -282,7 +282,7 @@ class FixedWingDynamics:
         return next_state
 
 
-class LearntFixedWingDynamics(torch.nn.Module, FixedWingDynamics):
+class LearntFixedWingDynamics(LearntDynamics, FixedWingDynamics):
     """
     Trainable dynamics for a fixed wing drone
     """
@@ -306,7 +306,7 @@ class LearntFixedWingDynamics(torch.nn.Module, FixedWingDynamics):
                 modified_params
             )
         FixedWingDynamics.__init__(self, modified_params)
-        super(LearntFixedWingDynamics, self).__init__()
+        super(LearntFixedWingDynamics, self).__init__(12, 4)
 
         # trainable parameters
         self.I = nn.Parameter(
@@ -334,43 +334,16 @@ class LearntFixedWingDynamics(torch.nn.Module, FixedWingDynamics):
             )
         self.cfg = torch.nn.ParameterDict(dict_pytorch)
 
-        # further layer for dynamic (non parameter) mismatch
-        self.linear_state_1 = nn.Linear(16, 64)
-        std = 0.0001
-        torch.nn.init.normal_(self.linear_state_1.weight, mean=0.0, std=std)
-        torch.nn.init.normal_(self.linear_state_1.bias, mean=0.0, std=std)
-
-        self.linear_state_2 = nn.Linear(64, 12, bias=False)
-        torch.nn.init.normal_(self.linear_state_2.weight, mean=0.0, std=std)
-
-    def state_transformer(self, state, action):
-        state_action = torch.cat((state, action), dim=1)
-        layer_1 = torch.relu(self.linear_state_1(state_action))
-        new_state = self.linear_state_2(layer_1)
-        # TODO: activation function?
-        return new_state
-
-    def forward(self, state, action, dt):
-        # run through D1
-        new_state = self.simulate_fixed_wing(state, action, dt)
-        # run through T
-        added_new_state = self.state_transformer(state, action)
-        return new_state + added_new_state
+    def simulate(self, state, action, dt):
+        return self.simulate_fixed_wing(state, action, dt)
 
 
 class FixedWingDynamicsMPC(FixedWingDynamics):
 
     def __init__(self, modified_params={}):
 
-        # transform loaded torch parameters into normal
-        numpy_modified_params = {}
-        for key, val in modified_params.items():
-            if "cfg." in key:
-                raw_key = key[4:]
-                raw_val = val[0].item()
-                numpy_modified_params[raw_key] = raw_val
         # change the config accordingly
-        super().__init__(numpy_modified_params)
+        super().__init__(modified_params)
 
         # if I is loaded, it's not in the config
         if "I" in modified_params.keys():
@@ -431,11 +404,8 @@ class FixedWingDynamicsMPC(FixedWingDynamics):
 
         ## aerodynamic forces calculations
         # (see beard & mclain, 2012, p. 44 ff)
-        V = self.cfg["vel_drag_factor"] * ca.sqrt(
-            vel_u**2 + vel_v**2 + vel_w**2
-        )  # velocity norm
+        V = ca.sqrt(vel_u**2 + vel_v**2 + vel_w**2)  # velocity norm
         alpha = ca.atan(vel_w / vel_u)  # angle of attack
-        # alpha = torch.clamp(alpha, -alpha_bound, alpha_bound) TODO
         beta = ca.atan(vel_v / V)
 
         # NOTE: usually all of Cl, Cd, Cm,... depend on alpha, q, delta_e
@@ -520,8 +490,9 @@ class FixedWingDynamicsMPC(FixedWingDynamics):
         # uvw_dot
         omega = ca.vertcat(ome_p, ome_q, ome_r)
         vel = ca.vertcat(vel_u, vel_v, vel_w)
-        uvw_dot = (1 / self.cfg["mass"]) * f_xyz - ca.cross(omega, vel)
-        # pos[3] und uvw[3] ist falsch
+        uvw_dot = (1 / self.cfg["mass"]) * f_xyz - ca.cross(
+            omega, vel
+        ) + self.cfg["vel_drag_factor"] * vel
 
         # change in attitude
         tth = ca.tan(eul_theta)

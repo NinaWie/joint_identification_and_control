@@ -29,8 +29,7 @@ except ImportError:
             pass
 
 
-from neural_control.dynamics.quad_dynamics_trained import LearntDynamics
-from neural_control.dynamics.fixed_wing_dynamics import LearntFixedWingDynamics
+from neural_control.dynamics.learnt_dynamics import LearntDynamics
 from neural_control.plotting import (
     plot_loss_episode_len, print_state_ref_div
 )
@@ -144,8 +143,7 @@ class TrainBase:
             lr=self.learning_rate_controller,
             momentum=0.9
         )
-        if isinstance(self.train_dynamics, LearntFixedWingDynamics
-                      ) or isinstance(self.train_dynamics, LearntDynamics):
+        if isinstance(self.train_dynamics, LearntDynamics):
             self.log_train_dyn = True
             self.optimizer_dynamics = optim.SGD(
                 self.train_dynamics.parameters(),
@@ -159,7 +157,7 @@ class TrainBase:
         """
         Implemented in sub classes
         """
-        pass
+        return 0
 
     def train_dynamics_model(self, current_state, action_seq):
         # zero the parameter gradients
@@ -257,12 +255,24 @@ class TrainBase:
                 )
             )
 
+        self.results_dict["mean_success"].append(success)
+        self.results_dict["std_success"].append(suc_std)
+
         # In any case do tensorboard logging
         for name, param in self.net.named_parameters():
             self.writer.add_histogram(name, param)
         self.writer.add_scalar("success_mean", success)
         self.writer.add_scalar("success_std", suc_std)
         self.writer.flush()
+
+    def evaluate_model(self, epoch):
+        """
+        Implemented in subclasses --> run system-specific evaluation
+
+        Args:
+            epoch (int): current epoch index
+        """
+        return 0
 
     def finalize(self):
         """
@@ -283,14 +293,32 @@ class TrainBase:
             json.dump(self.results_dict, ofile)
 
         # save dynamics model if applicable
-        if isinstance(self.train_dynamics, LearntFixedWingDynamics
-                      ) or isinstance(self.train_dynamics, LearntDynamics):
+        if isinstance(self.train_dynamics, LearntDynamics):
             torch.save(
                 self.train_dynamics.state_dict(),
                 os.path.join(self.save_path, "dynamics_model")
             )
         self.writer.close()
         print("finished and saved.")
+
+    def update_curriculum(self, successes):
+        current_possible_steps = 1000 / (
+            self.config["speed_factor"] / self.config["delta_t"]
+        )
+        successes.append(self.results_dict["mean_success"][-1])
+        print(
+            successes, "speed", round(self.config["speed_factor"], 2),
+            "thresh", round(self.config["thresh_div"], 2)
+        )
+        if len(successes) > 5 and np.all(
+            np.array(successes[-5:]) > current_possible_steps
+        ):
+            print(" -------------- increase speed --------- ")
+            self.config["speed_factor"] += 0.1
+            self.config["thresh_div"] = 0.1
+            successes = []
+            self.current_score = 0 if self.suc_up_down == 1 else np.inf
+        return successes
 
     def run_control(self, config, sampling_based_finetune=False, curriculum=1):
         if curriculum:
@@ -301,23 +329,7 @@ class TrainBase:
                 _ = self.evaluate_model(epoch)
 
                 if curriculum:
-                    current_possible_steps = 1000 / (
-                        self.config["speed_factor"] / self.config["delta_t"]
-                    )
-                    successes.append(self.results_dict["mean_success"][-1])
-                    print(
-                        successes, "speed",
-                        round(self.config["speed_factor"], 2), "thresh",
-                        round(self.config["thresh_div"], 2)
-                    )
-                    if len(successes) > 5 and np.all(
-                        np.array(successes[-5:]) > current_possible_steps
-                    ):
-                        print(" -------------- increase speed --------- ")
-                        self.config["speed_factor"] += 0.1
-                        self.config["thresh_div"] = 0.1
-                        successes = []
-                        self.current_score = 0 if self.suc_up_down == 1 else np.inf
+                    successes = self.update_curriculum(successes)
 
                 print(f"\nEpoch {epoch}")
                 self.run_epoch(train="controller")
