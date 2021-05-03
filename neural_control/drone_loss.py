@@ -101,6 +101,17 @@ def fixed_wing_last_loss(drone_states, linear_reference, action, printout=0):
     return loss
 
 
+mpc_losses = torch.tensor([0, 0, 10, 1])
+
+
+def cartpole_loss_mpc(states, ref_states):
+    loss = (states - ref_states)**2 * mpc_losses
+    # angle_loss = (states[:, :, 2] - ref_states[:, :, 2])**2
+    # angle_vel_loss = (states[:, :, 3] - ref_states[:, :, 3])**2
+    # loss = 10 * angle_loss + angle_vel_loss
+    return torch.sum(loss)
+
+
 def cartpole_loss_balance(state):
     abs_state = torch.abs(state)
     angle_loss = 3 * abs_state[:, 2]

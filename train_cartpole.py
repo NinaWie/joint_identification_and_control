@@ -7,7 +7,7 @@ import torch.optim as optim
 from train_base import TrainBase
 from neural_control.dataset import CartpoleDataset
 from neural_control.drone_loss import (
-    cartpole_loss_balance, cartpole_loss_swingup
+    cartpole_loss_balance, cartpole_loss_swingup, cartpole_loss_mpc
 )
 from evaluate_cartpole import Evaluator
 from neural_control.models.resnet_like_model import Net as SimpleResNet
@@ -56,17 +56,34 @@ class TrainCartpole(TrainBase):
             json.dump(self.config, outfile)
 
         self.init_optimizer()
+        self.config["thresh_div"] = self.config["thresh_div_start"]
+
+    def make_reference(self, current_state):
+        ref_states = torch.zeros(
+            current_state.size()[0], self.nr_actions, self.state_size
+        )
+        for k in range(self.nr_actions - 1):
+            ref_states[:, k] = (
+                current_state * (1 - 1 / self.nr_actions * (k + 1))
+            )
+        return ref_states
 
     def train_controller_model(self, current_state, action):
         # zero the parameter gradients
         self.optimizer_controller.zero_grad()
+        ref_states = self.make_reference(current_state)
 
-        for i in range(action.size()[1]):
-            current_state = self.train_dynamics(current_state, action[:, i])
+        intermediate_states = torch.zeros(
+            current_state.size()[0], self.nr_actions, self.state_size
+        )
+        for k in range(action.size()[1]):
+            current_state = self.train_dynamics(current_state, action[:, k])
+            intermediate_states[:, k] = current_state
+        # Loss
         if self.swingup:
             loss = cartpole_loss_swingup(current_state)
         else:
-            loss = cartpole_loss_balance(current_state)
+            loss = cartpole_loss_mpc(intermediate_states, ref_states)
 
         loss.backward()
         self.optimizer_controller.step()
@@ -110,8 +127,11 @@ class TrainCartpole(TrainBase):
 
         # Renew dataset dynamically
         if epoch % self.resample_every == 0:
-            state_data = CartpoleDataset(num_states=self.config["sample_data"])
-            if self.config["use_new_data"] > 0 and epoch > 5:
+            state_data = CartpoleDataset(
+                num_states=self.config["sample_data"],
+                thresh_div=self.config["thresh_div"]
+            )
+            if self.config["use_new_data"] > 0 and epoch > 0:
                 # add the data generated during evaluation
                 rand_inds_include = np.random.permutation(
                     len(new_data)
@@ -120,11 +140,18 @@ class TrainCartpole(TrainBase):
             self.trainloader = torch.utils.data.DataLoader(
                 self.state_data, batch_size=8, shuffle=True, num_workers=0
             )
-            print(f"sampled new data {len(state_data)}")
+            print(
+                f"\nsampled new data {len(state_data)}, thresh: {self.config['thresh_div']}"
+            )
+
+        # increase thresholds
+        if epoch % 3 == 0 and self.config["thresh_div"] < self.thresh_div_end:
+            self.config["thresh_div"] += self.config["thresh_div_step"]
 
     def evaluate_balance(self, epoch):
         controller = CartpoleWrapper(self.net, **self.config)
         # EVALUATION:
+        # self.eval_env.thresh_div = self.config["thresh_div"]
         evaluator = Evaluator(controller, self.eval_env)
         # Start in upright position and see how long it is balaned
         success_mean, success_std, data = evaluator.evaluate_in_environment(

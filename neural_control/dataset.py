@@ -165,9 +165,11 @@ class CartpoleDataset(torch.utils.data.Dataset):
     Dataset for training on cartpole task
     """
 
-    def __init__(self, num_states=1000, **kwargs):
+    def __init__(self, num_states=1000, thresh_div=.21, **kwargs):
         # sample states
-        state_arr_numpy = construct_states(num_states, **kwargs)
+        state_arr_numpy = construct_states(
+            num_states, thresh_div=thresh_div, **kwargs
+        )
         # convert to normalized tensors
         self.labels = self.to_torch(state_arr_numpy)
         self.states = self.labels.clone()
@@ -186,12 +188,15 @@ class CartpoleDataset(torch.utils.data.Dataset):
         """
         Add numpy data that was generated in evaluation to the random data
         """
-        self.labels = torch.vstack(
-            (self.labels, self.to_torch(new_numpy_data))
-        )
-        self.states = torch.vstack(
-            (self.states, self.to_torch(new_numpy_data))
-        )
+        cutoff = min([len(new_numpy_data), self.__len__()])
+        self.labels[:cutoff] = self.to_torch(new_numpy_data)[:cutoff]
+        # torch.vstack(
+        #     (self.labels, self.to_torch(new_numpy_data))
+        # )
+        self.states[:cutoff] = self.to_torch(new_numpy_data)[:cutoff]
+        # torch.vstack(
+        #     (self.states, self.to_torch(new_numpy_data))
+        # )
 
     @staticmethod
     def prepare_data(states):

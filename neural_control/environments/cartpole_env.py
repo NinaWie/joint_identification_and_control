@@ -22,12 +22,13 @@ class CartPoleEnv():
         'video.frames_per_second': 50
     }
 
-    def __init__(self, dynamics, dt=0.02):
+    def __init__(self, dynamics, dt=0.02, thresh_div=.21):
         self.dynamics = dynamics
         self.dt = dt
 
         # Angle at which to fail the episode
-        self.theta_thresh = 12 * 2 * math.pi / 360
+        # self.theta_thresh = 12 * 2 * math.pi / 360
+        self.thresh_div = thresh_div
         self.x_threshold = 2.4
 
         # Angle limit set to 2 * theta_threshold_radians so failing observation
@@ -41,7 +42,7 @@ class CartPoleEnv():
 
     def is_upright(self):
         theta = self.state[2]
-        return theta > -self.theta_thresh and theta < self.theta_thresh
+        return theta > -self.thresh_div and theta < self.thresh_div
 
     def _step(self, action, is_torch=True):
         torch_state = torch.tensor([list(self.state)])
@@ -73,7 +74,7 @@ class CartPoleEnv():
         """
         self.state = np.zeros(4)
         # upright angle
-        self.state[2] = (np.random.rand(1) - .5) * .2
+        self.state[2] = (np.random.rand(1) - .5) * .1
 
     def _render(self, mode='human', close=False):
         """
@@ -137,7 +138,10 @@ class CartPoleEnv():
 
 
 def construct_states(
-    num_data, save_path="models/minimize_x/state_data.npy", **kwargs
+    num_data,
+    save_path="models/minimize_x/state_data.npy",
+    thresh_div=.21,
+    **kwargs
 ):
     # define parts of the dataset:
     randomized_runs = .8
@@ -146,7 +150,7 @@ def construct_states(
 
     # Sample states
     dyn = CartpoleDynamics()
-    env = CartPoleEnv(dyn)
+    env = CartPoleEnv(dyn, thresh_div=thresh_div)
     data = []
     # randimized runs
     # while len(data) < num_data * randomized_runs:
@@ -160,10 +164,10 @@ def construct_states(
     # # after randomized runs: run balancing
     while len(data) < num_data:
         # only theta between -0.5 and 0.5
-        env._reset()
-        env.state[2] = (np.random.rand(1) - .5) * .2
+        env._reset_upright()
+        #  env.state[2] = (np.random.rand(1) - .5) * .2
         while env.is_upright():
-            action = np.random.rand() * 2 - 0.5
+            action = np.random.rand() - 0.5
             state = env._step(action, is_torch=False)
             data.append(state)
         env._reset()

@@ -162,7 +162,7 @@ class MPC(object):
         self._thrust_min = -1
         self._thrust_max = 1
         self._Q_u = np.diag([0])
-        self._Q_pen = np.diag([0, 0, 10, 1])
+        self._Q_pen = np.diag([10, 10, 100, 1])
         # initial states
         self._quad_s0 = np.zeros(4).tolist()
         self._quad_u0 = [0]
@@ -438,8 +438,12 @@ class MPC(object):
         # interpolate theta
         inter_theta = np.linspace(current_state[2], 0, self._N + 2)
         inter_theta_dot = np.linspace(current_state[3], 0, self._N + 2)
+        inter_x = np.linspace(current_state[0], 0, self._N + 2)
+        inter_x_dot = np.linspace(current_state[1], 0, self._N + 2)
 
         middle_ref_states = np.zeros((self._N + 2, len(current_state)))
+        middle_ref_states[:, 0] = inter_x
+        middle_ref_states[:, 1] = inter_x_dot
         middle_ref_states[:, 2] = inter_theta
         middle_ref_states[:, 3] = inter_theta_dot
 

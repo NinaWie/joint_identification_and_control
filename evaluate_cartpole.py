@@ -185,7 +185,7 @@ if __name__ == "__main__":
     if args.model == "mpc":
         load_dynamics = None
         controller_model = MPC(
-            horizon=10,
+            horizon=20,
             dt=0.02,
             dynamics="cartpole",
             load_dynamics=load_dynamics
@@ -200,7 +200,9 @@ if __name__ == "__main__":
     eval_env = CartPoleEnv(dynamics)
     evaluator = Evaluator(controller_model, eval_env)
     # angles = evaluator.run_for_fixed_length(net, render=True)
-    success, suc_std, _ = evaluator.evaluate_in_environment(render=True)
+    success, suc_std, _ = evaluator.evaluate_in_environment(
+        render=True, max_steps=500
+    )
     # try:
     #     swingup_mean, swingup_std, _, data_collection = evaluator.make_swingup(
     #         net, nr_iters=1, render=True, max_iters=500
