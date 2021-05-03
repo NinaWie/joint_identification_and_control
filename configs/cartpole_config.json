@@ -21,12 +21,12 @@
         "suc_up_down": -1
     },
     "balance": {
-        "nr_actions": 5,
+        "nr_actions": 10,
         "learning_rate_controller": 0.00001,
         "learning_rate_dynamics": 0.001,
         "sample_data": 1000,
         "action_dim": 1,
         "suc_up_down": 1,
-        "use_new_data": 0
+        "use_new_data": 500
     }
 }

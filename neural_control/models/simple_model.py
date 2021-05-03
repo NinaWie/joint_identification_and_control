@@ -14,6 +14,7 @@ class Net(nn.Module):
         self.fc_out = nn.Linear(32, out_size)
 
     def forward(self, x):
+        x[:, 0] *= 0
         x = torch.tanh(self.fc0(x))
         # x = x * torch.from_numpy(np.array([0, 1, 1, 1]))
         x = torch.tanh(self.fc1(x))

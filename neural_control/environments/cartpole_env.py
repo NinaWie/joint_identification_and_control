@@ -72,9 +72,8 @@ class CartPoleEnv():
         """
         reset state to a position of the pole close to the optimal upright pos
         """
-        self.state = np.zeros(4)
-        # upright angle
-        self.state[2] = (np.random.rand(1) - .5) * .1
+        self.state = (np.random.rand(4) - .5) * .1
+        return self.state
 
     def _render(self, mode='human', close=False):
         """

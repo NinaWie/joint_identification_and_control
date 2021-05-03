@@ -127,7 +127,7 @@ class TrainCartpole(TrainBase):
 
         # Renew dataset dynamically
         if epoch % self.resample_every == 0:
-            state_data = CartpoleDataset(
+            self.state_data.resample_data(
                 num_states=self.config["sample_data"],
                 thresh_div=self.config["thresh_div"]
             )
@@ -136,12 +136,13 @@ class TrainCartpole(TrainBase):
                 rand_inds_include = np.random.permutation(
                     len(new_data)
                 )[:self.config["use_new_data"]]
-                state_data.add_data(np.array(new_data)[rand_inds_include])
-            self.trainloader = torch.utils.data.DataLoader(
-                self.state_data, batch_size=8, shuffle=True, num_workers=0
-            )
+                self.state_data.add_data(np.array(new_data)[rand_inds_include])
+            # self.trainloader = torch.utils.data.DataLoader(
+            #     self.state_data, batch_size=8, shuffle=True, num_workers=0
+            # )
             print(
-                f"\nsampled new data {len(state_data)}, thresh: {self.config['thresh_div']}"
+                f"\nsampled new data {len(self.state_data)},\
+                    thresh: {round(self.config['thresh_div'], 2)}"
             )
 
         # increase thresholds
@@ -151,7 +152,7 @@ class TrainCartpole(TrainBase):
     def evaluate_balance(self, epoch):
         controller = CartpoleWrapper(self.net, **self.config)
         # EVALUATION:
-        # self.eval_env.thresh_div = self.config["thresh_div"]
+        self.eval_env.thresh_div = self.config["thresh_div"]
         evaluator = Evaluator(controller, self.eval_env)
         # Start in upright position and see how long it is balaned
         success_mean, success_std, data = evaluator.evaluate_in_environment(
