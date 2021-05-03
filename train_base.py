@@ -173,7 +173,6 @@ class TrainBase:
         if self.l2_lambda > 0:
             l2_loss = (
                 torch.norm(self.train_dynamics.linear_state_2.weight) +
-                torch.norm(self.train_dynamics.linear_state_2.bias) +
                 torch.norm(self.train_dynamics.linear_state_1.weight) +
                 torch.norm(self.train_dynamics.linear_state_1.bias)
             )

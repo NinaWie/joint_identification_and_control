@@ -1,4 +1,7 @@
 import torch
+import json
+import os
+from pathlib import Path
 import numpy as np
 import casadi as ca
 
@@ -9,21 +12,18 @@ target_state = 0  # torch.from_numpy(np.array([0, 0, 0, 0]))
 
 # DEFINE VARIABLES
 gravity = 9.81
-cfg = {
-    "masscart": 1.0,
-    "masspole": 0.1,
-    "length": 0.5,  # actually half the pole's length
-    "max_force_mag": 30.0,
-    "muc": 0.0005,
-    "mup": 0.000002,
-    "wind": 0
-}
 
 
 class CartpoleDynamics:
 
     def __init__(self, modified_params={}, test_time=0):
-        self.cfg = cfg
+        with open(
+            os.path.join(
+                Path(__file__).parent.absolute(), "config_cartpole.json"
+            ), "r"
+        ) as infile:
+            self.cfg = json.load(infile)
+
         self.test_time = test_time
         self.cfg.update(modified_params)
         self.cfg["total_mass"] = self.cfg["masspole"] + self.cfg["masscart"]
@@ -86,7 +86,7 @@ class CartpoleDynamics:
             temp - (self.cfg['polemass_length'] * thetaacc * costheta) - sig
         ) / self.cfg["total_mass"]
         x = x + dt * x_dot
-        x_dot = x_dot + dt * xacc
+        x_dot = x_dot + dt * (xacc - self.cfg["vel_drag"] * x_dot)
 
         new_state = torch.stack((x, x_dot, theta, theta_dot), dim=1)
         return new_state
@@ -109,7 +109,7 @@ class LearntCartpoleDynamics(LearntDynamics, CartpoleDynamics):
             )
         self.cfg = torch.nn.ParameterDict(dict_pytorch)
 
-    def simulate(self, state, action, dt):
+    def simulate(self, state, action, dt=0.02):
         return self.simulate_cartpole(state, action, dt)
 
 

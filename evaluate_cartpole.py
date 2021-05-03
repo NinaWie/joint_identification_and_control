@@ -87,6 +87,7 @@ class Evaluator:
         Measure success --> how long can we balance the pole on top
         """
         data_collection = []
+        velocities = []
         with torch.no_grad():
             success = np.zeros(nr_iters)
             # observe also the oscillation
@@ -110,6 +111,7 @@ class Evaluator:
                             action_seq[:, action_ind], is_torch=self.mpc == 0
                         )
                         data_collection.append(new_state)
+                        velocities.append(np.absolute(new_state[1]))
                         if i > burn_in_steps:
                             angles.append(np.absolute(new_state[2]))
                         if render:
@@ -126,6 +128,7 @@ class Evaluator:
         # print(success)
         mean_err = np.mean(success)
         std_err = np.std(success)
+        print("Average velocity: %3.2f" % (np.mean(velocities)))
         print("Average success: %3.2f (%3.2f)" % (mean_err, std_err))
         return mean_err, std_err, data_collection
 
@@ -194,6 +197,9 @@ if __name__ == "__main__":
         controller_model = load_model(args.model, args.epoch)
 
     modified_params = {}
+    # {"wind": .5}
+    # wind 0.01 works for wind added to x directlt, needs much higher (.5)
+    # to affect the acceleration much
 
     # define dynamics and environmen
     dynamics = CartpoleDynamics(modified_params=modified_params)

@@ -17,7 +17,9 @@ from neural_control.environments.cartpole_env import (
     construct_states, CartPoleEnv
 )
 from neural_control.controllers.network_wrapper import CartpoleWrapper
-from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
+from neural_control.dynamics.cartpole_dynamics import (
+    CartpoleDynamics, LearntCartpoleDynamics
+)
 
 
 class TrainCartpole(TrainBase):
@@ -33,10 +35,15 @@ class TrainCartpole(TrainBase):
         part_cfg = config["swingup"] if swingup else config["balance"]
         self.config = {**config["general"], **part_cfg}
         super().__init__(train_dynamics, eval_dynamics, **self.config)
-        self.eval_env = CartPoleEnv(eval_dynamics)
+        if self.sample_in == "eval_env":
+            self.eval_env = CartPoleEnv(self.eval_dynamics, self.delta_t)
+        elif self.sample_in == "train_env":
+            self.eval_env = CartPoleEnv(self.train_dynamics, self.delta_t)
+        else:
+            raise ValueError("sample in must be one of eval_env, train_env")
 
     def initialize_model(
-        self, base_model=None, base_model_name="model_pendulum"
+        self, base_model=None, base_model_name="model_cartpole"
     ):
         if base_model is not None:
             self.net = torch.load(os.path.join(base_model, base_model_name))
@@ -77,7 +84,9 @@ class TrainCartpole(TrainBase):
             current_state.size()[0], self.nr_actions, self.state_size
         )
         for k in range(action.size()[1]):
-            current_state = self.train_dynamics(current_state, action[:, k])
+            current_state = self.train_dynamics(
+                current_state, action[:, k], dt=self.delta_t
+            )
             intermediate_states[:, k] = current_state
         # Loss
         if self.swingup:
@@ -208,18 +217,41 @@ def train_control(base_model, config, swingup=0):
     trainer.finalize()
 
 
+def train_dynamics(base_model, config, not_trainable):
+    """First train dynamcs, then train controller with estimated dynamics
+
+    Args:
+        base_model (filepath): Model to start training with
+        config (dict): config parameters
+    """
+    modified_params = config["general"]["modified_params"]
+    config["sample_in"] = "train_env"
+    config["train_dyn_for_epochs"] = 4
+    config["train_dyn_every"] = 1
+
+    # train environment is learnt
+    train_dyn = LearntCartpoleDynamics(not_trainable=not_trainable)
+    eval_dyn = CartpoleDynamics(modified_params=modified_params)
+    trainer = TrainCartpole(train_dyn, eval_dyn, config)
+
+    trainer.initialize_model(base_model)
+
+    # RUN
+    trainer.run_dynamics(config)
+
+
 if __name__ == "__main__":
     # LOAD CONFIG - select balance or swigup
     with open("configs/cartpole_config.json", "r") as infile:
         config = json.load(infile)
 
     baseline_model = None  # "trained_models/cartpole/current_model"
-    config["general"]["save_name"] = "train_balance_2"
+    config["general"]["save_name"] = "train_from_scratch"
 
-    mod_params = {}
-    config["general"]["modified_params"] = mod_params
+    # mod_params = {"wind": .5}
+    # config["general"]["modified_params"] = mod_params
 
     # TRAIN
     # config["nr_epochs"] = 20
     train_control(baseline_model, config)
-    # train_dynamics(baseline_model, config)
+    # train_dynamics(baseline_model, config, not_trainable="all")

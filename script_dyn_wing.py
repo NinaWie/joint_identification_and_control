@@ -25,7 +25,7 @@ def train_dynamics(base_model, config, not_trainable):
     eval_dynamics = FixedWingDynamics(modified_params=modified_params)
 
     trainer = TrainFixedWing(train_dynamics, eval_dynamics, config)
-    trainer.initialize_model(base_model, modified_params=modified_params)
+    trainer.initialize_model(base_model)
 
     # RUN
     trainer.run_dynamics(config)
