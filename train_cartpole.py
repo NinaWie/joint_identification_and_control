@@ -131,6 +131,16 @@ class TrainCartpole(TrainBase):
                 next_state_d1 = self.train_dynamics(
                     current_state, images, actions, dt=self.delta_t
                 )
+                if i == 0:
+                    print("\nExample dynamics")
+                    next_state_eval_dyn = self.eval_dynamics(
+                        current_state, actions
+                    )
+                    print("start at ", current_state[0])
+                    print("pred", next_state_d1[0])
+                    print("gt", next_state_d2[0])
+                    print("next eval", next_state_eval_dyn[0])
+
                 loss = torch.sum((next_state_d1 - next_state_d2)**2)
                 loss.backward()
                 self.optimizer_dynamics.step()
@@ -210,7 +220,7 @@ class TrainCartpole(TrainBase):
             new_data = self.evaluate_balance(epoch)
 
         # Renew dataset dynamically
-        if epoch % self.resample_every == 0:
+        if (epoch + 1) % self.resample_every == 0:
             self.state_data.resample_data(
                 num_states=self.config["sample_data"],
                 thresh_div=self.config["thresh_div"]
@@ -243,7 +253,7 @@ class TrainCartpole(TrainBase):
         evaluator = Evaluator(controller_model, self.eval_env)
         # Start in upright position and see how long it is balaned
         success_mean, success_std, data = evaluator.evaluate_in_environment(
-            nr_iters=10, render=self.train_image_dyn
+            nr_iters=1, render=self.train_image_dyn
         )
         self.save_model(epoch, success_mean, success_std)
         return data
@@ -306,7 +316,8 @@ def train_img_dynamics(
     """
     modified_params = config["general"]["modified_params"]
     config["sample_in"] = "eval_env"
-    config["train_dyn_for_epochs"] = -1
+    config["general"]["resample_every"] = 1000
+    config["train_dyn_for_epochs"] = 30
     config["train_dyn_every"] = 1
 
     # train environment is learnt
@@ -347,8 +358,8 @@ if __name__ == "__main__":
     with open("configs/cartpole_config.json", "r") as infile:
         config = json.load(infile)
 
-    baseline_model = "trained_models/cartpole/current_model"
-    baseline_dyn = "trained_models/cartpole/train_dyn_img"
+    baseline_model = None  # "trained_models/cartpole/current_model"
+    baseline_dyn = None  # "trained_models/cartpole/train_dyn_img"
     config["general"]["save_name"] = "img_test"
 
     mod_params = {"wind": .5}
