@@ -101,6 +101,7 @@ class CartpoleWrapper:
         self.nr_actions = nr_actions
         self.action_dim = action_dim
         self.net = model
+        self.inp_img = False
 
     def raw_states_to_torch(
         self, states, normalize=False, std=None, mean=None, return_std=False
@@ -138,6 +139,34 @@ class CartpoleWrapper:
     def predict_actions(self, state, ref_state):
         torch_state = self.raw_states_to_torch(state)
         action_seq = self.net(torch_state)
+        action_seq = torch.reshape(
+            action_seq, (-1, self.nr_actions, self.action_dim)
+        )
+        return action_seq
+
+
+class CartpoleImageWrapper:
+
+    def __init__(self, net, nr_actions=3, action_dim=1, **kwargs):
+        self.nr_actions = nr_actions
+        self.action_dim = action_dim
+        self.net = net
+        self.inp_img = True
+
+    def prepare_for_con(self, collect_img):
+        """
+        During evaluation, use this method to prepare the image input
+
+        Args:
+            images (numpy array): Sequence of images
+        """
+        images = (collect_img - np.min(collect_img)
+                  ) / (np.max(collect_img) - np.min(collect_img))
+        return torch.from_numpy(np.expand_dims(images, 0)).float()
+
+    def predict_actions(self, image):
+        img_input = self.prepare_for_con(image[:, 75:175])
+        action_seq = self.net(img_input)
         action_seq = torch.reshape(
             action_seq, (-1, self.nr_actions, self.action_dim)
         )

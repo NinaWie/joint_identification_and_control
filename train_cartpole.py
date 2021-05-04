@@ -5,20 +5,21 @@ import torch
 import torch.optim as optim
 
 from train_base import TrainBase
-from neural_control.dataset import CartpoleDataset
+from neural_control.dataset import CartpoleDataset, CartpoleImageDataset
 from neural_control.drone_loss import (
     cartpole_loss_balance, cartpole_loss_swingup, cartpole_loss_mpc
 )
 from evaluate_cartpole import Evaluator
-from neural_control.models.resnet_like_model import Net as SimpleResNet
-from neural_control.models.simple_model import Net as SimpleNet
+from neural_control.models.simple_model import (Net, ImageControllerNet)
 from neural_control.plotting import plot_loss, plot_success
 from neural_control.environments.cartpole_env import (
     construct_states, CartPoleEnv
 )
-from neural_control.controllers.network_wrapper import CartpoleWrapper
+from neural_control.controllers.network_wrapper import (
+    CartpoleWrapper, CartpoleImageWrapper
+)
 from neural_control.dynamics.cartpole_dynamics import (
-    CartpoleDynamics, LearntCartpoleDynamics
+    CartpoleDynamics, LearntCartpoleDynamics, ImageCartpoleDynamics
 )
 
 
@@ -27,7 +28,14 @@ class TrainCartpole(TrainBase):
     Train a controller for a quadrotor
     """
 
-    def __init__(self, train_dynamics, eval_dynamics, config, swingup=0):
+    def __init__(
+        self,
+        train_dynamics,
+        eval_dynamics,
+        config,
+        train_image_dyn=0,
+        swingup=0
+    ):
         """
         param sample_in: one of "train_env", "eval_env"
         """
@@ -42,6 +50,9 @@ class TrainCartpole(TrainBase):
         else:
             raise ValueError("sample in must be one of eval_env, train_env")
 
+        # for image processing
+        self.train_image_dyn = train_image_dyn
+
     def initialize_model(
         self, base_model=None, base_model_name="model_cartpole"
     ):
@@ -53,12 +64,19 @@ class TrainCartpole(TrainBase):
                     self.state_size, self.nr_actions * self.action_dim
                 )
             else:
-                self.net = SimpleNet(
+                self.net = Net(
                     self.state_size, self.nr_actions * self.action_dim
                 )
-        self.state_data = CartpoleDataset(
-            num_states=self.config["sample_data"]
-        )
+        if self.train_image_dyn:
+            if base_model is None:
+                self.net = ImageControllerNet(
+                    out_size=self.nr_actions * self.action_dim
+                )
+            self.state_data = CartpoleImageDataset()
+        else:
+            self.state_data = CartpoleDataset(
+                num_states=self.config["sample_data"]
+            )
         with open(os.path.join(self.save_path, "config.json"), "w") as outfile:
             json.dump(self.config, outfile)
 
@@ -98,7 +116,67 @@ class TrainCartpole(TrainBase):
         self.optimizer_controller.step()
         return loss
 
+    def run_image_epoch(self, train="dynamics"):
+        """
+        Overwrite function in order to include images
+        """
+        running_loss = 0
+        for i, data in enumerate(self.trainloader, 0):
+            # get state and action and correspodning image sequence
+            current_state, actions, images, next_state_d2 = data
+
+            # zero the parameter gradients
+            if train == "dynamics":
+                self.optimizer_dynamics.zero_grad()
+                next_state_d1 = self.train_dynamics(
+                    current_state, images, actions, dt=self.delta_t
+                )
+                loss = torch.sum((next_state_d1 - next_state_d2)**2)
+                loss.backward()
+                self.optimizer_dynamics.step()
+                self.results_dict["loss_dyn_per_step"].append(loss.item())
+
+            elif train == "controller":
+                self.optimizer_controller.zero_grad()
+                actions = self.net(images)
+                action_seq = torch.reshape(
+                    actions, (-1, self.nr_actions, self.action_dim)
+                )
+                ref_states = self.make_reference(current_state)
+
+                intermediate_states = torch.zeros(
+                    current_state.size()[0], self.nr_actions, self.state_size
+                )
+                for k in range(action_seq.size()[1]):
+                    current_state = self.train_dynamics(
+                        current_state,
+                        images,
+                        action_seq[:, k],
+                        dt=self.delta_t
+                    )
+                    intermediate_states[:, k] = current_state
+                # loss = self.train_controller_model(current_state, action_seq)
+                loss = cartpole_loss_mpc(intermediate_states, ref_states)
+                loss.backward()
+                self.optimizer_controller.step()
+
+            running_loss += loss.item()
+
+        epoch_loss = (running_loss / i) * 10000
+        self.loss_logging(epoch_loss, train="image" + train)
+        return epoch_loss
+
+    def loss_logging(self, epoch_loss, train="controller"):
+        self.results_dict["loss"].append(epoch_loss)
+        print(f"Loss ({train}): {round(epoch_loss, 2)}")
+        self.writer.add_scalar("Loss/train", epoch_loss)
+
     def run_epoch(self, train="controller"):
+        self.results_dict["trained"].append(train)
+        # training image dynamics
+        if self.train_image_dyn:
+            return self.run_image_epoch(train=train)
+
         # tic_epoch = time.time()
         running_loss = 0
         for i, data in enumerate(self.trainloader, 0):
@@ -121,10 +199,7 @@ class TrainCartpole(TrainBase):
             running_loss += loss.item()
         # time_epoch = time.time() - tic
         epoch_loss = running_loss / i
-        self.results_dict["loss"].append(epoch_loss)
-        self.results_dict["trained"].append(train)
-        print(f"Loss ({train}): {round(epoch_loss, 2)}")
-        self.writer.add_scalar("Loss/train", epoch_loss)
+        self.loss_logging(epoch_loss, train=train)
         return epoch_loss
 
     def evaluate_model(self, epoch):
@@ -159,13 +234,16 @@ class TrainCartpole(TrainBase):
             self.config["thresh_div"] += self.config["thresh_div_step"]
 
     def evaluate_balance(self, epoch):
-        controller = CartpoleWrapper(self.net, **self.config)
+        if isinstance(self.net, Net):
+            controller_model = CartpoleWrapper(self.net, **self.config)
+        elif isinstance(self.net, ImageControllerNet):
+            controller_model = CartpoleImageWrapper(self.net, **self.config)
         # EVALUATION:
         self.eval_env.thresh_div = self.config["thresh_div"]
-        evaluator = Evaluator(controller, self.eval_env)
+        evaluator = Evaluator(controller_model, self.eval_env)
         # Start in upright position and see how long it is balaned
         success_mean, success_std, data = evaluator.evaluate_in_environment(
-            nr_iters=10
+            nr_iters=10, render=self.train_image_dyn
         )
         self.save_model(epoch, success_mean, success_std)
         return data
@@ -217,7 +295,33 @@ def train_control(base_model, config, swingup=0):
     trainer.finalize()
 
 
-def train_dynamics(base_model, config, not_trainable):
+def train_img_dynamics(
+    base_model, config, not_trainable="all", base_image_dyn=None
+):
+    """First train dynamcs, then train controller with estimated dynamics
+
+    Args:
+        base_model (filepath): Model to start training with
+        config (dict): config parameters
+    """
+    modified_params = config["general"]["modified_params"]
+    config["sample_in"] = "eval_env"
+    config["train_dyn_for_epochs"] = -1
+    config["train_dyn_every"] = 1
+
+    # train environment is learnt
+    train_dyn = ImageCartpoleDynamics(100, 300)
+    if base_image_dyn is not None:
+        train_dyn.load_state_dict(
+            torch.load(os.path.join(base_image_dyn, "dynamics_model"))
+        )
+    eval_dyn = CartpoleDynamics(modified_params=modified_params)
+    trainer = TrainCartpole(train_dyn, eval_dyn, config, train_image_dyn=1)
+    trainer.initialize_model(base_model)
+    trainer.run_dynamics(config)
+
+
+def train_norm_dynamics(base_model, config, not_trainable="all"):
     """First train dynamcs, then train controller with estimated dynamics
 
     Args:
@@ -233,9 +337,7 @@ def train_dynamics(base_model, config, not_trainable):
     train_dyn = LearntCartpoleDynamics(not_trainable=not_trainable)
     eval_dyn = CartpoleDynamics(modified_params=modified_params)
     trainer = TrainCartpole(train_dyn, eval_dyn, config)
-
     trainer.initialize_model(base_model)
-
     # RUN
     trainer.run_dynamics(config)
 
@@ -245,13 +347,20 @@ if __name__ == "__main__":
     with open("configs/cartpole_config.json", "r") as infile:
         config = json.load(infile)
 
-    baseline_model = None  # "trained_models/cartpole/current_model"
-    config["general"]["save_name"] = "train_from_scratch"
+    baseline_model = "trained_models/cartpole/current_model"
+    baseline_dyn = "trained_models/cartpole/train_dyn_img"
+    config["general"]["save_name"] = "img_test"
 
-    # mod_params = {"wind": .5}
-    # config["general"]["modified_params"] = mod_params
+    mod_params = {"wind": .5}
+    config["general"]["modified_params"] = mod_params
 
     # TRAIN
     # config["nr_epochs"] = 20
-    train_control(baseline_model, config)
-    # train_dynamics(baseline_model, config, not_trainable="all")
+    # train_control(baseline_model, config)
+    # train_norm_dynamics(baseline_model, config, not_trainable="all")
+    train_img_dynamics(
+        baseline_model,
+        config,
+        not_trainable="all",
+        base_image_dyn=baseline_dyn
+    )

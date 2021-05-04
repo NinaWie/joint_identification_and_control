@@ -195,6 +195,34 @@ class CartpoleDataset(torch.utils.data.Dataset):
         self.states[:cutoff] = self.to_torch(new_numpy_data)[:cutoff]
 
 
+class CartpoleImageDataset(torch.utils.data.Dataset):
+
+    def __init__(self, **kwargs):
+        npz_loaded = np.load("data/cartpole_img.npz")
+        (collect_img, collect_actions, collect_states, collect_next) = (
+            npz_loaded["arr_0"], npz_loaded["arr_1"], npz_loaded["arr_2"],
+            npz_loaded["arr_3"]
+        )
+        print(
+            "loaded data", collect_states.shape, collect_actions.shape,
+            collect_img.shape, collect_next.shape
+        )
+        self.images = (collect_img - np.min(collect_img)
+                       ) / (np.max(collect_img) - np.min(collect_img))
+        self.states = collect_states
+        self.actions = collect_actions
+        self.next_states = collect_next
+
+    def __len__(self):
+        return len(self.states)
+
+    def __getitem__(self, index):
+        return (
+            self.states[index], self.actions[index], self.images[index],
+            self.next_states[index]
+        )
+
+
 class WingDataset(DroneDataset):
 
     def __init__(

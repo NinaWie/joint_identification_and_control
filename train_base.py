@@ -30,6 +30,7 @@ except ImportError:
 
 
 from neural_control.dynamics.learnt_dynamics import LearntDynamics
+from neural_control.dynamics.cartpole_dynamics import ImageCartpoleDynamics
 from neural_control.plotting import (
     plot_loss_episode_len, print_state_ref_div
 )
@@ -143,7 +144,9 @@ class TrainBase:
             lr=self.learning_rate_controller,
             momentum=0.9
         )
-        if isinstance(self.train_dynamics, LearntDynamics):
+        if isinstance(self.train_dynamics, LearntDynamics) or isinstance(
+            self.train_dynamics, ImageCartpoleDynamics
+        ):
             self.log_train_dyn = True
             self.optimizer_dynamics = optim.SGD(
                 self.train_dynamics.parameters(),
@@ -188,7 +191,7 @@ class TrainBase:
         self.optimizer_dynamics.step()
 
         self.results_dict["loss_dyn_per_step"].append(loss.item())
-        return loss
+        return loss * 1000
 
     def run_epoch(self, train="controller"):
         # tic_epoch = time.time()
@@ -292,7 +295,9 @@ class TrainBase:
             json.dump(self.results_dict, ofile)
 
         # save dynamics model if applicable
-        if isinstance(self.train_dynamics, LearntDynamics):
+        if isinstance(self.train_dynamics, LearntDynamics) or isinstance(
+            self.train_dynamics, ImageCartpoleDynamics
+        ):
             torch.save(
                 self.train_dynamics.state_dict(),
                 os.path.join(self.save_path, "dynamics_model")
@@ -377,7 +382,7 @@ class TrainBase:
                 if epoch == config["train_dyn_for_epochs"]:
                     print("Params of dynamics model after training:")
                     for key, val in self.train_dynamics.state_dict().items():
-                        if len(val) > 10:
+                        if len(torch.flatten(val)) > 10:
                             print(key, torch.sum(torch.abs(val)).item())
                             continue
                         print(key, val)

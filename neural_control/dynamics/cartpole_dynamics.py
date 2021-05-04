@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 import numpy as np
 import casadi as ca
+import torch.nn as nn
+import torch
 
 from neural_control.dynamics.learnt_dynamics import LearntDynamics
 
@@ -111,6 +113,56 @@ class LearntCartpoleDynamics(LearntDynamics, CartpoleDynamics):
 
     def simulate(self, state, action, dt=0.02):
         return self.simulate_cartpole(state, action, dt)
+
+
+class ImageCartpoleDynamics(torch.nn.Module, CartpoleDynamics):
+
+    def __init__(self, img_width, img_height, state_size=4, action_dim=1):
+        CartpoleDynamics.__init__(self)
+        super(ImageCartpoleDynamics, self).__init__()
+
+        std = 0.0001
+        # conv net
+        self.conv1 = nn.Conv2d(5, 10, 5)
+        # torch.nn.init.normal_(self.conv1.weight, mean=0.0, std=std)
+        self.conv2 = nn.Conv2d(10, 2, 3)
+        # torch.nn.init.normal_(self.conv2.weight, mean=0.0, std=std)
+
+        # residual network
+        self.flat_img_size = 2 * (img_width - 6) * (img_height - 6)
+
+        self.linear_act = nn.Linear(action_dim, 32)
+        # torch.nn.init.normal_(self.linear_act.weight, mean=0.0, std=std)
+        # torch.nn.init.normal_(self.linear_act.bias, mean=0.0, std=std)
+
+        self.linear_state_1 = nn.Linear(self.flat_img_size + 32, 128)
+        torch.nn.init.normal_(self.linear_state_1.weight, mean=0.0, std=std)
+        torch.nn.init.normal_(self.linear_state_1.bias, mean=0.0, std=std)
+
+        self.linear_state_2 = nn.Linear(128, state_size, bias=False)
+        torch.nn.init.normal_(self.linear_state_2.weight, mean=0.0, std=std)
+
+    def state_transformer(self, image, action):
+        img_sub1 = torch.unsqueeze(image[:, 1] - image[:, 0], dim=1)
+        img_sub2 = torch.unsqueeze(image[:, 2] - image[:, 1], dim=1)
+        sub_images = torch.cat((image, img_sub1, img_sub2), dim=1)
+        conv1 = torch.relu(self.conv1(sub_images.float()))
+        conv2 = torch.relu(self.conv2(conv1))
+
+        ff_act = torch.relu(self.linear_act(action))
+        flattened = conv2.reshape((-1, self.flat_img_size))
+        state_action = torch.cat((flattened, ff_act), dim=1)
+
+        ff_1 = torch.relu(self.linear_state_1(state_action))
+        ff_2 = self.linear_state_2(ff_1)
+        return ff_2
+
+    def forward(self, state, image, action, dt):
+        # run through normal simulator f hat
+        new_state = self.simulate_cartpole(state, action, dt)
+        # run through residual network delta
+        added_new_state = self.state_transformer(image, action)
+        return new_state + added_new_state
 
 
 class CartpoleDynamicsMPC(CartpoleDynamics):

@@ -4,22 +4,33 @@ import argparse
 import json
 import numpy as np
 import torch
+import cv2
 
 from neural_control.environments.cartpole_env import CartPoleEnv
 from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
 from neural_control.controllers.mpc import MPC
-from neural_control.controllers.network_wrapper import CartpoleWrapper
-from neural_control.models.resnet_like_model import Net
+from neural_control.controllers.network_wrapper import (
+    CartpoleWrapper, CartpoleImageWrapper
+)
+from neural_control.models.simple_model import Net, ImageControllerNet
 
+# mpc like receding horizon
 APPLY_UNTIL = 1
+
+# current state, predicted action, images of prev states, next state after act
+collect_states, collect_actions, collect_img, collect_next = [], [], [], []
+buffer_len = 3
+img_width, img_height = (200, 300)
 
 
 class Evaluator:
 
-    def __init__(self, controller, eval_env):
+    def __init__(self, controller, eval_env, collect_image_dataset=0):
         self.controller = controller
         self.eval_env = eval_env
         self.mpc = isinstance(self.controller, MPC)
+        self.image_buffer = np.zeros((buffer_len, img_width, img_height))
+        self.image_dataset = collect_image_dataset
 
     def make_swingup(
         self, net, nr_iters=10, max_iters=100, success_over=20, render=False
@@ -80,6 +91,13 @@ class Evaluator:
         std_rounded = [round(m, 2) for m in np.std(success, axis=0)]
         return mean_rounded, std_rounded, data_collection
 
+    def _preprocess_img(self, image):
+        return cv2.resize(
+            np.mean(image, axis=2),
+            dsize=(img_height, img_width),
+            interpolation=cv2.INTER_CUBIC
+        )
+
     def evaluate_in_environment(
         self, nr_iters=1, max_steps=250, render=False, burn_in_steps=50
     ):
@@ -96,6 +114,13 @@ class Evaluator:
                 # only set the theta to the top, and reduce speed
                 self.eval_env._reset_upright()
                 new_state = self.eval_env.state
+                if render:
+                    start_img = self._preprocess_img(
+                        self.eval_env._render(mode="rgb_array")
+                    )
+                    self.image_buffer = np.array(
+                        [start_img for _ in range(buffer_len)]
+                    )
 
                 angles = list()
                 # Start balancing
@@ -103,8 +128,16 @@ class Evaluator:
                     # Transform state in the same way as the training data
                     # and normalize
                     # Predict optimal action:
-                    action_seq = self.controller.predict_actions(new_state, 0)
+                    if self.controller.inp_img:
+                        action_seq = self.controller.predict_actions(
+                            self.image_buffer.copy()
+                        )
+                    else:
+                        action_seq = self.controller.predict_actions(
+                            new_state, 0
+                        )
 
+                    prev_state = new_state.copy()
                     for action_ind in range(APPLY_UNTIL):
                         # run action in environment
                         new_state = self.eval_env._step(
@@ -115,9 +148,23 @@ class Evaluator:
                         if i > burn_in_steps:
                             angles.append(np.absolute(new_state[2]))
                         if render:
-                            self.eval_env._render()
+                            new_img = self.eval_env._render(mode="rgb_array")
                             # test = self.eval_env._render(mode="rgb_array")
                             # time.sleep(.1)
+
+                    # save for image task
+                    if self.image_dataset and i > buffer_len:
+                        assert APPLY_UNTIL == 1
+                        collect_states.append(prev_state)
+                        collect_next.append(new_state)
+                        collect_img.append(self.image_buffer.copy())
+                        collect_actions.append(action_seq[0, 0].numpy())
+                    if render:
+                        self.image_buffer = np.roll(
+                            self.image_buffer, 1, axis=0
+                        )
+                        self.image_buffer[0] = self._preprocess_img(new_img)
+
                     if not self.eval_env.is_upright():
                         break
                         # track number of timesteps until failure
@@ -128,8 +175,9 @@ class Evaluator:
         # print(success)
         mean_err = np.mean(success)
         std_err = np.std(success)
-        print("Average velocity: %3.2f" % (np.mean(velocities)))
-        print("Average success: %3.2f (%3.2f)" % (mean_err, std_err))
+        if not self.image_dataset:
+            print("Average velocity: %3.2f" % (np.mean(velocities)))
+            print("Average success: %3.2f (%3.2f)" % (mean_err, std_err))
         return mean_err, std_err, data_collection
 
 
@@ -161,7 +209,10 @@ def load_model(model_name, epoch):
         )
     net = torch.load(path_load)
     net.eval()
-    controller_model = CartpoleWrapper(net, **config)
+    if isinstance(net, Net):
+        controller_model = CartpoleWrapper(net, **config)
+    elif isinstance(net, ImageControllerNet):
+        controller_model = CartpoleImageWrapper(net, **config)
     return controller_model
 
 
@@ -196,8 +247,7 @@ if __name__ == "__main__":
     else:
         controller_model = load_model(args.model, args.epoch)
 
-    modified_params = {}
-    # {"wind": .5}
+    modified_params = {"wind": .5}
     # wind 0.01 works for wind added to x directlt, needs much higher (.5)
     # to affect the acceleration much
 
@@ -206,9 +256,33 @@ if __name__ == "__main__":
     eval_env = CartPoleEnv(dynamics)
     evaluator = Evaluator(controller_model, eval_env)
     # angles = evaluator.run_for_fixed_length(net, render=True)
-    success, suc_std, _ = evaluator.evaluate_in_environment(
-        render=True, max_steps=500
-    )
+
+    image_dataset = False
+
+    if image_dataset:
+        evaluator.collect_image_dataset = 1
+        for n in range(40):
+            success, suc_std, _ = evaluator.evaluate_in_environment(
+                render=True, max_steps=30
+            )
+        collect_actions = np.array(collect_actions)
+        # cut off bottom and top
+        collect_img = np.array(collect_img)[:, :, 75:175]
+        collect_states = np.array(collect_states)
+        collect_next = np.array(collect_next)
+        print(
+            collect_states.shape, collect_actions.shape, collect_img.shape,
+            collect_next.shape
+        )
+        np.savez(
+            "data/cartpole_img.npz", collect_img, collect_actions,
+            collect_states, collect_next
+        )
+    else:
+        success, suc_std, _ = evaluator.evaluate_in_environment(
+            render=True, max_steps=500
+        )
+
     # try:
     #     swingup_mean, swingup_std, _, data_collection = evaluator.make_swingup(
     #         net, nr_iters=1, render=True, max_iters=500
