@@ -201,11 +201,14 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    # PARAMs
+    dt = 0.05
+
     if args.model == "mpc":
         load_dynamics = None
         controller_model = MPC(
             horizon=20,
-            dt=0.02,
+            dt=dt,
             dynamics="cartpole",
             load_dynamics=load_dynamics
         )
@@ -218,7 +221,7 @@ if __name__ == "__main__":
 
     # define dynamics and environmen
     dynamics = CartpoleDynamics(modified_params=modified_params)
-    eval_env = CartPoleEnv(dynamics)
+    eval_env = CartPoleEnv(dynamics, dt)
     evaluator = Evaluator(controller_model, eval_env)
     # angles = evaluator.run_for_fixed_length(net, render=True)
 

@@ -22,7 +22,7 @@ class CartPoleEnv():
         'video.frames_per_second': 50
     }
 
-    def __init__(self, dynamics, dt=0.02, thresh_div=.21):
+    def __init__(self, dynamics, dt, thresh_div=.21):
         self.dynamics = dynamics
         self.dt = dt
 
@@ -141,6 +141,7 @@ class CartPoleEnv():
 
 def construct_states(
     num_data,
+    dt,
     save_path="models/minimize_x/state_data.npy",
     thresh_div=.21,
     **kwargs
@@ -152,7 +153,7 @@ def construct_states(
 
     # Sample states
     dyn = CartpoleDynamics()
-    env = CartPoleEnv(dyn, thresh_div=thresh_div)
+    env = CartPoleEnv(dyn, dt, thresh_div=thresh_div)
     data = []
     # randimized runs
     # while len(data) < num_data * randomized_runs:

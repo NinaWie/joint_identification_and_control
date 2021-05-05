@@ -73,11 +73,11 @@ class TrainCartpole(TrainBase):
                     out_size=self.nr_actions * self.action_dim
                 )
             self.state_data = CartpoleImageDataset(
-                load_data_path="data/cartpole_img_8.npz"
+                load_data_path="data/cartpole_img_8.npz", **self.config
             )
         else:
             self.state_data = CartpoleDataset(
-                num_states=self.config["sample_data"]
+                num_states=self.config["sample_data"], **self.config
             )
         with open(os.path.join(self.save_path, "config.json"), "w") as outfile:
             json.dump(self.config, outfile)

@@ -165,12 +165,15 @@ class CartpoleDataset(torch.utils.data.Dataset):
     Dataset for training on cartpole task
     """
 
-    def __init__(self, num_states=1000, thresh_div=.21, **kwargs):
+    def __init__(self, num_states=1000, thresh_div=.21, dt=0.05, **kwargs):
+        self.dt = dt
         self.resample_data(num_states, thresh_div)
 
     def resample_data(self, num_states, thresh_div):
         # sample states
-        state_arr_numpy = construct_states(num_states, thresh_div=thresh_div)
+        state_arr_numpy = construct_states(
+            num_states, self.dt, thresh_div=thresh_div
+        )
         # convert to normalized tensors
         self.labels = self.to_torch(state_arr_numpy)
         self.states = self.labels.clone()
@@ -197,7 +200,9 @@ class CartpoleDataset(torch.utils.data.Dataset):
 
 class CartpoleImageDataset(torch.utils.data.Dataset):
 
-    def __init__(self, load_data_path="data/cartpole_img_6.npz", **kwargs):
+    def __init__(
+        self, load_data_path="data/cartpole_img_6.npz", dt=0.05, **kwargs
+    ):
         npz_loaded = np.load(load_data_path)
         (collect_img, collect_actions, collect_states, collect_next) = (
             npz_loaded["arr_0"], npz_loaded["arr_1"], npz_loaded["arr_2"],

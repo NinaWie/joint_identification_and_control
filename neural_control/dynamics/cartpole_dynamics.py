@@ -31,10 +31,10 @@ class CartpoleDynamics:
         self.cfg["total_mass"] = self.cfg["masspole"] + self.cfg["masscart"]
         self.cfg["polemass_length"] = self.cfg["masspole"] * self.cfg["length"]
 
-    def __call__(self, state, action, dt=0.02):
-        return self.simulate_cartpole(state, action, dt=dt)
+    def __call__(self, state, action, dt):
+        return self.simulate_cartpole(state, action, dt)
 
-    def simulate_cartpole(self, state, action, dt=0.02):
+    def simulate_cartpole(self, state, action, dt):
         """
         Compute new state from state and action
         """
@@ -111,7 +111,7 @@ class LearntCartpoleDynamics(LearntDynamics, CartpoleDynamics):
             )
         self.cfg = torch.nn.ParameterDict(dict_pytorch)
 
-    def simulate(self, state, action, dt=0.02):
+    def simulate(self, state, action, dt):
         return self.simulate_cartpole(state, action, dt)
 
 
