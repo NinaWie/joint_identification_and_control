@@ -2,6 +2,7 @@
     "nr_epochs": 200,
     "general": {
         "system": "cartpole",
+        "delta_t": 0.02,
         "ref_dim": 0,
         "state_size": 4,
         "batch_size": 8,

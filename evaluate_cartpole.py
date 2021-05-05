@@ -32,65 +32,6 @@ class Evaluator:
         self.image_buffer = np.zeros((buffer_len, img_width, img_height))
         self.image_dataset = collect_image_dataset
 
-    def make_swingup(
-        self, net, nr_iters=10, max_iters=100, success_over=20, render=False
-    ):
-        """
-        Check if the pendulum can make a swing up
-        """
-        data_collection = []
-        # average over 50 runs # 10 is length of action sequence
-        success = []  # np.zeros((success_over * 10 * nr_iters, 4))
-        with torch.no_grad():
-            for it in range(nr_iters):
-                # # Set angle to somewhere at the bottom
-                random_hanging_state = (np.random.rand(4) - .5)
-                random_hanging_state[2] = (-1) * (
-                    (np.random.rand() > .5) * 2 - 1
-                ) * (1 - (np.random.rand() * .2)) * np.pi
-                self.eval_env.state = random_hanging_state
-
-                # # Set angle to somewhere on top
-                # self.eval_env.state[2] = (np.random.rand(1) - .5) * .2
-
-                # set x position to zero
-                new_state = self.eval_env.state
-
-                # Start balancing
-                for j in range(max_iters + success_over):
-                    # Transform state in the same way as the training data
-                    # and normalize
-                    torch_state = raw_states_to_torch(new_state, std=self.std)
-                    # Predict optimal action:
-                    action_seq = net(torch_state)
-                    # print([round(act, 2) for act in action_seq[0].numpy()])
-                    # if render:
-                    #     print("state before", new_state)
-                    # print("new action seq", action_seq[0].numpy())
-                    # print()
-                    for action_ind in range(APPLY_UNTIL):
-                        # run action in environment
-                        new_state = self.eval_env._step(
-                            action_seq[:, action_ind]
-                        )
-                        data_collection.append(new_state)
-                        # print(new_state)
-                        if render:
-                            self.eval_env._render()
-                            time.sleep(.1)
-                        if j >= max_iters:
-                            success.append(new_state)
-                        # check only whether it was able to swing up the pendulum
-                        # if np.abs(new_state[2]) < np.pi / 15 and not render:
-                        #     made_it = 1
-                        #     break
-                # success[it] = made_it
-                self.eval_env._reset()
-        success = np.absolute(np.array(success))
-        mean_rounded = [round(m, 2) for m in np.mean(success, axis=0)]
-        std_rounded = [round(m, 2) for m in np.std(success, axis=0)]
-        return mean_rounded, std_rounded, data_collection
-
     def _preprocess_img(self, image):
         resized = cv2.resize(
             np.mean(image, axis=2),
@@ -98,6 +39,14 @@ class Evaluator:
             interpolation=cv2.INTER_LINEAR
         )
         return 255 - resized
+
+    def _convert_image_buffer(self, state, crop_width=30):
+        # image and corresponding state --> normalize x pos in image buffer!
+        x = state[0] / self.eval_env.state_limits[0] * 2
+        img_width_half = self.image_buffer.shape[2] // 2
+        x_img = int(img_width_half + x * img_width_half)
+        return self.image_buffer[:, 75:175,
+                                 x_img - crop_width:x_img + crop_width]
 
     def evaluate_in_environment(
         self, nr_iters=1, max_steps=250, render=False, burn_in_steps=50
@@ -116,7 +65,9 @@ class Evaluator:
             for n in range(nr_iters):
                 # only set the theta to the top, and reduce speed
                 self.eval_env._reset_upright()
-                # self.eval_env.state = (np.random.rand(4) - .5) * .1  # Data4
+                if self.image_dataset:
+                    self.eval_env.state = (np.random.rand(4) - .5) * .1
+
                 new_state = self.eval_env.state
                 if render:
                     start_img = self._preprocess_img(
@@ -134,13 +85,14 @@ class Evaluator:
                     # Predict optimal action:
                     if self.controller.inp_img:
                         action_seq = self.controller.predict_actions(
-                            self.image_buffer.copy()
+                            self._convert_image_buffer(new_state)
                         )
                     else:
                         action_seq = self.controller.predict_actions(
                             new_state, 0
                         )
-                    # action_seq = torch.rand(1, 4) - .5  # Data4
+                    if self.image_dataset:
+                        action_seq = torch.rand(1, 4) - .5
 
                     prev_state = new_state.copy()
                     for action_ind in range(APPLY_UNTIL):
@@ -162,7 +114,9 @@ class Evaluator:
                         assert APPLY_UNTIL == 1
                         collect_states.append(prev_state)
                         collect_next.append(new_state)
-                        collect_img.append(self.image_buffer.copy())
+                        collect_img.append(
+                            self._convert_image_buffer(prev_state)
+                        )
                         collect_actions.append(action_seq[0, 0].numpy())
                     if render:
                         self.image_buffer = np.roll(
@@ -278,7 +232,7 @@ if __name__ == "__main__":
             )
         collect_actions = np.array(collect_actions)
         # cut off bottom and top
-        collect_img = np.array(collect_img)[:, :, 75:175]
+        collect_img = np.array(collect_img)
         collect_states = np.array(collect_states)
         collect_next = np.array(collect_next)
         print(
@@ -286,7 +240,7 @@ if __name__ == "__main__":
             collect_next.shape
         )
         np.savez(
-            "data/cartpole_img_5.npz", collect_img, collect_actions,
+            "data/cartpole_img_8.npz", collect_img, collect_actions,
             collect_states, collect_next
         )
     elif args.eval > 0:

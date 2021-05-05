@@ -137,12 +137,12 @@ class ImageCartpoleDynamics(torch.nn.Module, CartpoleDynamics):
         # torch.nn.init.normal_(self.linear_act.weight, mean=0.0, std=std)
         # torch.nn.init.normal_(self.linear_act.bias, mean=0.0, std=std)
 
-        self.linear_state_1 = nn.Linear(self.flat_img_size + 32, 128)
-        torch.nn.init.normal_(self.linear_state_1.weight, mean=0.0, std=std)
-        torch.nn.init.normal_(self.linear_state_1.bias, mean=0.0, std=std)
+        self.linear_state_1 = nn.Linear(self.flat_img_size + 32, 64)
+        # torch.nn.init.normal_(self.linear_state_1.weight, mean=0.0, std=std)
+        # torch.nn.init.normal_(self.linear_state_1.bias, mean=0.0, std=std)
 
-        self.linear_state_2 = nn.Linear(128, state_size, bias=False)
-        torch.nn.init.normal_(self.linear_state_2.weight, mean=0.0, std=std)
+        self.linear_state_2 = nn.Linear(64, state_size, bias=False)
+        # torch.nn.init.normal_(self.linear_state_2.weight, mean=0.0, std=std)
 
     def state_transformer(self, image, action):
         action = torch.unsqueeze(action, 1)

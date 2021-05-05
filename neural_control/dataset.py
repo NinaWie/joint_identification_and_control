@@ -197,8 +197,8 @@ class CartpoleDataset(torch.utils.data.Dataset):
 
 class CartpoleImageDataset(torch.utils.data.Dataset):
 
-    def __init__(self, **kwargs):
-        npz_loaded = np.load("data/cartpole_img.npz")
+    def __init__(self, load_data_path="data/cartpole_img_6.npz", **kwargs):
+        npz_loaded = np.load(load_data_path)
         (collect_img, collect_actions, collect_states, collect_next) = (
             npz_loaded["arr_0"], npz_loaded["arr_1"], npz_loaded["arr_2"],
             npz_loaded["arr_3"]

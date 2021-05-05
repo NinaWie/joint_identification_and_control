@@ -72,7 +72,9 @@ class TrainCartpole(TrainBase):
                 self.net = ImageControllerNet(
                     out_size=self.nr_actions * self.action_dim
                 )
-            self.state_data = CartpoleImageDataset()
+            self.state_data = CartpoleImageDataset(
+                load_data_path="data/cartpole_img_8.npz"
+            )
         else:
             self.state_data = CartpoleDataset(
                 num_states=self.config["sample_data"]
@@ -148,6 +150,10 @@ class TrainCartpole(TrainBase):
 
                 loss = torch.sum((next_state_d1 - next_state_d2)**2)
                 loss.backward()
+                for name, param in self.net.named_parameters():
+                    if param.grad is not None:
+                        self.writer.add_histogram(name + ".grad", param.grad)
+                        self.writer.add_histogram(name, param)
                 self.optimizer_dynamics.step()
                 self.results_dict["loss_dyn_per_step"].append(loss.item())
 
@@ -326,12 +332,13 @@ def train_img_dynamics(
     config["train_dyn_every"] = 1
 
     # train environment is learnt
-    train_dyn = ImageCartpoleDynamics(100, 300)
+    train_dyn = ImageCartpoleDynamics(100, 60, state_size=4)
     if base_image_dyn is not None:
+        print("loading base dyn model from", base_image_dyn)
         train_dyn.load_state_dict(
             torch.load(os.path.join(base_image_dyn, "dynamics_model"))
         )
-    eval_dyn = CartpoleDynamics(modified_params=modified_params)
+    eval_dyn = CartpoleDynamics()  # modified_params=modified_params)
     trainer = TrainCartpole(train_dyn, eval_dyn, config, train_image_dyn=1)
     trainer.initialize_model(base_model)
     trainer.run_dynamics(config)
@@ -366,7 +373,7 @@ if __name__ == "__main__":
 
     baseline_model = None  # "trained_models/cartpole/current_model"
     baseline_dyn = None  # "trained_models/cartpole/train_dyn_img"
-    config["general"]["save_name"] = "img_test"
+    config["general"]["save_name"] = "train_img_res_2"
 
     mod_params = {"wind": .5}
     config["general"]["modified_params"] = mod_params
