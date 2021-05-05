@@ -113,6 +113,10 @@ class TrainCartpole(TrainBase):
             loss = cartpole_loss_mpc(intermediate_states, ref_states)
 
         loss.backward()
+        for name, param in self.net.named_parameters():
+            if param.grad is not None:
+                self.writer.add_histogram(name + ".grad", param.grad)
+                self.writer.add_histogram(name, param)
         self.optimizer_controller.step()
         return loss
 
@@ -137,9 +141,10 @@ class TrainCartpole(TrainBase):
                         current_state, actions
                     )
                     print("start at ", current_state[0])
-                    print("pred", next_state_d1[0])
+                    print("pred", next_state_d1[0].detach())
                     print("gt", next_state_d2[0])
-                    print("next eval", next_state_eval_dyn[0])
+                    print("next without modify", next_state_eval_dyn[0])
+                    print()
 
                 loss = torch.sum((next_state_d1 - next_state_d2)**2)
                 loss.backward()
@@ -172,8 +177,8 @@ class TrainCartpole(TrainBase):
 
             running_loss += loss.item()
 
-        epoch_loss = (running_loss / i) * 10000
-        self.loss_logging(epoch_loss, train="image" + train)
+        epoch_loss = (running_loss / i)
+        self.loss_logging(epoch_loss, train="image " + train)
         return epoch_loss
 
     def loss_logging(self, epoch_loss, train="controller"):
@@ -249,7 +254,7 @@ class TrainCartpole(TrainBase):
         elif isinstance(self.net, ImageControllerNet):
             controller_model = CartpoleImageWrapper(self.net, **self.config)
         # EVALUATION:
-        self.eval_env.thresh_div = self.config["thresh_div"]
+        # self.eval_env.thresh_div = self.config["thresh_div"]
         evaluator = Evaluator(controller_model, self.eval_env)
         # Start in upright position and see how long it is balaned
         success_mean, success_std, data = evaluator.evaluate_in_environment(
@@ -317,7 +322,7 @@ def train_img_dynamics(
     modified_params = config["general"]["modified_params"]
     config["sample_in"] = "eval_env"
     config["general"]["resample_every"] = 1000
-    config["train_dyn_for_epochs"] = 30
+    config["train_dyn_for_epochs"] = 200
     config["train_dyn_every"] = 1
 
     # train environment is learnt
@@ -341,7 +346,8 @@ def train_norm_dynamics(base_model, config, not_trainable="all"):
     """
     modified_params = config["general"]["modified_params"]
     config["sample_in"] = "train_env"
-    config["train_dyn_for_epochs"] = 4
+    config["train_dyn_for_epochs"] = 2
+    config["thresh_div_start"] = 0.2
     config["train_dyn_every"] = 1
 
     # train environment is learnt

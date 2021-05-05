@@ -237,7 +237,8 @@ class QuadEvaluator():
             return 0, 0
         div, stable = [], []
         for _ in range(nr_test):
-            self.controller._initDynamics()
+            if isinstance(self.controller, MPC):
+                self.controller._initDynamics()
             # circle_args = self.sample_circle()
             _, drone_traj, divergences = self.follow_trajectory(
                 reference,

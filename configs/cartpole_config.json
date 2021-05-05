@@ -1,5 +1,5 @@
 {
-    "nr_epochs": 30,
+    "nr_epochs": 200,
     "general": {
         "system": "cartpole",
         "ref_dim": 0,

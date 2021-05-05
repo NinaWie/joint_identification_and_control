@@ -13,5 +13,4 @@ outputs/
 *.csv
 *.ipynb
 *.npy
-models
 neural_control.egg-info/

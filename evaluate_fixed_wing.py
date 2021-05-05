@@ -128,7 +128,8 @@ class FixedWingEvaluator:
         mean_div, not_div_time = [], []
         for i in range(nr_test):
             # important! reset after every run
-            self.controller._initDynamics()
+            if isinstance(self.controller, MPC):
+                self.controller._initDynamics()
             target_point = [
                 np.random.rand(3) * np.array([70, 10, 10]) +
                 np.array([20, -5, -5])

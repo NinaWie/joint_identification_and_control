@@ -117,13 +117,15 @@ class LearntCartpoleDynamics(LearntDynamics, CartpoleDynamics):
 
 class ImageCartpoleDynamics(torch.nn.Module, CartpoleDynamics):
 
-    def __init__(self, img_width, img_height, state_size=4, action_dim=1):
+    def __init__(
+        self, img_width, img_height, nr_img=5, state_size=4, action_dim=1
+    ):
         CartpoleDynamics.__init__(self)
         super(ImageCartpoleDynamics, self).__init__()
 
         std = 0.0001
         # conv net
-        self.conv1 = nn.Conv2d(5, 10, 5)
+        self.conv1 = nn.Conv2d(nr_img * 2 - 1, 10, 5)
         # torch.nn.init.normal_(self.conv1.weight, mean=0.0, std=std)
         self.conv2 = nn.Conv2d(10, 2, 3)
         # torch.nn.init.normal_(self.conv2.weight, mean=0.0, std=std)
@@ -143,9 +145,13 @@ class ImageCartpoleDynamics(torch.nn.Module, CartpoleDynamics):
         torch.nn.init.normal_(self.linear_state_2.weight, mean=0.0, std=std)
 
     def state_transformer(self, image, action):
-        img_sub1 = torch.unsqueeze(image[:, 1] - image[:, 0], dim=1)
-        img_sub2 = torch.unsqueeze(image[:, 2] - image[:, 1], dim=1)
-        sub_images = torch.cat((image, img_sub1, img_sub2), dim=1)
+        action = torch.unsqueeze(action, 1)
+        cat_all = [image]
+        for i in range(image.size()[1] - 1):
+            cat_all.append(
+                torch.unsqueeze(image[:, i + 1] - image[:, i], dim=1)
+            )
+        sub_images = torch.cat(cat_all, dim=1)
         conv1 = torch.relu(self.conv1(sub_images.float()))
         conv2 = torch.relu(self.conv2(conv1))
 

@@ -26,9 +26,10 @@ class Net(nn.Module):
 
 class ImageControllerNet(nn.Module):
 
-    def __init__(self, out_size=1):
+    def __init__(self, out_size=1, nr_img=5):
         super(ImageControllerNet, self).__init__()
-        self.conv1 = nn.Conv2d(5, 10, 5)
+        # all raw images and the subtraction
+        self.conv1 = nn.Conv2d(nr_img * 2 - 1, 10, 5)
         self.conv2 = nn.Conv2d(10, 2, 3)
 
         self.flat_img_size = 2 * 94 * 294
@@ -39,9 +40,14 @@ class ImageControllerNet(nn.Module):
         self.fc_out = nn.Linear(32, out_size)
 
     def forward(self, image):
-        img_sub1 = torch.unsqueeze(image[:, 1] - image[:, 0], dim=1)
-        img_sub2 = torch.unsqueeze(image[:, 2] - image[:, 1], dim=1)
-        sub_images = torch.cat((image, img_sub1, img_sub2), dim=1)
+        cat_all = [image]
+        for i in range(image.size()[1] - 1):
+            cat_all.append(
+                torch.unsqueeze(image[:, i + 1] - image[:, i], dim=1)
+            )
+        # img_sub1 = torch.unsqueeze(image[:, 1] - image[:, 0], dim=1)
+        # img_sub2 = torch.unsqueeze(image[:, 2] - image[:, 1], dim=1)
+        sub_images = torch.cat(cat_all, dim=1)
         conv1 = torch.relu(self.conv1(sub_images.float()))
         conv2 = torch.relu(self.conv2(conv1))
 

@@ -19,7 +19,7 @@ APPLY_UNTIL = 1
 
 # current state, predicted action, images of prev states, next state after act
 collect_states, collect_actions, collect_img, collect_next = [], [], [], []
-buffer_len = 3
+buffer_len = 5
 img_width, img_height = (200, 300)
 
 
@@ -92,11 +92,12 @@ class Evaluator:
         return mean_rounded, std_rounded, data_collection
 
     def _preprocess_img(self, image):
-        return cv2.resize(
+        resized = cv2.resize(
             np.mean(image, axis=2),
             dsize=(img_height, img_width),
-            interpolation=cv2.INTER_CUBIC
+            interpolation=cv2.INTER_LINEAR
         )
+        return 255 - resized
 
     def evaluate_in_environment(
         self, nr_iters=1, max_steps=250, render=False, burn_in_steps=50
@@ -104,6 +105,8 @@ class Evaluator:
         """
         Measure success --> how long can we balance the pole on top
         """
+        if nr_iters == 0:
+            return 0, 0, []
         data_collection = []
         velocities = []
         with torch.no_grad():
@@ -113,6 +116,7 @@ class Evaluator:
             for n in range(nr_iters):
                 # only set the theta to the top, and reduce speed
                 self.eval_env._reset_upright()
+                # self.eval_env.state = (np.random.rand(4) - .5) * .1  # Data4
                 new_state = self.eval_env.state
                 if render:
                     start_img = self._preprocess_img(
@@ -136,6 +140,7 @@ class Evaluator:
                         action_seq = self.controller.predict_actions(
                             new_state, 0
                         )
+                    # action_seq = torch.rand(1, 4) - .5  # Data4
 
                     prev_state = new_state.copy()
                     for action_ind in range(APPLY_UNTIL):
@@ -176,7 +181,10 @@ class Evaluator:
         mean_err = np.mean(success)
         std_err = np.std(success)
         if not self.image_dataset:
-            print("Average velocity: %3.2f" % (np.mean(velocities)))
+            print(
+                "Average velocity: %3.2f (%3.2f)" %
+                (np.mean(velocities), np.std(velocities))
+            )
             print("Average success: %3.2f (%3.2f)" % (mean_err, std_err))
         return mean_err, std_err, data_collection
 
@@ -230,6 +238,9 @@ if __name__ == "__main__":
         "-e", "--epoch", type=str, default="", help="Saved epoch"
     )
     parser.add_argument(
+        "-a", "--eval", type=int, default=0, help="number eval runs"
+    )
+    parser.add_argument(
         "-save_data",
         action="store_true",
         help="save the episode as training data"
@@ -260,8 +271,8 @@ if __name__ == "__main__":
     image_dataset = False
 
     if image_dataset:
-        evaluator.collect_image_dataset = 1
-        for n in range(40):
+        evaluator.image_dataset = 1
+        for n in range(100):
             success, suc_std, _ = evaluator.evaluate_in_environment(
                 render=True, max_steps=30
             )
@@ -275,22 +286,14 @@ if __name__ == "__main__":
             collect_next.shape
         )
         np.savez(
-            "data/cartpole_img.npz", collect_img, collect_actions,
+            "data/cartpole_img_5.npz", collect_img, collect_actions,
             collect_states, collect_next
+        )
+    elif args.eval > 0:
+        success, suc_std, _ = evaluator.evaluate_in_environment(
+            render=True, max_steps=500, nr_iters=args.eval
         )
     else:
         success, suc_std, _ = evaluator.evaluate_in_environment(
-            render=True, max_steps=500
+            render=True, max_steps=500, nr_iters=1
         )
-
-    # try:
-    #     swingup_mean, swingup_std, _, data_collection = evaluator.make_swingup(
-    #         net, nr_iters=1, render=True, max_iters=500
-    #     )
-    #     print(swingup_mean, swingup_std)
-    # except KeyboardInterrupt:
-    #     pass
-    # # Save sequence?
-    # if len(input("save? enter anything for yes")) > 0:
-    #     data_collection = np.asarray(data_collection)
-    #     np.save("saved_states.npy", data_collection)
