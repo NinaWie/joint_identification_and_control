@@ -77,7 +77,7 @@ class CartpoleDynamics:
                 self.cfg["total_mass"]
             )
         )
-        wind_drag = self.cfg["wind"] * costheta
+        wind_drag = self.cfg["wind"] * torch.cos(theta * 5)
 
         # swapped these two lines
         theta = theta + dt * theta_dot
@@ -123,29 +123,24 @@ class ImageCartpoleDynamics(torch.nn.Module, CartpoleDynamics):
         CartpoleDynamics.__init__(self)
         super(ImageCartpoleDynamics, self).__init__()
 
-        std = 0.0001
+        self.img_width = img_width
+        self.img_height = img_height
         # conv net
-        self.conv1 = nn.Conv2d(nr_img * 2 - 1, 10, 5)
-        # torch.nn.init.normal_(self.conv1.weight, mean=0.0, std=std)
-        self.conv2 = nn.Conv2d(10, 2, 3)
-        # torch.nn.init.normal_(self.conv2.weight, mean=0.0, std=std)
+        self.conv1 = nn.Conv2d(nr_img * 2 - 1, 10, 5, padding=2)
+        self.conv2 = nn.Conv2d(10, 10, 3, padding=1)
+        self.conv3 = nn.Conv2d(10 + 2, 20, 3, padding=1)
+        self.conv4 = nn.Conv2d(20, 1, 3, padding=1)
 
         # residual network
-        self.flat_img_size = 2 * (img_width - 6) * (img_height - 6)
+        self.flat_img_size = 10 * (img_width) * (img_height)
 
         self.linear_act = nn.Linear(action_dim, 32)
-        # torch.nn.init.normal_(self.linear_act.weight, mean=0.0, std=std)
-        # torch.nn.init.normal_(self.linear_act.bias, mean=0.0, std=std)
+        self.act_to_img = nn.Linear(32, img_width * img_height)
 
         self.linear_state_1 = nn.Linear(self.flat_img_size + 32, 64)
-        # torch.nn.init.normal_(self.linear_state_1.weight, mean=0.0, std=std)
-        # torch.nn.init.normal_(self.linear_state_1.bias, mean=0.0, std=std)
-
         self.linear_state_2 = nn.Linear(64, state_size, bias=False)
-        # torch.nn.init.normal_(self.linear_state_2.weight, mean=0.0, std=std)
 
-    def state_transformer(self, image, action):
-        action = torch.unsqueeze(action, 1)
+    def conv_head(self, image):
         cat_all = [image]
         for i in range(image.size()[1] - 1):
             cat_all.append(
@@ -154,21 +149,43 @@ class ImageCartpoleDynamics(torch.nn.Module, CartpoleDynamics):
         sub_images = torch.cat(cat_all, dim=1)
         conv1 = torch.relu(self.conv1(sub_images.float()))
         conv2 = torch.relu(self.conv2(conv1))
+        return conv2
 
+    def action_encoding(self, action):
+        action = torch.unsqueeze(action, 1)
         ff_act = torch.relu(self.linear_act(action))
-        flattened = conv2.reshape((-1, self.flat_img_size))
-        state_action = torch.cat((flattened, ff_act), dim=1)
+        return ff_act
+
+    def state_transformer(self, image_conv, act_enc):
+        flattened = image_conv.reshape((-1, self.flat_img_size))
+        state_action = torch.cat((flattened, act_enc), dim=1)
 
         ff_1 = torch.relu(self.linear_state_1(state_action))
         ff_2 = self.linear_state_2(ff_1)
         return ff_2
 
+    def image_prediction(self, image_conv, act_enc, prior_img):
+        act_img = torch.relu(self.act_to_img(act_enc))
+        act_img = act_img.reshape((-1, 1, self.img_width, self.img_height))
+        # concat channels
+        with_prior = torch.cat((image_conv, prior_img, act_img), dim=1)
+        # conv
+        conv3 = torch.relu(self.conv3(with_prior))
+        conv4 = torch.sigmoid(self.conv4(conv3))
+        # return the single channel that we have (instead of squeeze)
+        return conv4[:, 0]
+
     def forward(self, state, image, action, dt):
         # run through normal simulator f hat
         new_state = self.simulate_cartpole(state, action, dt)
+        # encode image and action (common head)
+        img_conv = self.conv_head(image)
+        act_enc = self.action_encoding(action)
+        prior_img = torch.unsqueeze(image[:, 0], 1).float()
         # run through residual network delta
-        added_new_state = self.state_transformer(image, action)
-        return new_state + added_new_state
+        added_new_state = self.state_transformer(img_conv, act_enc)
+        next_img = self.image_prediction(img_conv, act_enc, prior_img)
+        return new_state + added_new_state, next_img
 
 
 class CartpoleDynamicsMPC(CartpoleDynamics):

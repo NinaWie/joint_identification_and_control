@@ -58,3 +58,53 @@ class ImageControllerNet(nn.Module):
         x = torch.tanh(self.fc3(x))
         x = torch.tanh(self.fc_out(x))
         return x
+
+
+HIDDEN_LAYER_1 = 16
+HIDDEN_LAYER_2 = 32
+HIDDEN_LAYER_3 = 32
+KERNEL_SIZE = 5  # original = 5
+STRIDE = 2  # original = 2
+
+
+class ImageControllerNetDQN(nn.Module):
+
+    def __init__(self, h, w, out_size=1, nr_img=3):
+        super(ImageControllerNetDQN, self).__init__()
+        self.conv1 = nn.Conv2d(
+            nr_img, HIDDEN_LAYER_1, kernel_size=KERNEL_SIZE, stride=STRIDE
+        )
+        self.bn1 = nn.BatchNorm2d(HIDDEN_LAYER_1)
+        self.conv2 = nn.Conv2d(
+            HIDDEN_LAYER_1,
+            HIDDEN_LAYER_2,
+            kernel_size=KERNEL_SIZE,
+            stride=STRIDE
+        )
+        self.bn2 = nn.BatchNorm2d(HIDDEN_LAYER_2)
+        self.conv3 = nn.Conv2d(
+            HIDDEN_LAYER_2,
+            HIDDEN_LAYER_3,
+            kernel_size=KERNEL_SIZE,
+            stride=STRIDE
+        )
+        self.bn3 = nn.BatchNorm2d(HIDDEN_LAYER_3)
+
+        # Number of Linear input connections depends on output of conv2d layers
+        # and therefore the input image size, so compute it.
+        def conv2d_size_out(size, kernel_size=5, stride=2):
+            return (size - (kernel_size - 1) - 1) // stride + 1
+
+        convw = conv2d_size_out(conv2d_size_out(conv2d_size_out(w)))
+        convh = conv2d_size_out(conv2d_size_out(conv2d_size_out(h)))
+        linear_input_size = convw * convh * 32
+        nn.Dropout()
+        self.head = nn.Linear(linear_input_size, out_size)
+
+    # Called with either one element to determine next action, or a batch
+    # during optimization. Returns tensor([[left0exp,right0exp]...]).
+    def forward(self, x):
+        x = torch.relu(self.bn1(self.conv1(x)))
+        x = torch.relu(self.bn2(self.conv2(x)))
+        x = torch.relu(self.bn3(self.conv3(x)))
+        return self.head(x.view(x.size(0), -1))

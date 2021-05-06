@@ -2,7 +2,7 @@
     "nr_epochs": 200,
     "general": {
         "system": "cartpole",
-        "delta_t": 0.1,
+        "delta_t": 0.05,
         "ref_dim": 0,
         "state_size": 4,
         "batch_size": 8,
@@ -13,7 +13,8 @@
         "thresh_div_step": 0.02,
         "thresh_div_end": 0.21,
         "l2_lambda": 0,
-        "modified_params": {}
+        "modified_params": {},
+        "nr_img": 3
     },
     "swingup": {
         "nr_actions": 10,
@@ -27,7 +28,7 @@
     "balance": {
         "nr_actions": 4,
         "learning_rate_controller": 0.00005,
-        "learning_rate_dynamics": 0.1,
+        "learning_rate_dynamics": 0.0001,
         "sample_data": 1000,
         "action_dim": 1,
         "suc_up_down": 1,

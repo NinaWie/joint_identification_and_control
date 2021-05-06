@@ -19,7 +19,7 @@ APPLY_UNTIL = 1
 
 # current state, predicted action, images of prev states, next state after act
 collect_states, collect_actions, collect_img, collect_next = [], [], [], []
-buffer_len = 5
+buffer_len = 4
 img_width, img_height = (200, 300)
 
 
@@ -42,9 +42,9 @@ class Evaluator:
 
     def _convert_image_buffer(self, state, crop_width=30):
         # image and corresponding state --> normalize x pos in image buffer!
-        x = state[0] / self.eval_env.state_limits[0] * 2
+        x_pos = state[0] / self.eval_env.state_limits[0]
         img_width_half = self.image_buffer.shape[2] // 2
-        x_img = int(img_width_half + x * img_width_half)
+        x_img = int(img_width_half + x_pos * img_width_half)
         return self.image_buffer[:, 75:175,
                                  x_img - crop_width:x_img + crop_width]
 
@@ -67,6 +67,7 @@ class Evaluator:
                 self.eval_env._reset_upright()
                 if self.image_dataset:
                     self.eval_env.state = (np.random.rand(4) - .5) * .1
+                    self.eval_env.state[3] = 0
 
                 new_state = self.eval_env.state
                 if render:
@@ -85,7 +86,7 @@ class Evaluator:
                     # Predict optimal action:
                     if self.controller.inp_img:
                         action_seq = self.controller.predict_actions(
-                            self._convert_image_buffer(new_state)
+                            self._convert_image_buffer(new_state)[:-1]
                         )
                     else:
                         action_seq = self.controller.predict_actions(
@@ -114,15 +115,17 @@ class Evaluator:
                         assert APPLY_UNTIL == 1
                         collect_states.append(prev_state)
                         collect_next.append(new_state)
-                        collect_img.append(
-                            self._convert_image_buffer(prev_state)
-                        )
                         collect_actions.append(action_seq[0, 0].numpy())
                     if render:
                         self.image_buffer = np.roll(
                             self.image_buffer, 1, axis=0
                         )
                         self.image_buffer[0] = self._preprocess_img(new_img)
+                        # add images to dataset --> to have next img as label
+                        if self.image_dataset and i > buffer_len:
+                            collect_img.append(
+                                self._convert_image_buffer(prev_state)
+                            )
 
                     if not self.eval_env.is_upright():
                         break
@@ -173,7 +176,7 @@ def load_model(model_name, epoch):
     net.eval()
     if isinstance(net, Net):
         controller_model = CartpoleWrapper(net, **config)
-    elif isinstance(net, ImageControllerNet):
+    else:
         controller_model = CartpoleImageWrapper(net, **config)
     return controller_model
 
@@ -203,6 +206,7 @@ if __name__ == "__main__":
 
     # PARAMs
     dt = 0.05
+    thresh_div = 0.21
 
     if args.model == "mpc":
         load_dynamics = None
@@ -221,7 +225,7 @@ if __name__ == "__main__":
 
     # define dynamics and environmen
     dynamics = CartpoleDynamics(modified_params=modified_params)
-    eval_env = CartPoleEnv(dynamics, dt)
+    eval_env = CartPoleEnv(dynamics, dt, thresh_div=thresh_div)
     evaluator = Evaluator(controller_model, eval_env)
     # angles = evaluator.run_for_fixed_length(net, render=True)
 
@@ -243,7 +247,7 @@ if __name__ == "__main__":
             collect_next.shape
         )
         np.savez(
-            "data/cartpole_img_8.npz", collect_img, collect_actions,
+            "data/cartpole_img_12.npz", collect_img, collect_actions,
             collect_states, collect_next
         )
     elif args.eval > 0:

@@ -10,7 +10,9 @@ from neural_control.drone_loss import (
     cartpole_loss_balance, cartpole_loss_swingup, cartpole_loss_mpc
 )
 from evaluate_cartpole import Evaluator
-from neural_control.models.simple_model import (Net, ImageControllerNet)
+from neural_control.models.simple_model import (
+    Net, ImageControllerNet, ImageControllerNetDQN
+)
 from neural_control.plotting import plot_loss, plot_success
 from neural_control.environments.cartpole_env import (
     construct_states, CartPoleEnv
@@ -69,11 +71,14 @@ class TrainCartpole(TrainBase):
                 )
         if self.train_image_dyn:
             if base_model is None:
-                self.net = ImageControllerNet(
-                    out_size=self.nr_actions * self.action_dim
+                self.net = ImageControllerNetDQN(
+                    100,
+                    60,
+                    out_size=self.nr_actions * self.action_dim,
+                    nr_img=self.config["nr_img"]
                 )
             self.state_data = CartpoleImageDataset(
-                load_data_path="data/cartpole_img_8.npz", **self.config
+                load_data_path="data/cartpole_img_12.npz", **self.config
             )
         else:
             self.state_data = CartpoleDataset(
@@ -129,26 +134,54 @@ class TrainCartpole(TrainBase):
         running_loss = 0
         for i, data in enumerate(self.trainloader, 0):
             # get state and action and correspodning image sequence
-            current_state, actions, images, next_state_d2 = data
+            current_state, actions, image_seq, next_state_d2 = data
+            # the first image is the next ground truth!
+            images = image_seq[:, 1:]
+            gt_next_img = images[:, 0]
+            mask = gt_next_img.greater(0)
+            mask_inverse = gt_next_img.le(0.01)
 
             # zero the parameter gradients
             if train == "dynamics":
                 self.optimizer_dynamics.zero_grad()
-                next_state_d1 = self.train_dynamics(
+                next_state_d1, pred_next_img = self.train_dynamics(
                     current_state, images, actions, dt=self.delta_t
                 )
                 if i == 0:
                     print("\nExample dynamics")
                     next_state_eval_dyn = self.eval_dynamics(
-                        current_state, actions
+                        current_state, actions, self.delta_t
                     )
                     print("start at ", current_state[0])
                     print("pred", next_state_d1[0].detach())
                     print("gt", next_state_d2[0])
                     print("next without modify", next_state_eval_dyn[0])
                     print()
+                    print(np.max(pred_next_img.detach().numpy()))
+                    print(np.min(pred_next_img.detach().numpy()))
+                    # import matplotlib.pyplot as plt
+                    # pred_example = pred_next_img[0].detach().numpy()
+                    # gt_example = gt_next_img[0].detach().numpy()
+                    # plt.subplot(1, 2, 1)
+                    # plt.imshow(gt_example)
+                    # plt.title("GT")
+                    # plt.subplot(1, 2, 2)
+                    # plt.imshow(pred_example)
+                    # plt.title("Pred")
+                    # plt.colorbar()
+                    # plt.show()
+                    print()
 
-                loss = torch.sum((next_state_d1 - next_state_d2)**2)
+                loss_state = torch.sum((next_state_d1 - next_state_d2)**2)
+                loss_img = torch.sum(
+                    torch.masked_select(gt_next_img, mask) -
+                    torch.masked_select(pred_next_img, mask)
+                )**2
+                loss_zeros = torch.sum(
+                    torch.masked_select(gt_next_img, mask_inverse) -
+                    torch.masked_select(pred_next_img, mask_inverse)
+                )**2
+                loss = loss_state + loss_img * 1e-6 + loss_zeros * 1e-7
                 loss.backward()
                 for name, param in self.net.named_parameters():
                     if param.grad is not None:
@@ -159,7 +192,7 @@ class TrainCartpole(TrainBase):
 
             elif train == "controller":
                 self.optimizer_controller.zero_grad()
-                actions = self.net(images)
+                actions = self.net(images.float())
                 action_seq = torch.reshape(
                     actions, (-1, self.nr_actions, self.action_dim)
                 )
@@ -171,7 +204,8 @@ class TrainCartpole(TrainBase):
                 for k in range(action_seq.size()[1]):
                     current_state = self.train_dynamics(
                         current_state,
-                        images,
+                        # TODO: output next image as well and change sequence
+                        # images,
                         action_seq[:, k],
                         dt=self.delta_t
                     )
@@ -257,7 +291,7 @@ class TrainCartpole(TrainBase):
     def evaluate_balance(self, epoch):
         if isinstance(self.net, Net):
             controller_model = CartpoleWrapper(self.net, **self.config)
-        elif isinstance(self.net, ImageControllerNet):
+        else:
             controller_model = CartpoleImageWrapper(self.net, **self.config)
         # EVALUATION:
         # self.eval_env.thresh_div = self.config["thresh_div"]
@@ -332,7 +366,10 @@ def train_img_dynamics(
     config["train_dyn_every"] = 1
 
     # train environment is learnt
-    train_dyn = ImageCartpoleDynamics(100, 60, state_size=4)
+    train_dyn = ImageCartpoleDynamics(
+        100, 60, nr_img=config["general"]["nr_img"], state_size=4
+    )
+    #  CartpoleDynamics()
     if base_image_dyn is not None:
         print("loading base dyn model from", base_image_dyn)
         train_dyn.load_state_dict(
@@ -373,7 +410,7 @@ if __name__ == "__main__":
 
     baseline_model = None  # "trained_models/cartpole/current_model"
     baseline_dyn = None  # "trained_models/cartpole/train_dyn_img"
-    config["general"]["save_name"] = "train_img_res_2"
+    config["general"]["save_name"] = "train_img_pred"
 
     mod_params = {"wind": .5}
     config["general"]["modified_params"] = mod_params
