@@ -11,7 +11,7 @@ import time
 logger = logging.getLogger(__name__)
 from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
 try:
-    from . import cartpole_rendering as rendering
+    import neural_control.environments.cartpole_rendering as rendering
 except:
     pass
 
@@ -203,24 +203,44 @@ def construct_states(
     return data[:num_data]
 
 
-if __name__ == "__main__":
-    data = np.load("../trained_models/minimize_x_best_model/state_data.npy")
-    env = CartPoleEnv()
-    pick_random_starts = np.random.permutation(len(data))[:100]
-    for i in pick_random_starts:
-        env.state = data[i]
-        for j in range(10):
-            env._step(np.random.rand(1) - .5)
-            env._render()
-            time.sleep(.1)
-        time.sleep(1)
-        # sign = np.sign(np.random.rand() - 0.5)
-        # if i % 2 == 0:
-        #     sign = -1
-        # else:
-        #     sign = 1
+import cv2
 
-        # USUAL pipeline
-        # action = 2 * (np.random.rand() - 0.5)
-        # out = env._step(action)
-        # print("action", action, "out:", out)
+
+def preprocess_img(image, img_height, img_width):
+    resized = cv2.resize(
+        np.mean(image, axis=2),
+        dsize=(img_height, img_width),
+        interpolation=cv2.INTER_LINEAR
+    )
+    return ((255 - resized) > 0).astype(float)
+
+
+def make_state_to_img_dataset(dataset_size=2000):
+    dyn = CartpoleDynamics()
+    env = CartPoleEnv(dyn, dt=0.1)
+
+    min_theta, max_theta = (-0.3, 0.3)
+    theta_range = max_theta - min_theta
+    img_width_base = 300 // 2
+    x_bound = 2.4
+    img_des_half = 120 // 2
+    min_x_diff, max_x_diff = (-1, 1)
+    x_range = max_x_diff - min_x_diff
+
+    inputs = np.zeros((dataset_size, 2))
+    images = []
+    for i in range(dataset_size):
+        random_theta = np.random.rand() * theta_range + min_theta
+        random_x = np.random.rand() * theta_range + min_theta
+        inputs[i] = [random_x, random_theta]
+        env.state = np.array([random_x, 0, random_theta, 0])
+        img = preprocess_img(env._render(mode="rgb_array"), 300,
+                             200)[75:175, img_width_base -
+                                  img_des_half:img_width_base + img_des_half]
+
+        images.append(img)
+    np.savez("data/state_to_img.npz", inputs, np.array(images))
+
+
+if __name__ == "__main__":
+    make_state_to_img_dataset(2000)

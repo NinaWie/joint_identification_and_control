@@ -73,12 +73,12 @@ class TrainCartpole(TrainBase):
             if base_model is None:
                 self.net = ImageControllerNetDQN(
                     100,
-                    60,
+                    120,
                     out_size=self.nr_actions * self.action_dim,
                     nr_img=self.config["nr_img"]
                 )
             self.state_data = CartpoleImageDataset(
-                load_data_path="data/cartpole_img_12.npz", **self.config
+                load_data_path="data/cartpole_img_14.npz", **self.config
             )
         else:
             self.state_data = CartpoleDataset(
@@ -137,14 +137,19 @@ class TrainCartpole(TrainBase):
             current_state, actions, image_seq, next_state_d2 = data
             # the first image is the next ground truth!
             images = image_seq[:, 1:]
-            gt_next_img = images[:, 0]
-            mask = gt_next_img.greater(0)
-            mask_inverse = gt_next_img.le(0.01)
+            gt_next_img = image_seq[:, 0]
+            # IMG PRED STUFF
+            # # Compute loss on te part where are both different
+            # diff_img_gt = (images[:, 0] - gt_next_img)**2
+            # # the important parts
+            # mask = diff_img_gt.greater(0)
+            # # the unimportant parts
+            # mask_inverse = diff_img_gt.le(0.01)
 
             # zero the parameter gradients
             if train == "dynamics":
                 self.optimizer_dynamics.zero_grad()
-                next_state_d1, pred_next_img = self.train_dynamics(
+                next_state_d1 = self.train_dynamics(
                     current_state, images, actions, dt=self.delta_t
                 )
                 if i == 0:
@@ -157,8 +162,8 @@ class TrainCartpole(TrainBase):
                     print("gt", next_state_d2[0])
                     print("next without modify", next_state_eval_dyn[0])
                     print()
-                    print(np.max(pred_next_img.detach().numpy()))
-                    print(np.min(pred_next_img.detach().numpy()))
+                    # print(np.max(pred_next_img.detach().numpy()))
+                    # print(np.min(pred_next_img.detach().numpy()))
                     # import matplotlib.pyplot as plt
                     # pred_example = pred_next_img[0].detach().numpy()
                     # gt_example = gt_next_img[0].detach().numpy()
@@ -172,16 +177,21 @@ class TrainCartpole(TrainBase):
                     # plt.show()
                     print()
 
-                loss_state = torch.sum((next_state_d1 - next_state_d2)**2)
-                loss_img = torch.sum(
-                    torch.masked_select(gt_next_img, mask) -
-                    torch.masked_select(pred_next_img, mask)
-                )**2
-                loss_zeros = torch.sum(
-                    torch.masked_select(gt_next_img, mask_inverse) -
-                    torch.masked_select(pred_next_img, mask_inverse)
-                )**2
-                loss = loss_state + loss_img * 1e-6 + loss_zeros * 1e-7
+                loss = torch.sum((next_state_d1 - next_state_d2)**2)
+                # print(loss.item())
+                # IMAGE PRED STUFF
+                # loss_foreground = torch.sum(
+                #     torch.masked_select(gt_next_img, mask) -
+                #     torch.masked_select(pred_next_img, mask)
+                # )**2
+                # loss_background = torch.sum(
+                #     torch.masked_select(gt_next_img, mask_inverse) -
+                #     torch.masked_select(pred_next_img, mask_inverse)
+                # )**2
+                # loss = (
+                #     loss_state + loss_foreground * 1e-4 +
+                #     loss_background * 1e-7
+                # )
                 loss.backward()
                 for name, param in self.net.named_parameters():
                     if param.grad is not None:
@@ -222,7 +232,7 @@ class TrainCartpole(TrainBase):
         return epoch_loss
 
     def loss_logging(self, epoch_loss, train="controller"):
-        self.results_dict["loss"].append(epoch_loss)
+        self.results_dict["loss_" + train].append(epoch_loss)
         print(f"Loss ({train}): {round(epoch_loss, 2)}")
         self.writer.add_scalar("Loss/train", epoch_loss)
 
@@ -367,7 +377,7 @@ def train_img_dynamics(
 
     # train environment is learnt
     train_dyn = ImageCartpoleDynamics(
-        100, 60, nr_img=config["general"]["nr_img"], state_size=4
+        100, 120, nr_img=config["general"]["nr_img"], state_size=4
     )
     #  CartpoleDynamics()
     if base_image_dyn is not None:
@@ -410,7 +420,7 @@ if __name__ == "__main__":
 
     baseline_model = None  # "trained_models/cartpole/current_model"
     baseline_dyn = None  # "trained_models/cartpole/train_dyn_img"
-    config["general"]["save_name"] = "train_img_pred"
+    config["general"]["save_name"] = "train_img_res"
 
     mod_params = {"wind": .5}
     config["general"]["modified_params"] = mod_params

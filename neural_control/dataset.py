@@ -212,8 +212,7 @@ class CartpoleImageDataset(torch.utils.data.Dataset):
             "loaded data", collect_states.shape, collect_actions.shape,
             collect_img.shape, collect_next.shape
         )
-        self.images = (collect_img - np.min(collect_img)
-                       ) / (np.max(collect_img) - np.min(collect_img))
+        self.images = collect_img.astype(float)
         self.states = collect_states
         self.actions = collect_actions
         self.next_states = collect_next

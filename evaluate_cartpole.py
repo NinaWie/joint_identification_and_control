@@ -21,6 +21,8 @@ APPLY_UNTIL = 1
 collect_states, collect_actions, collect_img, collect_next = [], [], [], []
 buffer_len = 4
 img_width, img_height = (200, 300)
+crop_width = 60
+center_at_x = False
 
 
 class Evaluator:
@@ -38,13 +40,16 @@ class Evaluator:
             dsize=(img_height, img_width),
             interpolation=cv2.INTER_LINEAR
         )
-        return 255 - resized
+        return ((255 - resized) > 0).astype(float)
 
-    def _convert_image_buffer(self, state, crop_width=30):
+    def _convert_image_buffer(self, state, crop_width=crop_width):
         # image and corresponding state --> normalize x pos in image buffer!
-        x_pos = state[0] / self.eval_env.state_limits[0]
         img_width_half = self.image_buffer.shape[2] // 2
-        x_img = int(img_width_half + x_pos * img_width_half)
+        if center_at_x:
+            x_pos = state[0] / self.eval_env.state_limits[0]
+            x_img = int(img_width_half + x_pos * img_width_half)
+        else:
+            x_img = img_width_half
         return self.image_buffer[:, 75:175,
                                  x_img - crop_width:x_img + crop_width]
 
@@ -68,6 +73,8 @@ class Evaluator:
                 if self.image_dataset:
                     self.eval_env.state = (np.random.rand(4) - .5) * .1
                     self.eval_env.state[3] = 0
+                    # x ca between -1 and 1 normal distributed
+                    self.eval_env.state[0] = np.random.randn() / 2.5
 
                 new_state = self.eval_env.state
                 if render:
@@ -233,7 +240,7 @@ if __name__ == "__main__":
 
     if image_dataset:
         evaluator.image_dataset = 1
-        for n in range(100):
+        for n in range(500):
             success, suc_std, _ = evaluator.evaluate_in_environment(
                 render=True, max_steps=30
             )
@@ -247,7 +254,7 @@ if __name__ == "__main__":
             collect_next.shape
         )
         np.savez(
-            "data/cartpole_img_12.npz", collect_img, collect_actions,
+            "data/cartpole_img_14.npz", collect_img, collect_actions,
             collect_states, collect_next
         )
     elif args.eval > 0:

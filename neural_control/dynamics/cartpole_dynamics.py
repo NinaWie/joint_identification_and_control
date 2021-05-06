@@ -181,11 +181,12 @@ class ImageCartpoleDynamics(torch.nn.Module, CartpoleDynamics):
         # encode image and action (common head)
         img_conv = self.conv_head(image)
         act_enc = self.action_encoding(action)
-        prior_img = torch.unsqueeze(image[:, 0], 1).float()
         # run through residual network delta
         added_new_state = self.state_transformer(img_conv, act_enc)
-        next_img = self.image_prediction(img_conv, act_enc, prior_img)
-        return new_state + added_new_state, next_img
+        # # Predict next image
+        # prior_img = torch.unsqueeze(image[:, 0], 1).float()
+        # next_img = self.image_prediction(img_conv, act_enc, prior_img)
+        return new_state + added_new_state  # , next_img
 
 
 class CartpoleDynamicsMPC(CartpoleDynamics):
