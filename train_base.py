@@ -287,7 +287,7 @@ class TrainBase:
         plot_loss_episode_len(
             self.results_dict["mean_success"],
             self.results_dict["std_success"],
-            self.results_dict["loss"],
+            self.results_dict["loss_controller"],
             save_path=os.path.join(self.save_path, "performance.png")
         )
         # save performance logging

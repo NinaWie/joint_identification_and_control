@@ -152,7 +152,6 @@ class ImageCartpoleDynamics(torch.nn.Module, CartpoleDynamics):
         return conv2
 
     def action_encoding(self, action):
-        action = torch.unsqueeze(action, 1)
         ff_act = torch.relu(self.linear_act(action))
         return ff_act
 

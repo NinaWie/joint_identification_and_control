@@ -11,7 +11,7 @@ from neural_control.drone_loss import (
 )
 from evaluate_cartpole import Evaluator
 from neural_control.models.simple_model import (
-    Net, ImageControllerNet, ImageControllerNetDQN
+    Net, ImageControllerNet, ImageControllerNetDQN, StateToImg
 )
 from neural_control.plotting import plot_loss, plot_success
 from neural_control.environments.cartpole_env import (
@@ -55,6 +55,11 @@ class TrainCartpole(TrainBase):
         # for image processing
         self.train_image_dyn = train_image_dyn
 
+        # state to image transformer:
+        self.state_to_img_net = torch.load(
+            "trained_models/cartpole/state_img_net"
+        )
+
     def initialize_model(
         self, base_model=None, base_model_name="model_cartpole"
     ):
@@ -77,8 +82,12 @@ class TrainCartpole(TrainBase):
                     out_size=self.nr_actions * self.action_dim,
                     nr_img=self.config["nr_img"]
                 )
+                # # for sanity check
+                # self.net = Net(
+                #     self.state_size, self.nr_actions * self.action_dim
+                # )
             self.state_data = CartpoleImageDataset(
-                load_data_path="data/cartpole_img_14.npz", **self.config
+                load_data_path="data/cartpole_img_18.npz", **self.config
             )
         else:
             self.state_data = CartpoleDataset(
@@ -134,7 +143,8 @@ class TrainCartpole(TrainBase):
         running_loss = 0
         for i, data in enumerate(self.trainloader, 0):
             # get state and action and correspodning image sequence
-            current_state, actions, image_seq, next_state_d2 = data
+            initial_state, actions, image_seq, next_state_d2 = data
+            current_state = initial_state.clone()
             # the first image is the next ground truth!
             images = image_seq[:, 1:]
             gt_next_img = image_seq[:, 0]
@@ -214,12 +224,24 @@ class TrainCartpole(TrainBase):
                 for k in range(action_seq.size()[1]):
                     current_state = self.train_dynamics(
                         current_state,
-                        # TODO: output next image as well and change sequence
-                        # images,
+                        images.float(),
                         action_seq[:, k],
                         dt=self.delta_t
                     )
                     intermediate_states[:, k] = current_state
+                    # render img
+                    x_diff = torch.unsqueeze(
+                        current_state[:, 0] - initial_state[:, 0], 1
+                    )
+                    theta = torch.unsqueeze(initial_state[:, 2], 1)
+                    render_input = torch.cat((x_diff, theta), dim=1)
+                    render_current_state = torch.unsqueeze(
+                        self.state_to_img_net(render_input.float()), dim=1
+                    )
+                    # add to image sequence
+                    images = torch.cat(
+                        (render_current_state, images[:, :-1]), dim=1
+                    )
                 # loss = self.train_controller_model(current_state, action_seq)
                 loss = cartpole_loss_mpc(intermediate_states, ref_states)
                 loss.backward()
@@ -372,20 +394,21 @@ def train_img_dynamics(
     modified_params = config["general"]["modified_params"]
     config["sample_in"] = "eval_env"
     config["general"]["resample_every"] = 1000
-    config["train_dyn_for_epochs"] = 200
+    config["train_dyn_for_epochs"] = -1
     config["train_dyn_every"] = 1
 
     # train environment is learnt
+    # train_dyn = CartpoleDynamics(modified_params=modified_params)
     train_dyn = ImageCartpoleDynamics(
         100, 120, nr_img=config["general"]["nr_img"], state_size=4
     )
-    #  CartpoleDynamics()
+    #
     if base_image_dyn is not None:
         print("loading base dyn model from", base_image_dyn)
         train_dyn.load_state_dict(
             torch.load(os.path.join(base_image_dyn, "dynamics_model"))
         )
-    eval_dyn = CartpoleDynamics()  # modified_params=modified_params)
+    eval_dyn = CartpoleDynamics(modified_params=modified_params)
     trainer = TrainCartpole(train_dyn, eval_dyn, config, train_image_dyn=1)
     trainer.initialize_model(base_model)
     trainer.run_dynamics(config)
@@ -418,9 +441,9 @@ if __name__ == "__main__":
     with open("configs/cartpole_config.json", "r") as infile:
         config = json.load(infile)
 
-    baseline_model = None  # "trained_models/cartpole/current_model"
-    baseline_dyn = None  # "trained_models/cartpole/train_dyn_img"
-    config["general"]["save_name"] = "train_img_res"
+    baseline_model = "trained_models/cartpole/train_con_img_data18"
+    baseline_dyn = "trained_models/cartpole/train_img_res"
+    config["general"]["save_name"] = "test_full_pipeline"
 
     mod_params = {"wind": .5}
     config["general"]["modified_params"] = mod_params

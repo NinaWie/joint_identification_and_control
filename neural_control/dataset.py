@@ -335,3 +335,22 @@ class WingDataset(DroneDataset):
         relative_ref = ref_states[:, -1] - states[:, :3]
 
         return normed_states, states, relative_ref, ref_states
+
+
+class StateImageDataset(torch.utils.data.Dataset):
+
+    def __init__(
+        self, load_data_path="data/cartpole_img_6.npz", dt=0.05, **kwargs
+    ):
+        npz_loaded = np.load(load_data_path)
+        (collect_states,
+         collect_img) = (npz_loaded["arr_0"], npz_loaded["arr_1"])
+        print("loaded data", collect_states.shape, collect_img.shape)
+        self.images = collect_img
+        self.states = collect_states
+
+    def __len__(self):
+        return len(self.states)
+
+    def __getitem__(self, index):
+        return (self.states[index], self.images[index])

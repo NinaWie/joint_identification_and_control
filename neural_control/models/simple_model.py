@@ -24,15 +24,35 @@ class Net(nn.Module):
         return x
 
 
+class StateToImg(nn.Module):
+
+    def __init__(self, width=100, height=120):
+        super(StateToImg, self).__init__()
+        self.img_height = height
+        self.img_width = width
+        self.fc1 = nn.Linear(2, 32)
+        self.fc2 = nn.Linear(32, 128)
+        self.fc3 = nn.Linear(128, 256)
+        self.fc_out = nn.Linear(256, width * height)
+
+    def forward(self, x):
+        x = torch.tanh(self.fc1(x))
+        x = torch.tanh(self.fc2(x))
+        x = torch.tanh(self.fc3(x))
+        x = torch.sigmoid(self.fc_out(x))
+        x = torch.reshape(x, (-1, self.img_width, self.img_height))
+        return x
+
+
 class ImageControllerNet(nn.Module):
 
-    def __init__(self, out_size=1, nr_img=5):
+    def __init__(self, img_height, img_width, out_size=1, nr_img=5):
         super(ImageControllerNet, self).__init__()
         # all raw images and the subtraction
         self.conv1 = nn.Conv2d(nr_img * 2 - 1, 10, 5)
         self.conv2 = nn.Conv2d(10, 2, 3)
 
-        self.flat_img_size = 2 * 94 * 294
+        self.flat_img_size = 2 * (img_height - 6) * (img_width - 6)
 
         self.fc1 = nn.Linear(self.flat_img_size, 64)
         self.fc2 = nn.Linear(64, 64)
@@ -45,8 +65,6 @@ class ImageControllerNet(nn.Module):
             cat_all.append(
                 torch.unsqueeze(image[:, i + 1] - image[:, i], dim=1)
             )
-        # img_sub1 = torch.unsqueeze(image[:, 1] - image[:, 0], dim=1)
-        # img_sub2 = torch.unsqueeze(image[:, 2] - image[:, 1], dim=1)
         sub_images = torch.cat(cat_all, dim=1)
         conv1 = torch.relu(self.conv1(sub_images.float()))
         conv2 = torch.relu(self.conv2(conv1))
