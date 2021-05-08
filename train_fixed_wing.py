@@ -17,6 +17,8 @@ from evaluate_fixed_wing import FixedWingEvaluator
 from neural_control.controllers.network_wrapper import FixedWingNetWrapper
 from train_base import TrainBase
 
+never_trainable = ["rho", "g", "residual_factor"]
+
 
 class TrainFixedWing(TrainBase):
     """
@@ -142,6 +144,7 @@ class TrainFixedWing(TrainBase):
         # run with mpc to collect data
         # eval_env.run_mpc_ref("rand", nr_test=5, max_steps=500)
         # run without mpc for evaluation
+        print("--------- eval in simulator (D1) -------------")
         with torch.no_grad():
             if epoch == 0 and self.config["self_play"] > 0:
                 # sample to fill all required self play data
@@ -149,6 +152,29 @@ class TrainFixedWing(TrainBase):
                     suc_mean, suc_std = evaluator.run_eval(nr_test=5)
             else:
                 suc_mean, suc_std = evaluator.run_eval(nr_test=10)
+
+        # FOR DYN TRAINING
+        if epoch == 0 and self.config["train_dyn_for_epochs"] >= 0:
+            self.tmp_num_selfplay = self.state_data.num_self_play
+            self.state_data.num_self_play = 0
+            print("stop self play")
+        if epoch == self.config["train_dyn_for_epochs"]:
+            self.state_data.num_self_play = self.tmp_num_selfplay
+            print("start self play to", self.tmp_num_selfplay)
+
+        # if training dynamics: evaluate in target dynamics
+        if self.config["train_dyn_for_epochs"] >= 0:
+            tmp_self_play = self.state_data.num_self_play
+            self.state_data.num_self_play = 0
+            print("--------- eval in real (D2) -------------")
+            d2_env = SimpleWingEnv(self.eval_dynamics, self.delta_t)
+            evaluator = FixedWingEvaluator(controller, d2_env, **self.config)
+            with torch.no_grad():
+                suc_mean, suc_std = evaluator.run_eval(nr_test=10)
+            self.results_dict["eval_in_d2_mean"].append(suc_mean)
+            self.results_dict["eval_in_d2_std"].append(suc_std)
+            self.state_data.num_self_play = tmp_self_play
+            print("eval samples counter", self.state_data.eval_counter)
 
         self.sample_new_data(epoch)
 
@@ -172,6 +198,7 @@ def train_control(base_model, config):
     """
     Train a controller from scratch or with an initial model
     """
+    config["train_dyn_for_epochs"] = -1
     modified_params = config["modified_params"]
     train_dynamics = FixedWingDynamics(modified_params)
     eval_dynamics = FixedWingDynamics(modified_params)
@@ -206,33 +233,65 @@ def train_sampling_finetune(base_model, config):
     trainer.run_control(config, sampling_based_finetune=True)
 
 
+def train_dynamics(base_model, config, not_trainable, base_dyn=None):
+    """First train dynamcs, then train controller with estimated dynamics
+
+    Args:
+        base_model (filepath): Model to start training with
+        config (dict): config parameters
+    """
+    modified_params = config["modified_params"]
+    config["sample_in"] = "train_env"
+
+    # DYNAMIC TRAINING
+    # set high thresholds because not training from scratch
+    config["thresh_div_start"] = 20
+    config["thresh_stable_start"] = 1.5
+    # set self play to zero to avoid bad actions
+    # config["self_play"] = 1000
+    # config["epoch_size"] = 1
+    config["train_dyn_for_epochs"] = 20
+    config["resample_every"] = config["train_dyn_for_epochs"] + 1
+    # config["learning_rate_controller"] = 1e-4
+    # lambda: how much delta network is penalized
+    config["l2_lambda"] = 0
+    config["waypoint_metric"] = True
+
+    # train environment is learnt
+    train_dynamics = LearntFixedWingDynamics(not_trainable=not_trainable)
+    if base_dyn is not None:
+        train_dynamics.load_state_dict(torch.load(base_dyn))
+        print("loaded dynamics from", base_dyn)
+    eval_dynamics = FixedWingDynamics(modified_params=modified_params)
+
+    trainer = TrainFixedWing(train_dynamics, eval_dynamics, config)
+    trainer.initialize_model(base_model)
+
+    # RUN
+    trainer.run_dynamics(config)
+
+
 if __name__ == "__main__":
     # LOAD CONFIG
     with open("configs/wing_config.json", "r") as infile:
         config = json.load(infile)
 
-    baseline_model = None  # "trained_models/wing/baseline_fixed_wing"
-    config["save_name"] = "train_mpc_loss"
+    baseline_model = "trained_models/wing/current_model"
+    config["save_name"] = "final_dyn_veldrag_wparams"
 
     # set high thresholds because not training from scratch
     # config["thresh_div_start"] = 20
     # config["thresh_stable_start"] = 1.5
 
-    mod_params = {}
-    #  {"rho": 1.6}
-    # {
-    #     "CL0": 0.3,  # 0.39
-    #     "CD0": 0.02,  #  0.0765,
-    #     "CY0": 0.02,  # 0.0,
-    #     "Cl0": -0.01,  # 0.0,
-    #     "Cm0": 0.01,  # 0.02,
-    #     "Cn0": 0.0,
-    # }
-    # # {"rho": 1.4, "mass": 1.2, "S": 0.32}  # mass: 1.4
+    mod_params = {"vel_drag_factor": 0.3}
     config["modified_params"] = mod_params
 
     # TRAIN
-    # config["nr_epochs"] = 20
-    train_control(baseline_model, config)
-    # train_dynamics(baseline_model, config)
-    # train_sampling_finetune(baseline_model, config)
+    config["nr_epochs"] = 50
+    # train_control(baseline_model, config)
+
+    train_dynamics(
+        baseline_model,
+        config,
+        not_trainable=never_trainable + ["vel_drag_factor"]  # "all"
+    )

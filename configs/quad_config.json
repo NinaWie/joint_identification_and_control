@@ -25,7 +25,7 @@
     "suc_up_down": 1,
     "speed_factor": 0.4,
     "system": "quad",
-    "train_dyn_for_epochs": 3,
+    "train_dyn_for_epochs": -1,
     "train_dyn_every": 1,
     "return_div": 0,
     "modified_params": {}

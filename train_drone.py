@@ -155,6 +155,14 @@ class TrainDrone(TrainBase):
         self.results_dict["eval_in_d1_trained_mean"].append(suc_mean)
         self.results_dict["eval_in_d1_trained_std"].append(suc_std)
 
+        if epoch == 0 and self.config["train_dyn_for_epochs"] >= 0:
+            self.tmp_num_selfplay = self.state_data.num_self_play
+            self.state_data.num_self_play = 0
+            print("stop self play")
+        if epoch == self.config["train_dyn_for_epochs"]:
+            self.state_data.num_self_play = self.tmp_num_selfplay
+            print("start self play to", self.tmp_num_selfplay)
+
         ### code to evaluate also in D1 and D2
         ### need to ensure that eval_env is with train_dynamics
         # # set self play to zero so no sampled data is added
@@ -206,6 +214,7 @@ def train_control(base_model, config):
 
     # make sure that also the self play samples are collected in same env
     config["sample_in"] = "train_env"
+    config["train_dyn_for_epochs"] = -1
 
     trainer = TrainDrone(train_dynamics, eval_dynamics, config)
     trainer.initialize_model(base_model, modified_params=modified_params)
@@ -230,6 +239,11 @@ def train_dynamics(base_model, config, trainable_params=1):
     # return the divergence, not the stable steps
     config["return_div"] = 1
     config["suc_up_down"] = -1
+
+    config["epoch_size"] = 500
+    config["train_dyn_for_epochs"] = 10
+    # make sure not to resample during dynamics training
+    config["resample_every"] = config["train_dyn_for_epochs"] + 1
 
     # train environment is learnt
     train_dynamics = LearntQuadDynamics(trainable_params=trainable_params)
@@ -272,13 +286,13 @@ if __name__ == "__main__":
     mod_params = {'translational_drag': np.array([0.3, 0.3, 0.3])}
     config["modified_params"] = mod_params
     # define whether the parameters are trainable
-    trainable_params = 1
+    trainable_params = 0
 
-    baseline_model = "trained_models/quad/current_model"
+    baseline_model = "trained_models/quad/optimizer_04_model"
     # config["thresh_div_start"] = 1
     # config["thresh_stable_start"] = 1.5
 
-    config["save_name"] = "train_trans_new_params_res"
+    config["save_name"] = "final_dyn_woparams"
 
     config["nr_epochs"] = 400
 

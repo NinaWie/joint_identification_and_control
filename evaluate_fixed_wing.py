@@ -220,7 +220,7 @@ if __name__ == "__main__":
 
     modified_params = {}
     # {"residual_factor": 0.0001}
-    # {"vel_drag_factor": 0.2}
+    # {"vel_drag_factor": 0.3}
     # {
     #     "CL0": 0.3,  # 0.39
     #     "CD0": 0.02,  #  0.0765,
