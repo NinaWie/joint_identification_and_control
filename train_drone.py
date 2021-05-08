@@ -162,10 +162,6 @@ class TrainDrone(TrainBase):
         if epoch == self.config["train_dyn_for_epochs"]:
             self.state_data.num_self_play = self.tmp_num_selfplay
             print("start self play to", self.tmp_num_selfplay)
-        print(
-            "self play check", self.state_data.num_self_play,
-            self.state_data.eval_counter, "total", len(self.state_data)
-        )
 
         ### code to evaluate also in D1 and D2
         ### need to ensure that eval_env is with train_dynamics

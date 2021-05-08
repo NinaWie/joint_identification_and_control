@@ -189,7 +189,7 @@ class TrainBase:
         self.optimizer_dynamics.step()
 
         self.results_dict["loss_dyn_per_step"].append(loss.item())
-        return loss
+        return loss * 10000
 
     def run_epoch(self, train="controller"):
         # tic_epoch = time.time()
@@ -383,12 +383,6 @@ class TrainBase:
                             continue
                         print(key, val)
                     self.current_score = 0 if self.suc_up_down == 1 else np.inf
-
-                if epoch <= config.get("train_dyn_for_epochs", 10):
-                    print(
-                        "Data used to train dynamics:",
-                        self.count_finetune_data
-                    )
 
         except KeyboardInterrupt:
             pass

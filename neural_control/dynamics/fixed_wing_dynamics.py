@@ -233,7 +233,7 @@ class FixedWingDynamics:
         # see Small Unmanned Aircraft, Beard et al., 2012, p.36
         uvw_dot = (1 / self.cfg["mass"]) * f_xyz[:, :, 0] - torch.cross(
             omega, vel, dim=1
-        ) + self.cfg["vel_drag_factor"] * vel
+        ) - self.cfg["vel_drag_factor"] * vel
 
         # # Change in pitch attitude (change in euler angles)
         # see Small Unmanned Aircraft, Beard et al., 2012, p.36
@@ -347,7 +347,7 @@ class FixedWingDynamicsMPC(FixedWingDynamics):
 
         # if I is loaded, it's not in the config
         if "I" in modified_params.keys():
-            print("loaded I from learnt dynamics")
+            # print("loaded I from learnt dynamics")
             self.I = modified_params["I"]
         else:
             self.I = torch.tensor(
@@ -492,7 +492,7 @@ class FixedWingDynamicsMPC(FixedWingDynamics):
         vel = ca.vertcat(vel_u, vel_v, vel_w)
         uvw_dot = (1 / self.cfg["mass"]) * f_xyz - ca.cross(
             omega, vel
-        ) + self.cfg["vel_drag_factor"] * vel
+        ) - self.cfg["vel_drag_factor"] * vel
 
         # change in attitude
         tth = ca.tan(eul_theta)
