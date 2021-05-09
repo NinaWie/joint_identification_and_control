@@ -201,7 +201,11 @@ class CartpoleDataset(torch.utils.data.Dataset):
 class CartpoleImageDataset(torch.utils.data.Dataset):
 
     def __init__(
-        self, load_data_path="data/cartpole_img_6.npz", dt=0.05, **kwargs
+        self,
+        load_data_path="data/cartpole_img_16.npz",
+        self_play=200,
+        dt=0.05,
+        **kwargs
     ):
         npz_loaded = np.load(load_data_path)
         (collect_img, collect_actions, collect_states, collect_next) = (
@@ -216,6 +220,33 @@ class CartpoleImageDataset(torch.utils.data.Dataset):
         self.states = collect_states
         self.actions = collect_actions
         self.next_states = collect_next
+
+        if self_play == "all":
+            self.num_self_play = len(self.images)
+        else:
+            self.num_self_play = self_play
+        self.eval_counter = 0
+
+    def get_eval_index(self):
+        """
+        compute current index where to add new data
+        """
+        if self.num_self_play > 0:
+            return (self.eval_counter % self.num_self_play)
+
+    def add_data(self, image, state, action):
+        """
+        When running evaluation, we collect data to use in the next epoch
+        """
+        # ATTENTION: Next image is not known!
+        img_expand = torch.cat((torch.unsqueeze(image[:, 0], 1), image), dim=1)
+        idx = self.get_eval_index()
+        self.images[idx] = img_expand
+        self.states[idx] = state
+        self.actions[idx] = action
+        # ATTENTION: next state is not known!!
+        self.next_states[idx] = state
+        self.eval_counter += 1
 
     def __len__(self):
         return len(self.states)

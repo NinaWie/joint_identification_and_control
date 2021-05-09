@@ -147,27 +147,45 @@ class CartpoleWrapper:
 
 class CartpoleImageWrapper:
 
-    def __init__(self, net, nr_actions=3, action_dim=1, **kwargs):
+    def __init__(
+        self,
+        net,
+        dataset,
+        nr_actions=3,
+        action_dim=1,
+        self_play=1,
+        take_every_x=5,
+        **kwargs
+    ):
+        self.dataset = dataset
         self.nr_actions = nr_actions
         self.action_dim = action_dim
         self.net = net
+        self.self_play = (self_play == "all" or self_play > 0)
         self.inp_img = True
+        self.action_counter = 0
+        self.take_every_x = take_every_x
 
-    def prepare_for_con(self, collect_img):
+    def prepare_for_con(self, images):
         """
         During evaluation, use this method to prepare the image input
 
         Args:
             images (numpy array): Sequence of images
         """
-        images = (collect_img - np.min(collect_img)
-                  ) / (np.max(collect_img) - np.min(collect_img))
         return torch.from_numpy(np.expand_dims(images, 0)).float()
 
-    def predict_actions(self, image):
+    def predict_actions(self, image, state):
         img_input = self.prepare_for_con(image)
         action_seq = self.net(img_input)
         action_seq = torch.reshape(
             action_seq, (-1, self.nr_actions, self.action_dim)
         )
+        if self.self_play and (
+            self.action_counter + 1
+        ) % self.take_every_x == 0:
+            torch_state = torch.tensor([state]).float()
+            self.dataset.add_data(img_input, torch_state, action_seq[:, 0])
+
+        self.action_counter += 1
         return action_seq

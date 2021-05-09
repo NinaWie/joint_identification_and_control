@@ -12,6 +12,7 @@ from neural_control.controllers.mpc import MPC
 from neural_control.controllers.network_wrapper import (
     CartpoleWrapper, CartpoleImageWrapper
 )
+from neural_control.dataset import CartpoleImageDataset
 from neural_control.models.simple_model import Net, ImageControllerNet
 
 # mpc like receding horizon
@@ -22,7 +23,7 @@ collect_states, collect_actions, collect_img, collect_next = [], [], [], []
 buffer_len = 4
 img_width, img_height = (200, 300)
 crop_width = 60
-center_at_x = False
+center_at_x = True
 
 
 class Evaluator:
@@ -48,10 +49,15 @@ class Evaluator:
         if center_at_x:
             x_pos = state[0] / self.eval_env.state_limits[0]
             x_img = int(img_width_half + x_pos * img_width_half)
+            use_img_buffer = np.roll(
+                self.image_buffer.copy(), img_width_half - x_img, axis=2
+            )
+            return use_img_buffer[:, 75:175, img_width_half -
+                                  crop_width:img_width_half + crop_width]
         else:
             x_img = img_width_half
-        return self.image_buffer[:, 75:175,
-                                 x_img - crop_width:x_img + crop_width]
+            return self.image_buffer[:, 75:175,
+                                     x_img - crop_width:x_img + crop_width]
 
     def evaluate_in_environment(
         self, nr_iters=1, max_steps=250, render=False, burn_in_steps=50
@@ -70,11 +76,19 @@ class Evaluator:
             for n in range(nr_iters):
                 # only set the theta to the top, and reduce speed
                 self.eval_env._reset_upright()
-                if self.image_dataset:
-                    self.eval_env.state = (np.random.rand(4) - .5) * .1
+                # TEST IN SAME DISTRIBUTION
+                if True:  #self.image_dataset:
+                    # self.eval_env.state = (np.random.rand(4) - .5) * .1
+                    # x normal distributed --> if centered, then doesn't matter
+                    if not center_at_x:
+                        self.eval_env.state[0] = np.random.randn() / 2.5
+                    else:
+                        self.eval_env.state[0] = 0
+                    # small velocity
+                    self.eval_env.state[1] = 0  # (np.random.rand() - .5) * .3
+                    # zero angle! because otherwise hardly collecting data
+                    self.eval_env.state[2] = 0  # (np.random.rand() - .5) * .1
                     self.eval_env.state[3] = 0
-                    # x ca between -1 and 1 normal distributed
-                    self.eval_env.state[0] = np.random.randn() / 2.5
 
                 new_state = self.eval_env.state
                 if render:
@@ -93,7 +107,8 @@ class Evaluator:
                     # Predict optimal action:
                     if self.controller.inp_img:
                         action_seq = self.controller.predict_actions(
-                            self._convert_image_buffer(new_state)[:-1]
+                            self._convert_image_buffer(new_state)[:-1],
+                            new_state.copy()
                         )
                     else:
                         action_seq = self.controller.predict_actions(
@@ -180,11 +195,15 @@ def load_model(model_name, epoch):
             "trained_models", "cartpole", model_name, "model_cartpole" + epoch
         )
     net = torch.load(path_load)
+    some_dataset = CartpoleImageDataset(
+        load_data_path="data/cartpole_img_16.npz"
+    )
+    config["self_play"] = 0
     net.eval()
     if isinstance(net, Net):
         controller_model = CartpoleWrapper(net, **config)
     else:
-        controller_model = CartpoleImageWrapper(net, **config)
+        controller_model = CartpoleImageWrapper(net, some_dataset, **config)
     return controller_model
 
 
@@ -240,7 +259,7 @@ if __name__ == "__main__":
 
     if image_dataset:
         evaluator.image_dataset = 1
-        for n in range(500):
+        for n in range(200):
             success, suc_std, _ = evaluator.evaluate_in_environment(
                 render=True, max_steps=30
             )
@@ -254,7 +273,7 @@ if __name__ == "__main__":
             collect_next.shape
         )
         np.savez(
-            "data/cartpole_img_14.npz", collect_img, collect_actions,
+            "data/cartpole_img_16.npz", collect_img, collect_actions,
             collect_states, collect_next
         )
     elif args.eval > 0:
