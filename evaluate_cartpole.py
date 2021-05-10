@@ -19,7 +19,7 @@ from neural_control.models.simple_model import Net, ImageControllerNet
 APPLY_UNTIL = 1
 
 # current state, predicted action, images of prev states, next state after act
-collect_states, collect_actions, collect_img, collect_next = [], [], [], []
+collect_states, collect_actions, collect_img = [], [], []
 buffer_len = 4
 img_width, img_height = (200, 300)
 crop_width = 60
@@ -34,6 +34,7 @@ class Evaluator:
         self.mpc = isinstance(self.controller, MPC)
         self.image_buffer = np.zeros((buffer_len, img_width, img_height))
         self.image_dataset = collect_image_dataset
+        self.state_buffer = np.zeros((buffer_len, 4))
 
     def _preprocess_img(self, image):
         resized = cv2.resize(
@@ -108,7 +109,7 @@ class Evaluator:
                     if self.controller.inp_img:
                         action_seq = self.controller.predict_actions(
                             self._convert_image_buffer(new_state)[:-1],
-                            new_state.copy()
+                            self.state_buffer.copy()[:-1]
                         )
                     else:
                         action_seq = self.controller.predict_actions(
@@ -132,22 +133,25 @@ class Evaluator:
                             # test = self.eval_env._render(mode="rgb_array")
                             # time.sleep(.1)
 
-                    # save for image task
-                    if self.image_dataset and i > buffer_len:
-                        assert APPLY_UNTIL == 1
-                        collect_states.append(prev_state)
-                        collect_next.append(new_state)
-                        collect_actions.append(action_seq[0, 0].numpy())
+                    # update image buffer with new image
                     if render:
                         self.image_buffer = np.roll(
                             self.image_buffer, 1, axis=0
                         )
                         self.image_buffer[0] = self._preprocess_img(new_img)
-                        # add images to dataset --> to have next img as label
-                        if self.image_dataset and i > buffer_len:
-                            collect_img.append(
-                                self._convert_image_buffer(prev_state)
-                            )
+
+                    # update state buffer with new state
+                    self.state_buffer = np.roll(self.state_buffer, 1, axis=0)
+                    self.state_buffer[0] = new_state
+
+                    # save for image task
+                    if self.image_dataset and i > buffer_len:
+                        assert APPLY_UNTIL == 1
+                        collect_states.append(self.state_buffer)
+                        collect_actions.append(action_seq[0, 0].numpy())
+                        collect_img.append(
+                            self._convert_image_buffer(prev_state)
+                        )
 
                     if not self.eval_env.is_upright():
                         break
@@ -259,7 +263,7 @@ if __name__ == "__main__":
 
     if image_dataset:
         evaluator.image_dataset = 1
-        for n in range(200):
+        for n in range(100):
             success, suc_std, _ = evaluator.evaluate_in_environment(
                 render=True, max_steps=30
             )
@@ -267,14 +271,10 @@ if __name__ == "__main__":
         # cut off bottom and top
         collect_img = np.array(collect_img)
         collect_states = np.array(collect_states)
-        collect_next = np.array(collect_next)
-        print(
-            collect_states.shape, collect_actions.shape, collect_img.shape,
-            collect_next.shape
-        )
+        print(collect_states.shape, collect_actions.shape, collect_img.shape)
         np.savez(
-            "data/cartpole_img_16.npz", collect_img, collect_actions,
-            collect_states, collect_next
+            "data/cartpole_img_20.npz", collect_img, collect_actions,
+            collect_states
         )
     elif args.eval > 0:
         success, suc_std, _ = evaluator.evaluate_in_environment(

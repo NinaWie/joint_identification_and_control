@@ -166,17 +166,14 @@ class CartpoleImageWrapper:
         self.action_counter = 0
         self.take_every_x = take_every_x
 
-    def prepare_for_con(self, images):
+    def to_torch(self, inp):
         """
-        During evaluation, use this method to prepare the image input
-
-        Args:
-            images (numpy array): Sequence of images
+        To torch tensor
         """
-        return torch.from_numpy(np.expand_dims(images, 0)).float()
+        return torch.from_numpy(np.expand_dims(inp, 0)).float()
 
     def predict_actions(self, image, state):
-        img_input = self.prepare_for_con(image)
+        img_input = self.to_torch(image)
         action_seq = self.net(img_input)
         action_seq = torch.reshape(
             action_seq, (-1, self.nr_actions, self.action_dim)
@@ -184,7 +181,7 @@ class CartpoleImageWrapper:
         if self.self_play and (
             self.action_counter + 1
         ) % self.take_every_x == 0:
-            torch_state = torch.tensor([state]).float()
+            torch_state = self.to_torch(state)
             self.dataset.add_data(img_input, torch_state, action_seq[:, 0])
 
         self.action_counter += 1

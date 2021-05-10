@@ -208,18 +208,15 @@ class CartpoleImageDataset(torch.utils.data.Dataset):
         **kwargs
     ):
         npz_loaded = np.load(load_data_path)
-        (collect_img, collect_actions, collect_states, collect_next) = (
-            npz_loaded["arr_0"], npz_loaded["arr_1"], npz_loaded["arr_2"],
-            npz_loaded["arr_3"]
-        )
+        (collect_img, collect_actions, collect_states
+         ) = (npz_loaded["arr_0"], npz_loaded["arr_1"], npz_loaded["arr_2"])
         print(
             "loaded data", collect_states.shape, collect_actions.shape,
-            collect_img.shape, collect_next.shape
+            collect_img.shape
         )
         self.images = collect_img.astype(float)
         self.states = collect_states
         self.actions = collect_actions
-        self.next_states = collect_next
 
         if self_play == "all":
             self.num_self_play = len(self.images)
@@ -240,22 +237,21 @@ class CartpoleImageDataset(torch.utils.data.Dataset):
         """
         # ATTENTION: Next image is not known!
         img_expand = torch.cat((torch.unsqueeze(image[:, 0], 1), image), dim=1)
+        # ATTENTION: next state is not known!!
+        state_expand = torch.cat(
+            (torch.unsqueeze(state[:, 0], 1), state), dim=1
+        )
         idx = self.get_eval_index()
         self.images[idx] = img_expand
-        self.states[idx] = state
+        self.states[idx] = state_expand
         self.actions[idx] = action
-        # ATTENTION: next state is not known!!
-        self.next_states[idx] = state
         self.eval_counter += 1
 
     def __len__(self):
         return len(self.states)
 
     def __getitem__(self, index):
-        return (
-            self.states[index], self.actions[index], self.images[index],
-            self.next_states[index]
-        )
+        return (self.states[index], self.actions[index], self.images[index])
 
 
 class WingDataset(DroneDataset):

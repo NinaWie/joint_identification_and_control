@@ -87,7 +87,7 @@ class TrainCartpole(TrainBase):
                 #     self.state_size, self.nr_actions * self.action_dim
                 # )
             self.state_data = CartpoleImageDataset(
-                load_data_path="data/cartpole_img_16.npz", **self.config
+                load_data_path="data/cartpole_img_20.npz", **self.config
             )
         else:
             self.state_data = CartpoleDataset(
@@ -143,7 +143,11 @@ class TrainCartpole(TrainBase):
         running_loss = 0
         for i, data in enumerate(self.trainloader, 0):
             # get state and action and correspodning image sequence
-            initial_state, actions, image_seq, next_state_d2 = data
+            initial_state_buffer, actions, image_seq = data
+            # state buffer has most next state in pos 0
+            next_state_d2 = initial_state_buffer[:, 0]
+            initial_state = initial_state_buffer[:, 1]
+            # TODO: state sequence would be [:, 1:]
             current_state = initial_state.clone()
             # the first image is the next ground truth!
             images = image_seq[:, 1:]
@@ -243,7 +247,9 @@ class TrainCartpole(TrainBase):
                     #     (render_current_state, images[:, :-1]), dim=1
                     # )
                 # loss = self.train_controller_model(current_state, action_seq)
-                loss = cartpole_loss_mpc(intermediate_states, ref_states)
+                loss = cartpole_loss_mpc(
+                    intermediate_states, ref_states, action_seq
+                )
                 loss.backward()
                 self.optimizer_controller.step()
 
@@ -450,7 +456,7 @@ if __name__ == "__main__":
 
     baseline_model = None  #  "trained_models/cartpole/train_w_real_dyn_2"
     baseline_dyn = None  # "trained_models/cartpole/train_img_res"
-    config["general"]["save_name"] = "train_w_real_dyn_scratch"
+    config["general"]["save_name"] = "train_w_real_dyn_newnextstate_act_loss"
 
     mod_params = {"wind": .5}
     config["general"]["modified_params"] = mod_params
