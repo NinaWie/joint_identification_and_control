@@ -12,3 +12,35 @@ source env/bin/activate
 cd weakly_supervised_flight
 pip install -e .
 ```
+
+### Train a controller unsupervised
+
+On the bottom of the script `train_drone.py`, `train_cartpole.py` or `train_fixed_wing.py`, you can use the `run_control` function to train a model from scratch. Make sure that `baseline_model=None` to start from scratch.
+
+### Reproduce basic dynamic mismatch experiments:
+
+On the bottom of the script `train_drone.py`, `train_cartpole.py` or `train_fixed_wing.py` you can specify a dictionary with all modified parameters. Then, specify in a list all parameters that should not be trainable. If `not_trainable="all"` then only the residual network is trained to account for the mismatch. 
+Then, make sure the script executes the `train_dynamics(baseline_model, config, trainable_params)` with a given controller (aka baseline model) and the list of trainable parameters.
+
+
+### Train cartpole image model
+
+This part is more complicated and requires several steps:
+* Collect a dataset in the target dynamics (for learning the new dynamics in few shot):
+    * specify the desired modified parameters in the dictionary in `evaluate_cartpole.py`, and also specify the desired dataset size
+    * Set `center_at_x=False` because we need to train the image dynamics to handle any shifted image
+    * Set a filepath location where to save the dataset
+    * run `python evaluate_cartpole.py -dataset` to generate the data
+* Finetune the dynamics:
+    * In `train_cartpole.py` specify the dataste you want to use in the `train_img_dynamics` function.
+    * Execute the script with `train_img_dynamics(None, config, not_trainable="all", base_image_dyn=baseline_dyn)` in the bottom
+    * This will train the residual to learn the change in dynamics from the images (Note: No need to specify the modified parameters here, this is included in the dataset)
+    * Note: the controller can be really bad in this step
+* Collect a dataset for the controller
+    * Set `center_at_x=False` in `evaluate_cartpole.py` to have standardized images as input to the controller
+    * Change the save path for this new dataset
+    * Use a lower dataset size - This is just for starting, actually the data will be collected during evaluation
+* Train the controller
+    * In `train_cartpole.py` specify the dataste you want to use in the `train_img_controller` function.
+    * Execute the script with `train_img_controller(None, config, not_trainable="all", base_image_dyn=baseline_dyn)` in the bottom, where `baseline_dyn` is now the path to the dynamics model trained above
+

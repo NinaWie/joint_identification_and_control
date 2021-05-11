@@ -9,7 +9,9 @@ import numpy as np
 import torch
 import time
 logger = logging.getLogger(__name__)
-from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
+from neural_control.dynamics.cartpole_dynamics import (
+    CartpoleDynamics, ImageCartpoleDynamics
+)
 try:
     import neural_control.environments.cartpole_rendering as rendering
 except:
@@ -24,6 +26,8 @@ class CartPoleEnv():
 
     def __init__(self, dynamics, dt, thresh_div=.21):
         self.dynamics = dynamics
+        self.is_img_dyn = isinstance(self.dynamics, ImageCartpoleDynamics)
+
         self.dt = dt
 
         # Angle at which to fail the episode
@@ -44,11 +48,17 @@ class CartPoleEnv():
         theta = self.state[2]
         return theta > -self.thresh_div and theta < self.thresh_div
 
-    def _step(self, action, is_torch=True):
+    def _step(self, action, image=None, is_torch=True):
         torch_state = torch.tensor([list(self.state)])
         if not is_torch:
             action = torch.tensor([action])
-        self.state = self.dynamics(torch_state, action, dt=self.dt)[0].numpy()
+        if self.is_img_dyn:
+            next_torch_state = self.dynamics(
+                torch_state, image, action, dt=self.dt
+            )
+        else:
+            next_torch_state = self.dynamics(torch_state, action, dt=self.dt)
+        self.state = next_torch_state[0].numpy()
         # stay in bounds with theta
         theta = self.state[2]
         if theta > np.pi:

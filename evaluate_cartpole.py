@@ -106,9 +106,14 @@ class Evaluator:
                     # Transform state in the same way as the training data
                     # and normalize
                     # Predict optimal action:
+                    converted_img_seq = torch.from_numpy(
+                        np.expand_dims(
+                            self._convert_image_buffer(new_state)[:-1], 0
+                        )
+                    ).float()
                     if self.controller.inp_img:
                         action_seq = self.controller.predict_actions(
-                            self._convert_image_buffer(new_state)[:-1],
+                            converted_img_seq,
                             self.state_buffer.copy()[:-1]
                         )
                     else:
@@ -122,7 +127,9 @@ class Evaluator:
                     for action_ind in range(APPLY_UNTIL):
                         # run action in environment
                         new_state = self.eval_env._step(
-                            action_seq[:, action_ind], is_torch=self.mpc == 0
+                            action_seq[:, action_ind],
+                            image=converted_img_seq,
+                            is_torch=self.mpc == 0
                         )
                         data_collection.append(new_state)
                         velocities.append(np.absolute(new_state[1]))
@@ -232,6 +239,9 @@ if __name__ == "__main__":
         action="store_true",
         help="save the episode as training data"
     )
+    parser.add_argument(
+        "-d", "--dataset", type=int, default=0, help="number collect dataset"
+    )
     args = parser.parse_args()
 
     # PARAMs
@@ -259,11 +269,9 @@ if __name__ == "__main__":
     evaluator = Evaluator(controller_model, eval_env)
     # angles = evaluator.run_for_fixed_length(net, render=True)
 
-    image_dataset = False
-
-    if image_dataset:
+    if args.dataset > 0:
         evaluator.image_dataset = 1
-        for n in range(100):
+        while len(collect_actions) < args.dataset:
             success, suc_std, _ = evaluator.evaluate_in_environment(
                 render=True, max_steps=30
             )
@@ -273,8 +281,8 @@ if __name__ == "__main__":
         collect_states = np.array(collect_states)
         print(collect_states.shape, collect_actions.shape, collect_img.shape)
         np.savez(
-            "data/cartpole_img_20.npz", collect_img, collect_actions,
-            collect_states
+            "data/cartpole_img_24_wind_centered.npz", collect_img,
+            collect_actions, collect_states
         )
     elif args.eval > 0:
         success, suc_std, _ = evaluator.evaluate_in_environment(

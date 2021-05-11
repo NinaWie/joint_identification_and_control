@@ -172,8 +172,8 @@ class CartpoleImageWrapper:
         """
         return torch.from_numpy(np.expand_dims(inp, 0)).float()
 
-    def predict_actions(self, image, state):
-        img_input = self.to_torch(image)
+    def predict_actions(self, img_input, state):
+        # img_input = self.to_torch(image)
         action_seq = self.net(img_input)
         action_seq = torch.reshape(
             action_seq, (-1, self.nr_actions, self.action_dim)

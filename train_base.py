@@ -276,7 +276,7 @@ class TrainBase:
         """
         return 0
 
-    def finalize(self):
+    def finalize(self, plot_loss="loss_controller"):
         """
         Save model and plot loss and performance
         """
@@ -287,7 +287,7 @@ class TrainBase:
         plot_loss_episode_len(
             self.results_dict["mean_success"],
             self.results_dict["std_success"],
-            self.results_dict["loss_controller"],
+            self.results_dict[plot_loss],
             save_path=os.path.join(self.save_path, "performance.png")
         )
         # save performance logging
