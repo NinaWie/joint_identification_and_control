@@ -106,7 +106,7 @@ class TrainCartpole(TrainBase):
         # load state to img netwrok if it was finetuned
         if load_state_to_img is not None:
             self.state_to_img_net.load_state_dict(
-                torch.load(os.path.join(base_image_dyn, "state_to_img"))
+                torch.load(os.path.join(load_state_to_img, "state_to_img"))
             )
 
         self.init_optimizer()
@@ -475,7 +475,7 @@ def train_img_controller(
     trainer.initialize_model(
         base_model,
         load_dataset="data/cartpole_img_24_wind_centered.npz",
-        load_state_to_img=base_image_dyn
+        load_state_to_img=None
     )
     trainer.run_dynamics(config)
 
