@@ -4,20 +4,28 @@ import torch.nn as nn
 
 class LearntDynamics(torch.nn.Module):
 
-    def __init__(self, state_size, action_size, transform_action=False):
+    def __init__(
+        self,
+        state_size,
+        action_size,
+        out_state_size=None,
+        transform_action=False
+    ):
         super(LearntDynamics, self).__init__()
         self.transform_action = transform_action
         if self.transform_action:
             self.linear_at = nn.Parameter(
                 torch.diag(torch.ones(4)), requires_grad=True
             )
+        if out_state_size is None:
+            out_state_size = state_size
         # residual network
         self.linear_state_1 = nn.Linear(state_size + action_size, 64)
         std = 0.0001
         torch.nn.init.normal_(self.linear_state_1.weight, mean=0.0, std=std)
         torch.nn.init.normal_(self.linear_state_1.bias, mean=0.0, std=std)
 
-        self.linear_state_2 = nn.Linear(64, state_size, bias=False)
+        self.linear_state_2 = nn.Linear(64, out_state_size, bias=False)
         torch.nn.init.normal_(self.linear_state_2.weight, mean=0.0, std=std)
 
     def state_transformer(self, state, action):

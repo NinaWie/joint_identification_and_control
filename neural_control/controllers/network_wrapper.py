@@ -101,7 +101,6 @@ class CartpoleWrapper:
         self.nr_actions = nr_actions
         self.action_dim = action_dim
         self.net = model
-        self.inp_img = False
 
     def raw_states_to_torch(
         self, states, normalize=False, std=None, mean=None, return_std=False
@@ -162,7 +161,6 @@ class CartpoleImageWrapper:
         self.action_dim = action_dim
         self.net = net
         self.self_play = (self_play == "all" or self_play > 0)
-        self.inp_img = True
         self.action_counter = 0
         self.take_every_x = take_every_x
 
@@ -184,5 +182,23 @@ class CartpoleImageWrapper:
             torch_state = self.to_torch(state)
             self.dataset.add_data(img_input, torch_state, action_seq[:, 0])
 
+        self.action_counter += 1
+        return action_seq
+
+
+class SequenceCartpoleWrapper(CartpoleImageWrapper):
+
+    def predict_actions(self, state_buffer, action_buffer, network_input):
+
+        action_seq = self.net(network_input)
+        action_seq = torch.reshape(
+            action_seq, (-1, self.nr_actions, self.action_dim)
+        )
+        if self.self_play and (
+            self.action_counter + 1
+        ) % self.take_every_x == 0:
+            self.dataset.add_data(
+                state_buffer, action_buffer, action_seq[:, 0]
+            )
         self.action_counter += 1
         return action_seq

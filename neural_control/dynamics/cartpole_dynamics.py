@@ -18,7 +18,8 @@ gravity = 9.81
 
 class CartpoleDynamics:
 
-    def __init__(self, modified_params={}, test_time=0):
+    def __init__(self, modified_params={}, test_time=0, batch_size=1):
+        self.batch_size = batch_size
         with open(
             os.path.join(
                 Path(__file__).parent.absolute(), "config_cartpole.json"
@@ -30,6 +31,15 @@ class CartpoleDynamics:
         self.cfg.update(modified_params)
         self.cfg["total_mass"] = self.cfg["masspole"] + self.cfg["masscart"]
         self.cfg["polemass_length"] = self.cfg["masspole"] * self.cfg["length"]
+        self.timestamp = 0
+        # delay of 2
+        if self.cfg["delay"] > 0:
+            self.action_buffer = np.zeros(
+                (batch_size, int(self.cfg["delay"]), 1)
+            )
+
+    def reset_buffer(self):
+        self.action_buffer = np.zeros((batch_size, int(self.cfg["delay"]), 1))
 
     def __call__(self, state, action, dt):
         return self.simulate_cartpole(state, action, dt)
@@ -38,6 +48,7 @@ class CartpoleDynamics:
         """
         Compute new state from state and action
         """
+        self.timestamp += .1
         # # get action to range [-1, 1]
         # action = torch.sigmoid(action)
         # action = action * 2 - 1
@@ -58,6 +69,14 @@ class CartpoleDynamics:
 
         # helper variables
         force = self.cfg["max_force_mag"] * action
+        # print("actual force", force)
+        if self.cfg["delay"] > 0:
+            # extract force and update buffer
+            force_orig = force.clone()
+            force = torch.from_numpy(self.action_buffer[:, -1])
+            self.action_buffer = np.roll(self.action_buffer, -1, axis=1)
+            self.action_buffer[:, 0] = force_orig.numpy()
+
         costheta = torch.cos(theta)
         sintheta = torch.sin(theta)
         sig = self.cfg["muc"] * torch.sign(x_dot)
@@ -87,6 +106,9 @@ class CartpoleDynamics:
         xacc = (
             temp - (self.cfg['polemass_length'] * thetaacc * costheta) - sig
         ) / self.cfg["total_mass"]
+        if self.cfg["contact"] > 0 and np.sin(self.timestamp) > 0:
+            xacc += self.cfg["contact"]
+
         x = x + dt * x_dot
         x_dot = x_dot + dt * (xacc - self.cfg["vel_drag"] * x_dot)
 
@@ -113,6 +135,24 @@ class LearntCartpoleDynamics(LearntDynamics, CartpoleDynamics):
 
     def simulate(self, state, action, dt):
         return self.simulate_cartpole(state, action, dt)
+
+
+class SequenceCartpoleDynamics(LearntDynamics, CartpoleDynamics):
+
+    def __init__(self, buffer_length=3):
+        CartpoleDynamics.__init__(self)
+        super(SequenceCartpoleDynamics,
+              self).__init__(5 * buffer_length, 1, out_state_size=4)
+
+    def simulate(self, state, action, dt):
+        return self.simulate_cartpole(state, action, dt)
+
+    def forward(self, state, state_action_buffer, action, dt):
+        # run through normal simulator f hat
+        new_state = self.simulate(state, action, dt)
+        # run through residual network delta
+        added_new_state = self.state_transformer(state_action_buffer, action)
+        return new_state + added_new_state
 
 
 class ImageCartpoleDynamics(torch.nn.Module, CartpoleDynamics):

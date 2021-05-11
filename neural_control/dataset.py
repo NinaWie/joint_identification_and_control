@@ -254,6 +254,58 @@ class CartpoleImageDataset(torch.utils.data.Dataset):
         return (self.states[index], self.actions[index], self.images[index])
 
 
+class CartpoleSequenceDataset:
+
+    def __init__(
+        self,
+        load_data_path="data/cartpole_img_26_contact.npz",
+        self_play=200,
+        dt=0.05,
+        **kwargs
+    ):
+        npz_loaded = np.load(load_data_path)
+        (collect_actions,
+         collect_states) = (npz_loaded["arr_1"], npz_loaded["arr_2"])
+        print("loaded data", collect_states.shape, collect_actions.shape)
+        self.states = collect_states
+        self.actions = collect_actions
+
+        if self_play == "all":
+            self.num_self_play = len(self.states)
+        else:
+            self.num_self_play = self_play
+        self.eval_counter = 0
+
+    def get_eval_index(self):
+        """
+        compute current index where to add new data
+        """
+        if self.num_self_play > 0:
+            return (self.eval_counter % self.num_self_play)
+
+    def add_data(self, state_buffer, action_buffer, current_action):
+        """
+        When running evaluation, we collect data to use in the next epoch
+        """
+        # ATTENTION: next state is not known!!
+        state_expand = torch.cat(
+            (torch.unsqueeze(state_buffer[:, 0], 1), state_buffer), dim=1
+        )
+        action_all = torch.cat(
+            (torch.unsqueeze(current_action, 1), action_buffer), dim=1
+        )
+        idx = self.get_eval_index()
+        self.states[idx] = state_expand
+        self.actions[idx] = action_all
+        self.eval_counter += 1
+
+    def __len__(self):
+        return len(self.states)
+
+    def __getitem__(self, index):
+        return (self.states[index], self.actions[index])
+
+
 class WingDataset(DroneDataset):
 
     def __init__(

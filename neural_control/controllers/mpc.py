@@ -39,7 +39,6 @@ class MPC(object):
         self._dt = dt
         self._N = horizon
 
-        self.inp_img = 0
         # load parameter dictionary
         self.modified_dynamics = {}
         if load_dynamics is not None:

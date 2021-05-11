@@ -6,5 +6,7 @@
     "muc": 0.0005,
     "mup": 0.000002,
     "wind": 0.0,
-    "vel_drag": 0.0
+    "vel_drag": 0.0,
+    "contact": 0.0,
+    "delay": 0.0
 }

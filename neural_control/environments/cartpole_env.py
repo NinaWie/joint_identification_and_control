@@ -10,7 +10,7 @@ import torch
 import time
 logger = logging.getLogger(__name__)
 from neural_control.dynamics.cartpole_dynamics import (
-    CartpoleDynamics, ImageCartpoleDynamics
+    CartpoleDynamics, ImageCartpoleDynamics, SequenceCartpoleDynamics
 )
 try:
     import neural_control.environments.cartpole_rendering as rendering
@@ -27,6 +27,7 @@ class CartPoleEnv():
     def __init__(self, dynamics, dt, thresh_div=.21):
         self.dynamics = dynamics
         self.is_img_dyn = isinstance(self.dynamics, ImageCartpoleDynamics)
+        self.is_seq_dyn = isinstance(self.dynamics, SequenceCartpoleDynamics)
 
         self.dt = dt
 
@@ -48,13 +49,19 @@ class CartPoleEnv():
         theta = self.state[2]
         return theta > -self.thresh_div and theta < self.thresh_div
 
-    def _step(self, action, image=None, is_torch=True):
+    def _step(
+        self, action, image=None, state_action_buffer=None, is_torch=True
+    ):
         torch_state = torch.tensor([list(self.state)])
         if not is_torch:
             action = torch.tensor([action])
         if self.is_img_dyn:
             next_torch_state = self.dynamics(
                 torch_state, image, action, dt=self.dt
+            )
+        elif self.is_seq_dyn:
+            next_torch_state = self.dynamics(
+                torch_state, state_action_buffer, action, dt=self.dt
             )
         else:
             next_torch_state = self.dynamics(torch_state, action, dt=self.dt)
@@ -83,9 +90,9 @@ class CartPoleEnv():
         reset state to a position of the pole close to the optimal upright pos
         """
         # randomize state between -0.25 and 0.25
-        self.state = (np.random.rand(4) - .5) * .3
+        self.state = (np.random.rand(4) - .5) * .5
         # randomize theta between 0.15 max
-        self.state[2] = (np.random.rand(1) - .5) * .1
+        self.state[2] = (np.random.rand(1) - .5) * .2
         return self.state
 
     def _render(self, mode='human', close=False):
