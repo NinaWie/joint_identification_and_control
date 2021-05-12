@@ -67,7 +67,12 @@ class Evaluator:
                                      x_img - crop_width:x_img + crop_width]
 
     def evaluate_in_environment(
-        self, nr_iters=1, max_steps=250, render=False, burn_in_steps=50
+        self,
+        nr_iters=1,
+        max_steps=250,
+        render=False,
+        burn_in_steps=50,
+        return_success=0
     ):
         """
         Measure success --> how long can we balance the pole on top
@@ -204,6 +209,8 @@ class Evaluator:
                 success[n] = i
                 self.eval_env._reset()
         # print(success)
+        if return_success:
+            return success, velocities
         mean_err = np.mean(success)
         std_err = np.std(success)
         if not self.image_dataset:
@@ -327,8 +334,15 @@ if __name__ == "__main__":
             collect_states
         )
     elif args.eval > 0:
-        success, suc_std, _ = evaluator.evaluate_in_environment(
-            render=True, max_steps=500, nr_iters=args.eval
+        successes, velocities = evaluator.evaluate_in_environment(
+            render=True,
+            max_steps=250,
+            nr_iters=args.eval,
+            return_success=True
+        )
+        np.savez(
+            f"../presentations/final_res/{args.model}_cartpole_wind.npz",
+            np.array(successes), np.array(velocities)
         )
     else:
         success, suc_std, _ = evaluator.evaluate_in_environment(
