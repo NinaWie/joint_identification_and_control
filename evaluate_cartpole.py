@@ -249,6 +249,7 @@ def load_model(model_name, epoch):
     net.eval()
     if isinstance(net, Net):
         controller_model = SequenceCartpoleWrapper(net, some_dataset, **config)
+        # CartpoleWrapper(net, **config)
     else:
         controller_model = CartpoleImageWrapper(net, some_dataset, **config)
     return controller_model
@@ -308,8 +309,11 @@ if __name__ == "__main__":
 
     if args.dataset > 0:
         evaluator.image_dataset = 1
+        counter = 0
         while len(collect_actions) < args.dataset:
+            counter += 1
             evaluator.init_buffers()
+            evaluator.eval_env.dynamics.enforce_contact = int(counter % 2 == 0)
             success, suc_std, _ = evaluator.evaluate_in_environment(
                 render=True, max_steps=30
             )
@@ -319,7 +323,7 @@ if __name__ == "__main__":
         collect_states = np.array(collect_states)
         print(collect_states.shape, collect_actions.shape, collect_img.shape)
         np.savez(
-            "data/cartpole_img_28_contact.npz", collect_img, collect_actions,
+            "data/cartpole_img_29_contact.npz", collect_img, collect_actions,
             collect_states
         )
     elif args.eval > 0:

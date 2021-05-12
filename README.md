@@ -25,6 +25,8 @@ Then, make sure the script executes the `train_dynamics(baseline_model, config, 
 
 ### Train cartpole image model
 
+BRANCH: cartpole
+
 This part is more complicated and requires several steps:
 * Collect a dataset in the target dynamics (for learning the new dynamics in few shot):
     * specify the desired modified parameters in the dictionary in `evaluate_cartpole.py`, and also specify the desired dataset size
@@ -44,3 +46,19 @@ This part is more complicated and requires several steps:
     * In `train_cartpole.py` specify the dataste you want to use in the `train_img_controller` function.
     * Execute the script with `train_img_controller(None, config, not_trainable="all", base_image_dyn=baseline_dyn)` in the bottom, where `baseline_dyn` is now the path to the dynamics model trained above
 
+
+### Train cartpole contact dynamics
+
+BRANCH: contact_dyn
+
+* Collect dataset with target dynamics:
+    * Run `python evaluate_cartpole.py -d 3000` This collects 3000 samples with half of them with the contact force and half of them without
+* pre-train controller on state-action history without modified dynamics
+    * Use bottom part in `train_cartpole.py` for that
+    * Generate dataset with no contact dynamics
+    * Using self play and the dataset to train a controller --> Basically this is a normal cartpole controller, just that it does not only see the last state, but instead the last x states
+* Finetune dynamics:
+    * Other bottom part in `train_cartpole.py` --> use the dataset with contact dynamics as generated above, ensure no self play
+    * Train for 100 epochs is sufficient
+* Finetune controller with the residual network:
+    * Bottom part in `train_cartpole.py` --> Starting from the pretrained controller, but backpropagating through the trained dynamics model

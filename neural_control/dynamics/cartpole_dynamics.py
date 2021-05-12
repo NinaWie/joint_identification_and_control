@@ -37,6 +37,7 @@ class CartpoleDynamics:
             self.action_buffer = np.zeros(
                 (batch_size, int(self.cfg["delay"]), 1)
             )
+        self.enforce_contact = -1
 
     def reset_buffer(self):
         self.action_buffer = np.zeros((batch_size, int(self.cfg["delay"]), 1))
@@ -106,7 +107,13 @@ class CartpoleDynamics:
         xacc = (
             temp - (self.cfg['polemass_length'] * thetaacc * costheta) - sig
         ) / self.cfg["total_mass"]
-        if self.cfg["contact"] > 0 and np.sin(self.timestamp) > 0:
+
+        if self.cfg["contact"] > 0 and (
+            # first possibility: periodically applied
+            (np.sin(self.timestamp) > 0 and self.enforce_contact == -1)
+            # second possibility: set manually (for dataset generation!)
+            or self.enforce_contact == 1
+        ):
             xacc += self.cfg["contact"]
 
         x = x + dt * x_dot

@@ -668,8 +668,8 @@ if __name__ == "__main__":
 
     # TRAIN DYNAMICS WITH SEQUENCE
     # base_model = None
-    # baseline_dyn = None  # "trained_models/cartpole/dyn_seq_test"
-    # config["general"]["save_name"] = "dyn_seq_test_2"
+    # baseline_dyn = None
+    # config["general"]["save_name"] = "final_dyn_seq"
     # config["general"]["sample_in"] = "train_env"
     # config["general"]["resample_every"] = 1000
     # config["train_dyn_for_epochs"] = 200
@@ -681,20 +681,23 @@ if __name__ == "__main__":
     # eval_dyn = CartpoleDynamics({"contact": 1})
     # trainer = TrainCartpole(train_dyn, eval_dyn, config, train_seq_dyn=1)
     # trainer.initialize_model(
-    #     base_model, load_dataset="data/cartpole_img_27_contact.npz"
+    #     base_model, load_dataset="data/cartpole_img_29_contact.npz"
     # )
     # # RUN
     # trainer.run_dynamics(config)
 
     # TRAIN CONTROLLER WITH SEQUENCE
-    base_model = "trained_models/cartpole/con_seq_test"
-    baseline_dyn = "trained_models/cartpole/dyn_seq_test_2"
-    config["general"]["save_name"] = "con_seq_test_test"
-    config["general"]["sample_in"] = "train_env"
+    base_model = "trained_models/cartpole/final_pretrained_nocontact"
+    baseline_dyn = "trained_models/cartpole/final_dyn_seq"
+    config["general"]["save_name"] = "final_con_seq"
+
+    config["general"]["sample_in"] = "eval_env"
     config["general"]["resample_every"] = 1000
     config["train_dyn_for_epochs"] = -1
     config["general"]["thresh_div_start"] = 0.2
-    config["balance"]["learning_rate_controller"] = 1e-7
+    # no self play possible for contact dynamics!
+    config["general"]["self_play"] = 0
+    config["balance"]["learning_rate_controller"] = 1e-6
 
     # train environment is learnt
     train_dyn = SequenceCartpoleDynamics()
@@ -704,7 +707,26 @@ if __name__ == "__main__":
     eval_dyn = CartpoleDynamics({"contact": 1})
     trainer = TrainCartpole(train_dyn, eval_dyn, config, train_seq_dyn=1)
     trainer.initialize_model(
-        base_model, load_dataset="data/cartpole_img_28_contact.npz"
+        base_model, load_dataset="data/cartpole_img_29_contact.npz"
     )
     # RUN
     trainer.run_dynamics(config)
+
+    ## USED TO PRETRAIN CONTROLLER: (set random init in evaluate!)
+    # base_model = None
+    # baseline_dyn = None
+    # config["general"]["save_name"] = "final_baseline_nocontact"
+    # config["general"]["sample_in"] = "train_env"
+    # config["general"]["resample_every"] = 1000
+    # config["train_dyn_for_epochs"] = -1
+    # config["general"]["thresh_div_start"] = 0.2
+    # config["balance"]["learning_rate_controller"] = 1e-6
+
+    # # train environment is learnt
+    # train_dyn = CartpoleDynamics()
+    # eval_dyn = CartpoleDynamics()
+    # trainer = TrainCartpole(train_dyn, eval_dyn, config, train_seq_dyn=1)
+    # trainer.initialize_model(
+    #     base_model, load_dataset="data/cartpole_img_28_nocontact.npz"
+    # )
+    # trainer.run_dynamics(config)
