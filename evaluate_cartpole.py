@@ -36,6 +36,7 @@ class Evaluator:
         self.mpc = isinstance(self.controller, MPC)
         self.image_dataset = collect_image_dataset
         self.init_buffers()
+        self.initialize_straight = 1
 
     def init_buffers(self):
         self.image_buffer = np.zeros((buffer_len, img_width, img_height))
@@ -89,7 +90,7 @@ class Evaluator:
                 # only set the theta to the top, and reduce speed
                 self.eval_env._reset_upright()
                 # TEST IN SAME DISTRIBUTION
-                if True:  #self.image_dataset:
+                if self.initialize_straight:
                     # self.eval_env.state = (np.random.rand(4) - .5) * .1
                     # x normal distributed --> if centered, then doesn't matter
                     if not center_at_x:
@@ -122,45 +123,45 @@ class Evaluator:
                             self._convert_image_buffer(new_state)[:-1], 0
                         )
                     ).float()
-                    state_action_history = None
-                    # RUN
-                    if isinstance(
-                        self.eval_env.dynamics, ImageCartpoleDynamics
-                    ):
-                        action_seq = self.controller.predict_actions(
-                            converted_img_seq,
-                            self.state_buffer.copy()[:-1]
+                    # prepare state action history
+                    state_buffer = torch.from_numpy(
+                        np.expand_dims(self.state_buffer.copy()[:-1], 0)
+                    ).float()
+                    action_buffer = torch.from_numpy(
+                        np.expand_dims(self.action_buffer.copy()[:-1], 0)
+                    ).float()
+                    state_action_history = torch.cat(
+                        (state_buffer, action_buffer), dim=2
+                    )
+                    network_input = torch.reshape(
+                        state_action_history, (
+                            -1, state_action_history.size()[1] *
+                            state_action_history.size()[2]
                         )
-                    elif True:
-                        # isinstance(
-                        #     self.eval_env.dynamics, SequenceCartpoleDynamics
-                        # ):
-                        # prepare state action history
-                        state_buffer = self.controller.to_torch(
-                            self.state_buffer.copy()[:-1]
-                        )
-                        action_buffer = self.controller.to_torch(
-                            self.action_buffer.copy()[:-1]
-                        )
-                        state_action_history = torch.cat(
-                            (state_buffer, action_buffer), dim=2
-                        )
-                        network_input = torch.reshape(
-                            state_action_history, (
-                                -1, state_action_history.size()[1] *
-                                state_action_history.size()[2]
-                            )
-                        )
-                        action_seq = self.controller.predict_actions(
-                            state_buffer, action_buffer, network_input
-                        )
-                    else:
-                        action_seq = self.controller.predict_actions(
-                            new_state, 0
-                        )
+                    )
+                    # ------------- Predict action ------------------
                     if self.image_dataset:
                         action_seq = torch.rand(1, 4) - .5
+                    else:
+                        if isinstance(
+                            self.controller, SequenceCartpoleWrapper
+                        ):
+                            action_seq = self.controller.predict_actions(
+                                state_buffer, action_buffer, network_input
+                            )
+                        elif isinstance(self.controller, CartpoleImageWrapper):
+                            action_seq = self.controller.predict_actions(
+                                converted_img_seq,
+                                self.state_buffer.copy()[:-1]
+                            )
+                        else:
+                            action_seq = self.controller.predict_actions(
+                                new_state, 0
+                            )
+                            if self.mpc:
+                                action_seq = torch.tensor([action_seq])
 
+                    # ------------- Take step with dynamics ------------------
                     prev_state = new_state.copy()
                     for action_ind in range(APPLY_UNTIL):
                         # run action in environment
@@ -168,7 +169,7 @@ class Evaluator:
                             action_seq[:, action_ind],
                             image=converted_img_seq,
                             state_action_buffer=network_input,
-                            is_torch=self.mpc == 0
+                            is_torch=True
                         )
                         data_collection.append(new_state)
                         velocities.append(np.absolute(new_state[1]))
@@ -234,7 +235,7 @@ def run_saved_arr(path):
         time.sleep(.1)
 
 
-def load_model(model_name, epoch):
+def load_model(model_name, epoch, is_seq=False):
     with open(
         os.path.join("trained_models", "cartpole", model_name, "config.json"),
         "r"
@@ -255,8 +256,12 @@ def load_model(model_name, epoch):
     config["self_play"] = 0
     net.eval()
     if isinstance(net, Net):
-        controller_model = SequenceCartpoleWrapper(net, some_dataset, **config)
-        # CartpoleWrapper(net, **config)
+        if is_seq:
+            controller_model = SequenceCartpoleWrapper(
+                net, some_dataset, **config
+            )
+        else:
+            controller_model = CartpoleWrapper(net, **config)
     else:
         controller_model = CartpoleImageWrapper(net, some_dataset, **config)
     return controller_model
@@ -301,7 +306,11 @@ if __name__ == "__main__":
             load_dynamics=load_dynamics
         )
     else:
-        controller_model = load_model(args.model, args.epoch)
+        controller_model = load_model(
+            args.model,
+            args.epoch,
+            is_seq=("seq" in args.model or "contact" in args.model)
+        )
 
     modified_params = {"contact": 1}
     # {"wind": .5}
@@ -334,17 +343,20 @@ if __name__ == "__main__":
             collect_states
         )
     elif args.eval > 0:
+        # set to random initial state
+        evaluator.initialize_straight = False
         successes, velocities = evaluator.evaluate_in_environment(
-            render=True,
+            render=False,
             max_steps=250,
             nr_iters=args.eval,
             return_success=True
         )
         np.savez(
-            f"../presentations/final_res/{args.model}_cartpole_wind.npz",
+            f"../presentations/final_res/cartpole_contact_dyn/{args.model}_new.npz",
             np.array(successes), np.array(velocities)
         )
     else:
+        evaluator.initialize_straight = False
         success, suc_std, _ = evaluator.evaluate_in_environment(
             render=True, max_steps=500, nr_iters=1
         )
