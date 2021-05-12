@@ -110,7 +110,7 @@ def cartpole_loss_mpc(states, ref_states, actions):
     # angle_loss = (states[:, :, 2] - ref_states[:, :, 2])**2
     # angle_vel_loss = (states[:, :, 3] - ref_states[:, :, 3])**2
     # loss = 10 * angle_loss + angle_vel_loss
-    return torch.sum(loss) + 0.1 * loss_actions
+    return torch.sum(loss) + 0.01 * loss_actions
 
 
 def cartpole_loss_balance(state):

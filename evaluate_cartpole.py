@@ -146,9 +146,9 @@ class Evaluator:
                                 state_action_history.size()[2]
                             )
                         )
-                        # action_seq = self.controller.predict_actions(
-                        #     state_buffer, action_buffer, network_input
-                        # )
+                        action_seq = self.controller.predict_actions(
+                            state_buffer, action_buffer, network_input
+                        )
                     else:
                         action_seq = self.controller.predict_actions(
                             new_state, 0
@@ -319,7 +319,7 @@ if __name__ == "__main__":
         collect_states = np.array(collect_states)
         print(collect_states.shape, collect_actions.shape, collect_img.shape)
         np.savez(
-            "data/cartpole_img_27_contact.npz", collect_img, collect_actions,
+            "data/cartpole_img_28_contact.npz", collect_img, collect_actions,
             collect_states
         )
     elif args.eval > 0:

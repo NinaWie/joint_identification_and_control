@@ -297,6 +297,7 @@ class TrainCartpole(TrainBase):
             current_state = state_buffer[:, 1]
 
             if train == "controller":
+                self.optimizer_controller.zero_grad()
                 ref_states = self.make_reference(current_state)
                 actions = self.net(network_input.float())
                 action_seq = torch.reshape(
@@ -306,11 +307,11 @@ class TrainCartpole(TrainBase):
                     current_state.size()[0], self.nr_actions, self.state_size
                 )
 
-                eval_dyn_state = current_state.clone()
+                # eval_dyn_state = current_state.clone()
                 for k in range(action_seq.size()[1]):
-                    eval_dyn_state = self.eval_dynamics(
-                        eval_dyn_state, action_seq[:, k], dt=self.delta_t
-                    )
+                    # eval_dyn_state = self.eval_dynamics(
+                    #     eval_dyn_state, action_seq[:, k], dt=self.delta_t
+                    # )
                     network_input = torch.reshape(
                         state_action_history, (
                             -1, state_action_history.size()[1] *
@@ -333,10 +334,10 @@ class TrainCartpole(TrainBase):
                         (state_action_cat, state_action_history[:, :-1]),
                         dim=1
                     )
-                if i == 0:
-                    print("compare img dyn to gt dyn")
-                    print(intermediate_states[0])
-                    print(eval_dyn_state[0])
+                # if i == 0:
+                #     print("compare img dyn to gt dyn")
+                #     print(intermediate_states[0])
+                #     print(eval_dyn_state[0])
                 # Loss
                 loss = cartpole_loss_mpc(
                     intermediate_states, ref_states, action_seq
@@ -379,8 +380,8 @@ class TrainCartpole(TrainBase):
             running_loss += loss.item()
         # time_epoch = time.time() - tic
         epoch_loss = running_loss / i
-        self.loss_logging(epoch_loss, train=train)
-        return epoch_loss * 10000
+        self.loss_logging(epoch_loss * 1000, train=train)
+        return epoch_loss
 
     def run_normal_epoch(self, train="controller"):
         # tic_epoch = time.time()
@@ -668,7 +669,7 @@ if __name__ == "__main__":
     # TRAIN DYNAMICS WITH SEQUENCE
     # base_model = None
     # baseline_dyn = None  # "trained_models/cartpole/dyn_seq_test"
-    # config["general"]["save_name"] = "dyn_seq_test"
+    # config["general"]["save_name"] = "dyn_seq_test_2"
     # config["general"]["sample_in"] = "train_env"
     # config["general"]["resample_every"] = 1000
     # config["train_dyn_for_epochs"] = 200
@@ -680,20 +681,20 @@ if __name__ == "__main__":
     # eval_dyn = CartpoleDynamics({"contact": 1})
     # trainer = TrainCartpole(train_dyn, eval_dyn, config, train_seq_dyn=1)
     # trainer.initialize_model(
-    #     base_model, load_dataset="data/cartpole_img_26_contact.npz"
+    #     base_model, load_dataset="data/cartpole_img_27_contact.npz"
     # )
     # # RUN
     # trainer.run_dynamics(config)
 
     # TRAIN CONTROLLER WITH SEQUENCE
-    base_model = None
-    baseline_dyn = "trained_models/cartpole/dyn_seq_test"
-    config["general"]["save_name"] = "con_seq_test"
+    base_model = "trained_models/cartpole/con_seq_test"
+    baseline_dyn = "trained_models/cartpole/dyn_seq_test_2"
+    config["general"]["save_name"] = "con_seq_test_test"
     config["general"]["sample_in"] = "train_env"
     config["general"]["resample_every"] = 1000
     config["train_dyn_for_epochs"] = -1
     config["general"]["thresh_div_start"] = 0.2
-    config["balance"]["learning_rate_controller"] = 1e-8
+    config["balance"]["learning_rate_controller"] = 1e-7
 
     # train environment is learnt
     train_dyn = SequenceCartpoleDynamics()
@@ -703,7 +704,7 @@ if __name__ == "__main__":
     eval_dyn = CartpoleDynamics({"contact": 1})
     trainer = TrainCartpole(train_dyn, eval_dyn, config, train_seq_dyn=1)
     trainer.initialize_model(
-        base_model, load_dataset="data/cartpole_img_26_contact.npz"
+        base_model, load_dataset="data/cartpole_img_28_contact.npz"
     )
     # RUN
     trainer.run_dynamics(config)
