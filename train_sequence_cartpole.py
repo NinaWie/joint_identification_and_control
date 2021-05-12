@@ -28,20 +28,12 @@ from neural_control.dynamics.cartpole_dynamics import (
 )
 
 
-class TrainCartpole(TrainBase):
+class TrainSequenceCartpole(TrainBase):
     """
     Train a controller for a quadrotor
     """
 
-    def __init__(
-        self,
-        train_dynamics,
-        eval_dynamics,
-        config,
-        train_image_dyn=0,
-        train_seq_dyn=0,
-        swingup=0
-    ):
+    def __init__(self, train_dynamics, eval_dynamics, config, swingup=0):
         """
         param sample_in: one of "train_env", "eval_env"
         """
@@ -55,10 +47,6 @@ class TrainCartpole(TrainBase):
             self.eval_env = CartPoleEnv(self.train_dynamics, self.delta_t)
         else:
             raise ValueError("sample in must be one of eval_env, train_env")
-
-        # for image processing
-        self.train_image_dyn = train_image_dyn
-        self.train_seq_dyn = train_seq_dyn
 
         # state to image transformer:
         self.state_to_img_net = torch.load(
@@ -120,8 +108,6 @@ class TrainCartpole(TrainBase):
     def run_epoch(self, train="controller"):
         self.results_dict["trained"].append(train)
         # training image dynamics
-        if self.train_image_dyn:
-            return self.run_image_epoch(train=train)
 
         # tic_epoch = time.time()
         running_loss = 0
@@ -242,7 +228,7 @@ class TrainCartpole(TrainBase):
         evaluator = Evaluator(self.model_wrapped, self.eval_env)
         # Start in upright position and see how long it is balaned
         success_mean, success_std, data = evaluator.evaluate_in_environment(
-            nr_iters=10, render=self.train_image_dyn
+            nr_iters=10, render=False
         )
         self.save_model(epoch, success_mean, success_std)
         return data
@@ -266,7 +252,7 @@ if __name__ == "__main__":
     # # train environment is learnt
     # train_dyn = SequenceCartpoleDynamics()
     # eval_dyn = CartpoleDynamics({"contact": 1})
-    # trainer = TrainCartpole(train_dyn, eval_dyn, config, train_seq_dyn=1)
+    # trainer = TrainSequenceCartpole(train_dyn, eval_dyn, config)
     # trainer.initialize_model(
     #     base_model, load_dataset="data/cartpole_img_29_contact.npz"
     # )
@@ -292,17 +278,17 @@ if __name__ == "__main__":
         torch.load(os.path.join(baseline_dyn, "dynamics_model"))
     )
     eval_dyn = CartpoleDynamics({"contact": 1})
-    trainer = TrainCartpole(train_dyn, eval_dyn, config, train_seq_dyn=1)
+    trainer = TrainSequenceCartpole(train_dyn, eval_dyn, config)
     trainer.initialize_model(
         base_model, load_dataset="data/cartpole_img_29_contact.npz"
     )
     # RUN
     trainer.run_dynamics(config)
 
-    ## USED TO PRETRAIN CONTROLLER: (set random init in evaluate!)
+    # # USED TO PRETRAIN CONTROLLER: (set random init in evaluate!)
     # base_model = None
     # baseline_dyn = None
-    # config["general"]["save_name"] = "final_baseline_nocontact"
+    # config["general"]["save_name"] = "test_baseline_nocontact"
     # config["general"]["sample_in"] = "train_env"
     # config["general"]["resample_every"] = 1000
     # config["train_dyn_for_epochs"] = -1
@@ -312,7 +298,7 @@ if __name__ == "__main__":
     # # train environment is learnt
     # train_dyn = CartpoleDynamics()
     # eval_dyn = CartpoleDynamics()
-    # trainer = TrainCartpole(train_dyn, eval_dyn, config, train_seq_dyn=1)
+    # trainer = TrainSequenceCartpole(train_dyn, eval_dyn, config)
     # trainer.initialize_model(
     #     base_model, load_dataset="data/cartpole_img_28_nocontact.npz"
     # )
