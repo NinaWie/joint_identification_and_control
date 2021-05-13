@@ -163,7 +163,7 @@ class MPC(object):
         self._thrust_min = -1
         self._thrust_max = 1
         self._Q_u = np.diag([0])
-        self._Q_pen = np.diag([0, 0, 10, 1])
+        self._Q_pen = np.diag([0, 3, 10, 1])
         # initial states
         self._quad_s0 = np.zeros(4).tolist()
         self._quad_u0 = [0]
