@@ -221,11 +221,16 @@ class TrainBase:
         running_loss = 0
         prev_running_loss = 0
         # evaluate on test data two times every epoch
-        eval_on_test_every = len(self.trainloader) // 2
+        eval_on_test_every = len(self.trainloader) // 5
         for i, data in enumerate(self.trainloader, 0):
             # inputs are normalized states, current state is unnormalized in
             # order to correctly apply the action
             in_state, current_state, in_ref_state, ref_states = data
+
+            if (i + 1) % eval_on_test_every == 0:
+                self.evaluate_model(
+                    self.current_epoch * 5 + (i + 1) // eval_on_test_every
+                )
 
             actions = self.net(in_state, in_ref_state)
             actions = torch.sigmoid(actions)
@@ -396,7 +401,8 @@ class TrainBase:
     def run_dynamics(self, config):
         try:
             for epoch in range(config["nr_epochs"]):
-                _ = self.evaluate_model(epoch)
+                # _ = self.evaluate_model(epoch)
+                self.current_epoch = epoch
 
                 # train dynamics as long as
                 # - lower than train_dyn_for_epochs
@@ -409,7 +415,7 @@ class TrainBase:
                 else:
                     model_to_train = "controller"
 
-                print(f"\nEpoch {epoch}")
+                # print(f"\nEpoch {epoch}")
                 self.run_epoch(train=model_to_train)
 
                 self.results_dict["samples_in_d2"].append(

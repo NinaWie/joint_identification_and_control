@@ -153,6 +153,8 @@ class TrainDrone(TrainBase):
         return loss
 
     def evaluate_model(self, epoch):
+        print()
+        print("Epoch", epoch)
         # EVALUATE
         controller = NetworkWrapper(self.net, self.state_data, **self.config)
 
@@ -165,31 +167,22 @@ class TrainDrone(TrainBase):
         self.results_dict["eval_in_d1_trained_mean"].append(suc_mean)
         self.results_dict["eval_in_d1_trained_std"].append(suc_std)
 
-        if epoch == 0 and self.config["train_dyn_for_epochs"] >= 0:
-            self.tmp_num_selfplay = self.state_data.num_self_play
-            self.state_data.num_self_play = 0
-            print("stop self play")
-        if epoch == self.config["train_dyn_for_epochs"]:
-            self.state_data.num_self_play = self.tmp_num_selfplay
-            print("start self play to", self.tmp_num_selfplay)
-
         ### code to evaluate also in D1 and D2
         ### need to ensure that eval_env is with train_dynamics
         # # set self play to zero so no sampled data is added
-        # tmp_self_play = self.state_data.num_self_play
-        # self.state_data.num_self_play = 0
-        # print("--------- eval in real (D2) -------------")
-        # d2_env = QuadRotorEnvBase(self.eval_dynamics, self.delta_t)
-        # evaluator = QuadEvaluator(
-        #     controller, d2_env, test_time=1, **self.config
-        # )
-        # with torch.no_grad():
-        #     suc_mean, suc_std = evaluator.run_eval(
-        #         "rand", nr_test=10, **self.config
-        #     )
-        # self.results_dict["eval_in_d2_mean"].append(suc_mean)
-        # self.results_dict["eval_in_d2_std"].append(suc_std)
-
+        tmp_self_play = self.state_data.num_self_play
+        self.state_data.num_self_play = 0
+        print("--------- eval in real (D2) -------------")
+        d2_env = QuadRotorEnvBase(self.eval_dynamics, self.delta_t)
+        evaluator = QuadEvaluator(
+            controller, d2_env, test_time=1, **self.config
+        )
+        with torch.no_grad():
+            suc_mean, suc_std = evaluator.run_eval(
+                "rand", nr_test=10, **self.config
+            )
+        self.results_dict["eval_in_d2_mean"].append(suc_mean)
+        self.results_dict["eval_in_d2_std"].append(suc_std)
         # print("--------- eval in base simulator (D1) -------------")
         # base_env = QuadRotorEnvBase(FlightmareDynamics(), self.delta_t)
         # evaluator = QuadEvaluator(controller, base_env, **self.config)
@@ -199,7 +192,16 @@ class TrainDrone(TrainBase):
         #     )
         # self.results_dict["eval_in_d1_mean"].append(suc_mean)
         # self.results_dict["eval_in_d1_std"].append(suc_std)
-        # self.state_data.num_self_play = tmp_self_play
+        self.state_data.num_self_play = tmp_self_play
+
+        if epoch == 1 and self.config["train_dyn_for_epochs"] >= 0:
+            self.tmp_num_selfplay = self.state_data.num_self_play
+            self.state_data.num_self_play = 0
+            print("stop self play")
+        if epoch == self.config["train_dyn_for_epochs"] * 5:
+            self.state_data.num_self_play = self.tmp_num_selfplay
+            print("start self play to", self.tmp_num_selfplay)
+            self.config["resample_every"] = 5
 
         self.sample_new_data(epoch)
 
@@ -256,7 +258,7 @@ def train_dynamics(base_model, config, trainable_params=1):
     config["train_dyn_for_epochs"] = 10
     config["nr_test_data"] = 200
     # make sure not to resample during dynamics training
-    config["resample_every"] = config["train_dyn_for_epochs"] + 1
+    config["resample_every"] = 1000  # config["train_dyn_for_epochs"] + 1
 
     # train environment is learnt
     train_dynamics = LearntQuadDynamics(trainable_params=trainable_params)
@@ -305,7 +307,7 @@ if __name__ == "__main__":
     # config["thresh_div_start"] = 1
     # config["thresh_stable_start"] = 1.5
 
-    config["save_name"] = "final_dyn_woparams"
+    config["save_name"] = "finetune_controller_new"
 
     config["nr_epochs"] = 400
 
