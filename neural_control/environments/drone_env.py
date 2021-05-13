@@ -230,7 +230,7 @@ def random_angle(random_state, max_pitch_roll):
 
 
 def full_state_training_data(
-    len_data, ref_length=5, dt=0.02, speed_factor=.6, **kwargs
+    len_data, ref_length=5, dt=0.02, speed_factor=.6, test_time=0, **kwargs
 ):
     """
     Use trajectory generation of Elia to generate random trajectories and then
@@ -240,6 +240,8 @@ def full_state_training_data(
     """
     ref_size = 9
     sample_freq = ref_length * 2
+    if test_time:
+        print("WARNING: using test data!")
 
     drone_states = np.zeros((len_data + 200, 12))
     ref_states = np.zeros((len_data + 200, ref_length, ref_size))
@@ -247,7 +249,7 @@ def full_state_training_data(
     counter = 0
     while counter < len_data:
         traj = load_prepare_trajectory(
-            "data/traj_data_1", dt, speed_factor, test=0
+            "data/traj_data_1", dt, speed_factor, test=test_time
         )[:, :ref_size]
         traj_cut = traj[:-(ref_length + 1)]
         # select every xth sample as the current drone state

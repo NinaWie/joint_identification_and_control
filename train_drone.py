@@ -111,6 +111,16 @@ class TrainDrone(TrainBase):
 
         # init dataset
         self.state_data = QuadDataset(self.epoch_size, **self.config)
+        if self.config.get("nr_test_data", 0) > 0:
+            print("Initialize test dataset")
+            self.test_data = QuadDataset(
+                num_states=self.config["nr_test_data"],
+                test_time=1,
+                **self.config
+            )
+            self.testloader = torch.utils.data.DataLoader(
+                self.test_data, batch_size=1, shuffle=False, num_workers=0
+            )
         self.init_optimizer()
 
     def train_controller_model(
@@ -170,7 +180,9 @@ class TrainDrone(TrainBase):
         # self.state_data.num_self_play = 0
         # print("--------- eval in real (D2) -------------")
         # d2_env = QuadRotorEnvBase(self.eval_dynamics, self.delta_t)
-        # evaluator = QuadEvaluator(controller, d2_env, **self.config)
+        # evaluator = QuadEvaluator(
+        #     controller, d2_env, test_time=1, **self.config
+        # )
         # with torch.no_grad():
         #     suc_mean, suc_std = evaluator.run_eval(
         #         "rand", nr_test=10, **self.config
@@ -242,6 +254,7 @@ def train_dynamics(base_model, config, trainable_params=1):
 
     config["epoch_size"] = 500
     config["train_dyn_for_epochs"] = 10
+    config["nr_test_data"] = 200
     # make sure not to resample during dynamics training
     config["resample_every"] = config["train_dyn_for_epochs"] + 1
 
