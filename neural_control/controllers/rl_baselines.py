@@ -1,4 +1,7 @@
+import json
+import os
 import numpy as np
+from collections import defaultdict
 import matplotlib.pyplot as plt
 import torch
 
@@ -9,6 +12,7 @@ from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
 from neural_control.dynamics.fixed_wing_dynamics import FixedWingDynamics
 from neural_control.models.hutter_model import Net
 from neural_control.plotting import plot_wing_pos_3d
+from neural_control.trajectory.q_funcs import project_to_line
 
 # PARAMS
 fixed_wing_dt = 0.05
@@ -69,10 +73,12 @@ def evaluate_wing(model=None, env=None, max_steps=1000, nr_iters=1, render=0):
         dyn = FixedWingDynamics()
         env = WingEnvRL(dyn, dt=0.05)
 
+    div_target = []
     np.set_printoptions(precision=3, suppress=1)
     for j in range(nr_iters):
-        obs = env.reset(x_dist=50, x_std=3)
-        print(env.target_point)
+        obs = env.reset(x_dist=50, x_std=5)
+        if render:
+            print(f"iter {j}:", env.target_point)
         trajectory = []
         for i in range(max_steps):
             if model is not None:
@@ -103,18 +109,51 @@ def evaluate_wing(model=None, env=None, max_steps=1000, nr_iters=1, render=0):
             if render:
                 env.render()
             if done:
-                print(env.state[:3])
+                if env.state[0] < 20:
+                    div_target.append(
+                        np.linalg.norm(env.state[:3] - env.target_point)
+                    )
+                else:
+                    target_on_traj = project_to_line(
+                        trajectory[-2][:3], env.state[:3], env.target_point
+                    )
+                    div_target.append(
+                        np.linalg.norm(target_on_traj - env.target_point)
+                    )
+                if render:
+                    print("last state", env.state[:3], "div", div_target[-1])
                 break
 
-    return np.array(trajectory)
+    print(
+        "Average error: %3.2f (%3.2f)" %
+        (np.mean(div_target), np.std(div_target))
+    )
+    return np.array(trajectory), np.mean(div_target), np.std(div_target)
 
 
-def train_wing(save_name):
-    dyn = FixedWingDynamics()
+def train_wing(
+    save_name, load_model=None, modified_params={}, steps_per_bunch=10000
+):
+    dyn = FixedWingDynamics(modified_params=modified_params)
     env = WingEnvRL(dyn, fixed_wing_dt)
-    model = PPO('MlpPolicy', env, verbose=1)
+    if load_model is None:
+        model = PPO('MlpPolicy', env, verbose=1)
+    else:
+        model = PPO.load(load_model, env=env)
 
-    model.learn(total_timesteps=500000)
+    try:
+        res_dict = defaultdict(list)
+        for k in range(50):
+            print(f"------------- Samples: {k*steps_per_bunch}---------------")
+            _, meandiv, stddiv = evaluate_wing(model, env, nr_iters=30)
+            res_dict["mean_div"].append(meandiv)
+            res_dict["std_div"].append(stddiv)
+            res_dict["samples"].append(k * steps_per_bunch)
+            model.learn(total_timesteps=steps_per_bunch)
+    except KeyboardInterrupt:
+        pass
+    with open(save_name + "_res.json", "w") as outfile:
+        json.dump(res_dict, outfile)
     model.save(save_name)
 
 
@@ -122,18 +161,23 @@ def test_wing(save_name, modified_params={}, max_steps=1000):
     dyn = FixedWingDynamics(modified_params=modified_params)
     env = WingEnvRL(dyn, fixed_wing_dt)
     model = PPO.load(save_name)
-    trajectory = evaluate_wing(model, env, max_steps, render=1)
+    trajectory, _, _ = evaluate_wing(
+        model, env, max_steps, nr_iters=40, render=0
+    )
     # plot
     plot_wing_pos_3d(
         trajectory, [env.target_point], save_path=save_name + "_plot.png"
     )
 
 
-def test_ours_wing(load_name, max_steps=1000):
-    dyn = FixedWingDynamics()
-    env = WingEnvRL(dyn, fixed_wing_dt)
-    model = torch.load(load_name)
-    evaluate_wing(model, env, max_steps, render=1)
+def test_ours_wing(model_path, modified_params={}, max_steps=1000):
+    model = torch.load(os.path.join(model_path, "model_wing"))
+    config_path = os.path.join(model_path, "config.json")
+    with open(config_path, "r") as outfile:
+        param_dict = json.load(outfile)
+    dyn = FixedWingDynamics(modified_params=modified_params)
+    env = WingEnvRL(dyn, **param_dict)
+    evaluate_wing(model, env, max_steps, nr_iters=40, render=0)
 
 
 if __name__ == "__main__":
@@ -142,9 +186,19 @@ if __name__ == "__main__":
     # finetune_cartpole(save_name, modified_params={"wind": .5})
     # test_cartpole(save_name, modified_params={"wind": .5})
 
-    save_name = "trained_models/wing/reinforcement_learning/ppo_test"
-    # train_wing(save_name)
+    load_name = "trained_models/wing/reinforcement_learning/ppo_50"
+    save_name = "trained_models/wing/reinforcement_learning/ppo_finetuned"
+    scenario = {"vel_drag_factor": .3}
+    # train_wing(
+    #     save_name,
+    #     load_model=load_name,
+    #     modified_params=scenario,
+    #     steps_per_bunch=5000
+    # )
     # finetune_wing(save_name, modified_params={})
-    # test_ours_wing("trained_models/wing/current_model/model_wing")
-    test_wing(save_name, modified_params={})
+    # test_ours_wing(
+    #     "trained_models/wing/current_model",
+    #     modified_params=scenario
+    # )
+    test_wing(save_name, modified_params=scenario)
     # evaluate_wing(render=1)

@@ -29,7 +29,7 @@ from neural_control.trajectory.generate_trajectory import load_prepare_trajector
 device = "cpu"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-class QuadRotorEnvBase(gym.Env):
+class QuadRotorEnvBase():
     """
     Simple simulation environment for a drone
     Drone parameters are defined in file copter.py (copter_params dict)

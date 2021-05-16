@@ -9,7 +9,10 @@ from neural_control.environments.cartpole_env import CartPoleEnv
 from neural_control.environments.wing_env import SimpleWingEnv
 from neural_control.environments.drone_env import QuadRotorEnvBase
 from neural_control.trajectory.q_funcs import project_to_line
-from neural_control.dataset import WingDataset
+from neural_control.dataset import WingDataset, QuadDataset
+from neural_control.trajectory.generate_trajectory import (
+    load_prepare_trajectory
+)
 metadata = {'render.modes': ['human']}
 
 
@@ -62,17 +65,88 @@ class CartPoleEnvRL(gym.Env, CartPoleEnv):
             self.viewer.close()
 
 
-# class QuadEnvRL(gym.Env, QuadRotorEnvBase):
+class QuadEnvRL(gym.Env, QuadRotorEnvBase):
 
-#     def __init__(self, dynamics, dt):
-#         QuadRotorEnvBase.__init__(self, dynamics, dt)
-#         # TODO
-#         pass
+    def __init__(self, dynamics, dt, speed_factor=.2, **kwargs):
+        self.dt = dt
+        self.speed_factor = speed_factor
+
+        QuadRotorEnvBase.__init__(self, dynamics, dt)
+        self.action_space = spaces.Box(low=0, high=1, shape=(4, ))
+
+        # state and reference
+        self.state_inp_dim = 15
+        self.obs_dim = self.state_inp_dim + 10 * 9
+        high = np.array([10 for _ in range(self.obs_dim)])
+        self.observation_space = spaces.Box(
+            -high, high, shape=(self.obs_dim, )
+        )
+
+        self.thresh_stable = 1.5
+        self.thresh_div = 2
+
+        self.dataset = QuadDataset(1, 0, **kwargs)
+
+    def prepare_obs(self):
+        obs_state, _, obs_ref, _ = self.dataset.prepare_data(
+            self.state, self.target_point
+        )
+        return obs_state, obs_ref
+
+    def state_to_obs(self):
+        # get from dataset
+        obs_state, obs_ref = self.prepare_obs()
+        # flatten obs ref
+        obs_ref = obs_ref.reshape((-1, self.obs_dim - self.state_inp_dim))
+        # concatenate relative position and observation
+        obs = torch.cat((obs_ref, obs_state), dim=1)[0].numpy()
+        return obs
+
+    def reset(self):
+        # load random trajectory from train
+        self.current_ref = load_prepare_trajectory(
+            "data/traj_data_1", self.dt, self.speed_factor, test=0
+        )
+        self.currend_ind = 0
+        self.zero_reset(*tuple(self.current_ref[0, :3]))
+        self.state = self._state.as_np()
+
+        self.obs = self.state_to_obs()
+        return self.obs
+
+    def done(self):
+        # TODO
+        finished_traj = self.currend_ind == len(self.current_ref)
+
+    def step(self, action):
+        self.state, is_stable = QuadRotorEnvBase.step(self, action)
+        self.obs = self.state_to_obs()
+
+        div = self.get_divergence()
+
+        done = (
+            (not is_stable) or div > self.thresh_div
+            or self.currend_ind > len(self.current_ref) - self.nr_actions
+        )
+
+        if not done:
+            reward = self.thresh_div - div
+        else:
+            reward = 0
+        info = {}
+
+        # print()
+        # np.set_printoptions(precision=3, suppress=1)
+        # print(self.state)
+        # print(self.obs)
+        # print(div, reward)
+
+        return self.obs, reward, done, info
 
 
 class WingEnvRL(gym.Env, SimpleWingEnv):
 
-    def __init__(self, dynamics, dt):
+    def __init__(self, dynamics, dt, **kwargs):
         SimpleWingEnv.__init__(self, dynamics, dt)
         self.action_space = spaces.Box(low=0, high=1, shape=(4, ))
 
@@ -87,7 +161,7 @@ class WingEnvRL(gym.Env, SimpleWingEnv):
         self.thresh_div = 4
 
         # for making observation:
-        self.dataset = WingDataset(0, dt=self.dt)
+        self.dataset = WingDataset(0, dt=self.dt, **kwargs)
 
     def done(self):
         # x is greater
@@ -109,8 +183,8 @@ class WingEnvRL(gym.Env, SimpleWingEnv):
         obs = torch.cat((obs_ref, obs_state), dim=1)[0].numpy()
         return obs
 
-    def reset(self, x_dist=20, x_std=3):
-        rand_y, rand_z = tuple((np.random.rand(2) - .5) * x_std)
+    def reset(self, x_dist=50, x_std=5):
+        rand_y, rand_z = tuple((np.random.rand(2) - .5) * 2 * x_std)
         self.target_point = np.array([x_dist, rand_y, rand_z])
         self.zero_reset()
         self.state = self._state
