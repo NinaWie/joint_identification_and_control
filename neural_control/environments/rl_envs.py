@@ -13,6 +13,7 @@ from neural_control.dataset import WingDataset, QuadDataset
 from neural_control.trajectory.generate_trajectory import (
     load_prepare_trajectory
 )
+from neural_control.trajectory.random_traj import PolyObject
 metadata = {'render.modes': ['human']}
 
 
@@ -67,9 +68,10 @@ class CartPoleEnvRL(gym.Env, CartPoleEnv):
 
 class QuadEnvRL(gym.Env, QuadRotorEnvBase):
 
-    def __init__(self, dynamics, dt, speed_factor=.2, **kwargs):
+    def __init__(self, dynamics, dt, speed_factor=.2, nr_actions=10, **kwargs):
         self.dt = dt
         self.speed_factor = speed_factor
+        self.nr_actions = nr_actions
 
         QuadRotorEnvBase.__init__(self, dynamics, dt)
         self.action_space = spaces.Box(low=0, high=1, shape=(4, ))
@@ -85,11 +87,15 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
         self.thresh_stable = 1.5
         self.thresh_div = 2
 
+        kwargs["dt"] = dt
+        kwargs['speed_factor'] = speed_factor
         self.dataset = QuadDataset(1, 0, **kwargs)
 
     def prepare_obs(self):
         obs_state, _, obs_ref, _ = self.dataset.prepare_data(
-            self.state, self.target_point
+            self.state.copy(),
+            self.current_ref[self.current_ind + 1:self.current_ind +
+                             self.nr_actions + 1].copy()
         )
         return obs_state, obs_ref
 
@@ -107,41 +113,53 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
         self.current_ref = load_prepare_trajectory(
             "data/traj_data_1", self.dt, self.speed_factor, test=0
         )
-        self.currend_ind = 0
-        self.zero_reset(*tuple(self.current_ref[0, :3]))
-        self.state = self._state.as_np()
+        self.renderer.add_object(PolyObject(self.current_ref, shift_one=0))
 
+        self.state = np.zeros(12)
+        self.state[:3] = self.current_ref[0, :3]
+        self._state.from_np(self.state)
+
+        self.current_ind = 0
         self.obs = self.state_to_obs()
         return self.obs
 
-    def done(self):
-        # TODO
-        finished_traj = self.currend_ind == len(self.current_ref)
+    def get_divergence(self):
+        return np.linalg.norm(
+            self.current_ref[self.current_ind, :3] - self.state[:3]
+        )
 
     def step(self, action):
-        self.state, is_stable = QuadRotorEnvBase.step(self, action)
+        self.state, is_stable = QuadRotorEnvBase.step(
+            self, action, thresh=self.thresh_stable
+        )
         self.obs = self.state_to_obs()
+        self.current_ind += 1
 
         div = self.get_divergence()
 
         done = (
             (not is_stable) or div > self.thresh_div
-            or self.currend_ind > len(self.current_ref) - self.nr_actions
+            or self.current_ind > len(self.current_ref) - self.nr_actions - 1
         )
 
+        reward = 0
         if not done:
             reward = self.thresh_div - div
-        else:
-            reward = 0
         info = {}
-
         # print()
         # np.set_printoptions(precision=3, suppress=1)
+        # # print(self.current_ref[:3, :3])
+        # print(
+        #     self.current_ind, self.state[:3],
+        #     self.current_ref[self.current_ind, :3]
+        # )
         # print(self.state)
-        # print(self.obs)
+        # print(self.obs.shape)
         # print(div, reward)
-
         return self.obs, reward, done, info
+
+    def render(self, mode="human"):
+        QuadRotorEnvBase.render(self, mode=mode)
 
 
 class WingEnvRL(gym.Env, SimpleWingEnv):
