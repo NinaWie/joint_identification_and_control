@@ -40,10 +40,9 @@ class CartPoleEnvRL(gym.Env, CartPoleEnv):
         super()._step(action, is_torch=False)
         done = not self.is_upright()
         # this reward is positive if theta is smaller 0.1 and else negative
-        # TODO: would need to include velocity for mismatch business
-        # reward = 0.1 - abs(self.state[2])
         if not done:
-            reward = 1.0 - abs(action[0])  # subtract velocity from reward
+            # training to stay stable with low velocity
+            reward = 3.0 - abs(self.state[1])
         else:
             reward = 0.0
 
@@ -89,7 +88,8 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
 
         kwargs["dt"] = dt
         kwargs['speed_factor'] = speed_factor
-        self.dataset = QuadDataset(1, 0, **kwargs)
+        kwargs["self_play"] = 0
+        self.dataset = QuadDataset(1, **kwargs)
 
     def prepare_obs(self):
         obs_state, _, obs_ref, _ = self.dataset.prepare_data(
@@ -108,10 +108,10 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
         obs = torch.cat((obs_ref, obs_state), dim=1)[0].numpy()
         return obs
 
-    def reset(self):
+    def reset(self, test=0):
         # load random trajectory from train
         self.current_ref = load_prepare_trajectory(
-            "data/traj_data_1", self.dt, self.speed_factor, test=0
+            "data/traj_data_1", self.dt, self.speed_factor, test=test
         )
         self.renderer.add_object(PolyObject(self.current_ref, shift_one=0))
 
@@ -128,6 +128,41 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
             self.current_ref[self.current_ind, :3] - self.state[:3]
         )
 
+    def get_reward(self, action):
+        """
+        MPC type cost function turned into reward
+        """
+        pos_factor = 10
+        u_thrust_factor = 5
+        u_rates_factor = 0.1
+        av_factor = 0.1
+        vel_factor = 1
+
+        pos_div = np.linalg.norm(
+            self.current_ref[self.current_ind, :3] - self.state[:3]
+        )
+        pos_rew = self.thresh_div - pos_div
+        vel_div = np.linalg.norm(
+            self.current_ref[self.current_ind, 6:9] - self.state[6:9]
+        )
+        vel_rew = self.thresh_div - vel_div  # How high is velocity diff?
+        u_rew = .25 - (.5 - action)**2
+        # have to use abs because otherwise not comparable to thresh div
+        av_rew = np.sum(self.thresh_stable - (np.absolute(self.state[9:12])))
+
+        # print(action)
+        # print(pos_rew)
+        # print(vel_rew)
+        # print(av_rew)
+        # print(u_rew)
+        # print()
+        reward = (
+            pos_factor * pos_rew + vel_factor * vel_rew + av_factor * av_rew +
+            u_rates_factor * np.sum(u_rew[1:]) + u_thrust_factor * u_rew[0]
+        )
+
+        return reward
+
     def step(self, action):
         self.state, is_stable = QuadRotorEnvBase.step(
             self, action, thresh=self.thresh_stable
@@ -135,16 +170,16 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
         self.obs = self.state_to_obs()
         self.current_ind += 1
 
-        div = self.get_divergence()
+        pos_div = self.get_divergence()
 
         done = (
-            (not is_stable) or div > self.thresh_div
+            (not is_stable) or pos_div > self.thresh_div
             or self.current_ind > len(self.current_ref) - self.nr_actions - 1
         )
 
         reward = 0
         if not done:
-            reward = self.thresh_div - div
+            reward = self.get_reward(action)
         info = {}
         # print()
         # np.set_printoptions(precision=3, suppress=1)

@@ -119,13 +119,14 @@ def train_cartpole(model_path, load_model=None, modified_params={}):
         env,
         evaluate_cartpole,
         load_model=load_model,
-        total_timesteps=50000,
-        eval_freq=1000
+        total_timesteps=200000,
+        eval_freq=5000
     )
 
 
 def evaluate_cartpole(model, env, max_steps=250, nr_iters=1, render=0):
     states, actions = [], []
+    num_stable = []
     for j in range(nr_iters):
         obs = env.reset()
         for i in range(max_steps):
@@ -138,18 +139,31 @@ def evaluate_cartpole(model, env, max_steps=250, nr_iters=1, render=0):
             if done:
                 break
 
+        num_stable.append(i)
     states = np.array(states)
     actions = np.array(actions)
-    print("Average velocity:", np.mean(np.absolute(states[:, 1])))
+    mean_vel = np.mean(np.absolute(states[:, 1]))
+    std_vel = np.std(np.absolute(states[:, 1]))
+    mean_stable = np.mean(num_stable)
+    std_stable = np.std(num_stable)
+    print("Average stable: %3.2f (%3.2f)" % (mean_stable, std_stable))
+    print("Average velocity: %3.2f (%3.2f)" % (mean_vel, std_vel))
+    res_step = {
+        "mean_vel": mean_vel,
+        "std_vel": std_vel,
+        "mean_stable": mean_stable,
+        "std_stable": std_stable
+    }
     # plt.hist(actions)
     # plt.show()
+    return 0, res_step
 
 
-def test_rl_cartpole(save_name, modified_params={}, max_steps=500):
+def test_rl_cartpole(save_name, modified_params={}, max_steps=250):
     dyn = CartpoleDynamics(modified_params=modified_params)
     env = CartPoleEnvRL(dyn, dt=cartpole_dt)
     model = PPO.load(save_name)
-    evaluate_cartpole(model, env, max_steps, render=1)
+    evaluate_cartpole(model, env, max_steps, nr_iters=40, render=0)
 
 
 # ------------------ Fixed wing drone -----------------------
@@ -318,6 +332,7 @@ def test_ours_quad(model_path, modified_params={}, max_steps=500):
     with open(config_path, "r") as outfile:
         param_dict = json.load(outfile)
     dyn = FlightmareDynamics(modified_params=modified_params)
+    # param_dict["speed_factor"] = .2
     env = QuadEnvRL(dyn, **param_dict)
     evaluate_quad(model, env, max_steps, nr_iters=1, render=1)
 
@@ -339,16 +354,19 @@ def train_quad(model_path, load_model=None, modified_params={}):
 
 if __name__ == "__main__":
     # ------------------ CartPole -----------------------
-    # save_name = "trained_models/cartpole/reinforcement_learning/ppo2_smallact"
-    # train_cartpole(save_name)
-    # finetune_cartpole(save_name, modified_params={"wind": .5})
-    # test_cartpole(save_name, modified_params={"wind": .5})
+    # save_name = "trained_models/cartpole/reinforcement_learning/smallvel_finetuned"
+    # load_name = "trained_models/cartpole/reinforcement_learning/smallvel/rl_final"
+    # scenario = {"wind": .5}
+    # train_cartpole(save_name, load_model=load_name, modified_params=scenario)
+    # test_rl_cartpole(
+    #     os.path.join(save_name, "rl_final"), modified_params=scenario
+    # )
 
     # ------------------ Fixed wing drone -----------------------
-    load_name = "trained_models/wing/reinforcement_learning/final/ppo_50"
-    save_name = "trained_models/wing/reinforcement_learning/ppo_finetuned_2"
-    scenario = {"vel_drag_factor": .3}
-    train_wing(save_name, load_model=load_name, modified_params=scenario)
+    # load_name = "trained_models/wing/reinforcement_learning/final/ppo_50"
+    # save_name = "trained_models/wing/reinforcement_learning/ppo_finetuned_2"
+    # scenario = {"vel_drag_factor": .3}
+    # train_wing(save_name, load_model=load_name, modified_params=scenario)
     # finetune_wing(save_name, modified_params={})
     # test_ours_wing(
     #     "trained_models/wing/current_model",
@@ -359,10 +377,9 @@ if __name__ == "__main__":
 
     # ------------------ Quadrotor -----------------------
     # save_name = "trained_models/quad/optimizer_04_model/"
-    # save_name = "trained_models/quad/reinforcement_learning/ppo_test"
-    # save_name = "trained_models/quad/reinforcement_learning/test_with_dir"
+    save_name = "trained_models/quad/reinforcement_learning/mpc_loss"
 
-    # scenario = {}  # {"translational_drag": np.array([.3, .3, .3])}
+    scenario = {}  # {"translational_drag": np.array([.3, .3, .3])}
     # test_ours_quad(save_name, modified_params=scenario)
-    # train_quad(save_name)
+    train_quad(save_name, modified_params=scenario)
     # test_rl_quad(save_name)
