@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import torch
 
 from stable_baselines3 import PPO
+from stable_baselines3.common.callbacks import BaseCallback
 from neural_control.environments.cartpole_env import CartPoleEnv
 from neural_control.environments.rl_envs import (
     CartPoleEnvRL, WingEnvRL, QuadEnvRL
@@ -24,27 +25,103 @@ quad_dt = 0.1
 quad_speed = 0.2
 quad_horizon = 10
 
+
+class EvalCallback(BaseCallback):
+    """
+    Callback for saving a model every `save_freq` steps
+    :param save_freq: (int)
+    :param save_path: (str) Path to the folder where the model will be saved.
+    :param name_prefix: (str) Common prefix to the saved models
+    """
+
+    def __init__(
+        self,
+        eval_func,  # function to evaluate model
+        eval_env,
+        eval_freq: int,
+        save_path: str,
+        nr_iters=10,
+        # eval_key="mean_div",
+        # eval_up_down=-1,
+        verbose=0
+    ):
+        super(EvalCallback, self).__init__(verbose)
+        self.eval_freq = eval_freq
+        self.eval_func = eval_func
+        self.eval_env = eval_env
+        self.save_path = save_path
+        self.nr_iters = nr_iters
+
+        # self.best_perf = 0 if eval_up_down == 1 else np.inf
+        self.res_dict = defaultdict(list)
+
+    def _on_step(self) -> bool:
+        if self.n_calls % self.eval_freq == 0:
+            # evaluate
+            _, res_step = self.eval_func(
+                self.model, self.eval_env, nr_iters=self.nr_iters
+            )
+            for key in res_step.keys():
+                self.res_dict[key].append(res_step[key])
+            self.res_dict["samples"].append(self.num_timesteps)
+
+            # save every time (TODO: change to saving best?)
+            path = self.save_path + '_{}_steps'.format(self.num_timesteps)
+            self.model.save(path)
+            if self.verbose > 1:
+                print("Saving model checkpoint to {}".format(path))
+        return True
+
+
+def train_main(
+    model_path,
+    env,
+    evaluate_func,
+    load_model=None,
+    total_timesteps=50000,
+    eval_freq=10000
+):
+    # make directory
+    if not os.path.exists(model_path):
+        os.makedirs(model_path)
+
+    save_name = os.path.join(model_path, "rl")
+
+    if load_model is None:
+        model = PPO('MlpPolicy', env, verbose=1)
+    else:
+        model = PPO.load(load_model, env=env)
+
+    eval_callback = EvalCallback(
+        evaluate_func,
+        env,
+        eval_freq=eval_freq,
+        save_path=save_name,
+        nr_iters=10
+    )
+    try:
+        model.learn(total_timesteps=total_timesteps, callback=eval_callback)
+    except KeyboardInterrupt:
+        pass
+    with open(save_name + "_res.json", "w") as outfile:
+        json.dump(eval_callback.res_dict, outfile)
+    model.save(save_name + "_final")
+
+
 # ------------------ CartPole -----------------------
 
 
-def train_cartpole(save_name):
-    dyn = CartpoleDynamics()
-    env = CartPoleEnvRL(dyn, dt=cartpole_dt)
-    model = PPO('MlpPolicy', env, verbose=1)
-
-    model.learn(total_timesteps=60000)
-    model.save(save_name)
-
-
-def finetune_cartpole(save_name, modified_params):
+def train_cartpole(model_path, load_model=None, modified_params={}):
     dyn = CartpoleDynamics(modified_params=modified_params)
     env = CartPoleEnvRL(dyn, dt=cartpole_dt)
-    model = PPO.load(save_name, env=env)
-
-    for i in range(50):
-        model.learn(total_timesteps=1000)
-        evaluate_cartpole(model, env, nr_iters=10)
-    model.save(save_name + "_finetuned")
+    train_main(
+        model_path,
+        env,
+        evaluate_cartpole,
+        load_model=load_model,
+        total_timesteps=50000,
+        eval_freq=1000
+    )
 
 
 def evaluate_cartpole(model, env, max_steps=250, nr_iters=1, render=0):
@@ -68,7 +145,7 @@ def evaluate_cartpole(model, env, max_steps=250, nr_iters=1, render=0):
     # plt.show()
 
 
-def test_cartpole(save_name, modified_params={}, max_steps=500):
+def test_rl_cartpole(save_name, modified_params={}, max_steps=500):
     dyn = CartpoleDynamics(modified_params=modified_params)
     env = CartPoleEnvRL(dyn, dt=cartpole_dt)
     model = PPO.load(save_name)
@@ -139,36 +216,27 @@ def evaluate_wing(model=None, env=None, max_steps=1000, nr_iters=1, render=0):
         "Average error: %3.2f (%3.2f)" %
         (np.mean(div_target), np.std(div_target))
     )
-    return np.array(trajectory), np.mean(div_target), np.std(div_target)
+    return np.array(trajectory), {
+        "mean_div": np.mean(div_target),
+        "std_div": np.std(div_target)
+    }
 
 
-def train_wing(
-    save_name, load_model=None, modified_params={}, steps_per_bunch=10000
-):
+def train_wing(model_path, load_model=None, modified_params={}):
     dyn = FixedWingDynamics(modified_params=modified_params)
     env = WingEnvRL(dyn, fixed_wing_dt)
-    if load_model is None:
-        model = PPO('MlpPolicy', env, verbose=1)
-    else:
-        model = PPO.load(load_model, env=env)
 
-    try:
-        res_dict = defaultdict(list)
-        for k in range(50):
-            print(f"------------- Samples: {k*steps_per_bunch}---------------")
-            _, meandiv, stddiv = evaluate_wing(model, env, nr_iters=30)
-            res_dict["mean_div"].append(meandiv)
-            res_dict["std_div"].append(stddiv)
-            res_dict["samples"].append(k * steps_per_bunch)
-            model.learn(total_timesteps=steps_per_bunch)
-    except KeyboardInterrupt:
-        pass
-    with open(save_name + "_res.json", "w") as outfile:
-        json.dump(res_dict, outfile)
-    model.save(save_name)
+    train_main(
+        model_path,
+        env,
+        evaluate_wing,
+        load_model=load_model,
+        total_timesteps=500000,
+        eval_freq=10000
+    )
 
 
-def test_wing(save_name, modified_params={}, max_steps=1000):
+def test_rl_wing(save_name, modified_params={}, max_steps=1000):
     dyn = FixedWingDynamics(modified_params=modified_params)
     env = WingEnvRL(dyn, fixed_wing_dt)
     model = PPO.load(save_name)
@@ -194,7 +262,7 @@ def test_ours_wing(model_path, modified_params={}, max_steps=1000):
 # ------------------ Quadrotor -----------------------
 
 
-def evaluate_quad(model, env, max_steps=400, nr_iters=1, render=0):
+def evaluate_quad(model, env, max_steps=500, nr_iters=1, render=0):
     divergences = []
     num_steps = []
     np.set_printoptions(precision=3, suppress=1)
@@ -228,14 +296,20 @@ def evaluate_quad(model, env, max_steps=400, nr_iters=1, render=0):
         "Number steps: %3.2f (%3.2f)" %
         (np.mean(num_steps), np.std(num_steps))
     )
-    return drone_trajectory, np.mean(divergences), np.std(divergences)
+    res_step = {
+        "mean_div": np.mean(divergences),
+        "std_div": np.std(divergences),
+        "mean_steps": np.mean(num_steps),
+        "std_steps": np.std(num_steps)
+    }
+    return drone_trajectory, res_step
 
 
 def test_rl_quad(save_name, modified_params={}, max_steps=1000):
     dyn = FlightmareDynamics(modified_params=modified_params)
     env = QuadEnvRL(dyn, quad_dt)
     model = PPO.load(save_name)
-    _ = evaluate_quad(model, env, max_steps, nr_iters=40, render=0)
+    _ = evaluate_quad(model, env, max_steps, nr_iters=1, render=1)
 
 
 def test_ours_quad(model_path, modified_params={}, max_steps=500):
@@ -248,33 +322,19 @@ def test_ours_quad(model_path, modified_params={}, max_steps=500):
     evaluate_quad(model, env, max_steps, nr_iters=1, render=1)
 
 
-def train_quad(
-    save_name, load_model=None, modified_params={}, steps_per_bunch=10000
-):
+def train_quad(model_path, load_model=None, modified_params={}):
     dyn = FlightmareDynamics(modified_params=modified_params)
     env = QuadEnvRL(
         dyn, quad_dt, speed_factor=quad_speed, nr_actions=quad_horizon
     )
-    if load_model is None:
-        model = PPO('MlpPolicy', env, verbose=1)
-    else:
-        model = PPO.load(load_model, env=env)
-
-    try:
-        res_dict = defaultdict(list)
-        for k in range(50):
-            print(f"------------- Samples: {k*steps_per_bunch}---------------")
-            # print(model.total_timesteps)
-            _, meandiv, stddiv = evaluate_quad(model, env, nr_iters=30)
-            res_dict["mean_div"].append(meandiv)
-            res_dict["std_div"].append(stddiv)
-            res_dict["samples"].append(k * steps_per_bunch)
-            model.learn(total_timesteps=steps_per_bunch)
-    except KeyboardInterrupt:
-        pass
-    with open(save_name + "_res.json", "w") as outfile:
-        json.dump(res_dict, outfile)
-    model.save(save_name)
+    train_main(
+        model_path,
+        env,
+        evaluate_quad,
+        load_model=load_model,
+        total_timesteps=500000,
+        eval_freq=10000
+    )
 
 
 if __name__ == "__main__":
@@ -285,15 +345,10 @@ if __name__ == "__main__":
     # test_cartpole(save_name, modified_params={"wind": .5})
 
     # ------------------ Fixed wing drone -----------------------
-    load_name = "trained_models/wing/reinforcement_learning/ppo_50"
-    save_name = "trained_models/wing/reinforcement_learning/ppo_finetuned"
+    load_name = "trained_models/wing/reinforcement_learning/final/ppo_50"
+    save_name = "trained_models/wing/reinforcement_learning/ppo_finetuned_2"
     scenario = {"vel_drag_factor": .3}
-    # train_wing(
-    #     save_name,
-    #     load_model=load_name,
-    #     modified_params=scenario,
-    #     steps_per_bunch=5000
-    # )
+    train_wing(save_name, load_model=load_name, modified_params=scenario)
     # finetune_wing(save_name, modified_params={})
     # test_ours_wing(
     #     "trained_models/wing/current_model",
@@ -305,7 +360,9 @@ if __name__ == "__main__":
     # ------------------ Quadrotor -----------------------
     # save_name = "trained_models/quad/optimizer_04_model/"
     # save_name = "trained_models/quad/reinforcement_learning/ppo_test"
+    # save_name = "trained_models/quad/reinforcement_learning/test_with_dir"
 
-    scenario = {}  # {"translational_drag": np.array([.3, .3, .3])}
+    # scenario = {}  # {"translational_drag": np.array([.3, .3, .3])}
     # test_ours_quad(save_name, modified_params=scenario)
-    train_quad(save_name)
+    # train_quad(save_name)
+    # test_rl_quad(save_name)
