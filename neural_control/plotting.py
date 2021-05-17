@@ -108,9 +108,11 @@ def plot_wing_pos_3d(states, targets, save_path=None):
     plt.plot(states[:, 0], states[:, 1], label="y position", c="red")
     plt.plot(states[:, 0], states[:, 2], label="z position", c="blue")
     for target in targets:
+        plt.plot([0, target[0]], [0, target[1]], c="orange")
+        plt.plot([0, target[0]], [0, target[2]], c="green")
         plt.scatter(target[0], target[1], label="target y", c="orange")
         plt.scatter(target[0], target[2], label="target z", c="green")
-    plt.legend(fontsize=15, loc="upper left")
+    plt.legend(fontsize=15, loc="upper right")
     if save_path is None:
         plt.show()
     else:
