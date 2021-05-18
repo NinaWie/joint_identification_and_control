@@ -73,7 +73,7 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
         self.nr_actions = nr_actions
 
         QuadRotorEnvBase.__init__(self, dynamics, dt)
-        self.action_space = spaces.Box(low=0, high=1, shape=(4, ))
+        self.action_space = spaces.Box(low=-1, high=1, shape=(4, ))
 
         # state and reference
         self.state_inp_dim = 15
@@ -146,7 +146,7 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
             self.current_ref[self.current_ind, 6:9] - self.state[6:9]
         )
         vel_rew = self.thresh_div - vel_div  # How high is velocity diff?
-        u_rew = .25 - (.5 - action)**2
+        u_rew = .5 - np.absolute(.5 - action)
         # have to use abs because otherwise not comparable to thresh div
         av_rew = np.sum(self.thresh_stable - (np.absolute(self.state[9:12])))
 
@@ -156,7 +156,7 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
         # print(av_rew)
         # print(u_rew)
         # print()
-        reward = (
+        reward = .1 * (
             pos_factor * pos_rew + vel_factor * vel_rew + av_factor * av_rew +
             u_rates_factor * np.sum(u_rew[1:]) + u_thrust_factor * u_rew[0]
         )
@@ -164,6 +164,8 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
         return reward
 
     def step(self, action):
+        # rescale action
+        action = (action + 1) / 2
         self.state, is_stable = QuadRotorEnvBase.step(
             self, action, thresh=self.thresh_stable
         )
@@ -174,11 +176,12 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
 
         done = (
             (not is_stable) or pos_div > self.thresh_div
-            or self.current_ind > len(self.current_ref) - self.nr_actions - 1
+            or self.current_ind > len(self.current_ref) - self.nr_actions - 2
         )
 
         reward = 0
         if not done:
+            # reward = self.thresh_div - pos_div
             reward = self.get_reward(action)
         info = {}
         # print()

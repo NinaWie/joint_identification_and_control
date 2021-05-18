@@ -130,7 +130,7 @@ def evaluate_cartpole(model, env, max_steps=250, nr_iters=1, render=0):
     for j in range(nr_iters):
         obs = env.reset()
         for i in range(max_steps):
-            action, _states = model.predict(obs)
+            action, _states = model.predict(obs, deterministic=True)
             actions.append(action)
             obs, rewards, done, info = env.step(action)
             states.append(obs)
@@ -196,7 +196,7 @@ def evaluate_wing(model=None, env=None, max_steps=1000, nr_iters=1, render=0):
                         action = suggested_action[0].numpy()
                 else:
                     # RL
-                    action, _states = model.predict(obs)
+                    action, _states = model.predict(obs, deterministic=True)
                 # print(action)
             else:
                 action_prior = np.array([.25, .5, .5, .5])
@@ -288,11 +288,13 @@ def evaluate_quad(model, env, max_steps=500, nr_iters=1, render=0):
                 obs_state, obs_ref = env.prepare_obs()
                 with torch.no_grad():
                     suggested_action = model(obs_state, obs_ref)
-                    suggested_action = torch.sigmoid(suggested_action)[0]
+                    suggested_action = (
+                        torch.sigmoid(suggested_action)[0] * 2 - 1
+                    )
                     suggested_action = torch.reshape(suggested_action, (10, 4))
                     action = suggested_action[0].numpy()
             else:  # RL
-                action, _states = model.predict(obs)
+                action, _states = model.predict(obs, deterministic=True)
 
             obs, rewards, done, info = env.step(action)
             if render:
@@ -377,9 +379,10 @@ if __name__ == "__main__":
 
     # ------------------ Quadrotor -----------------------
     # save_name = "trained_models/quad/optimizer_04_model/"
-    save_name = "trained_models/quad/reinforcement_learning/mpc_loss"
+    # load_path = "trained_models/quad/reinforcement_learning/best_2speed"
+    save_name = "trained_models/quad/reinforcement_learning/best_2speed"
 
     scenario = {}  # {"translational_drag": np.array([.3, .3, .3])}
     # test_ours_quad(save_name, modified_params=scenario)
-    train_quad(save_name, modified_params=scenario)
-    # test_rl_quad(save_name)
+    train_quad(save_name, load_model=load_path, modified_params=scenario)
+    # test_rl_quad(os.path.join(save_name, "rl_final"))
