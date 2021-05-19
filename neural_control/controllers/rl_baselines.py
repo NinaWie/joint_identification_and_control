@@ -57,6 +57,9 @@ class EvalCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         if self.n_calls % self.eval_freq == 0:
+            if self.eval_env.thresh_div < 3:
+                self.eval_env.thresh_div += .05
+                print("increased thresh div", self.eval_env.thresh_div)
             # evaluate
             _, res_step = self.eval_func(
                 self.model, self.eval_env, nr_iters=self.nr_iters
@@ -68,6 +71,7 @@ class EvalCallback(BaseCallback):
             # save every time (TODO: change to saving best?)
             path = self.save_path + '_{}_steps'.format(self.num_timesteps)
             self.model.save(path)
+            print("model saved at ", path)
             if self.verbose > 1:
                 print("Saving model checkpoint to {}".format(path))
         return True
@@ -97,7 +101,7 @@ def train_main(
         env,
         eval_freq=eval_freq,
         save_path=save_name,
-        nr_iters=10
+        nr_iters=40
     )
     try:
         model.learn(total_timesteps=total_timesteps, callback=eval_callback)
@@ -240,13 +244,14 @@ def train_wing(model_path, load_model=None, modified_params={}):
     dyn = FixedWingDynamics(modified_params=modified_params)
     env = WingEnvRL(dyn, fixed_wing_dt)
 
+    eval_freq = 10000 if load_model is None else 3000
     train_main(
         model_path,
         env,
         evaluate_wing,
         load_model=load_model,
         total_timesteps=500000,
-        eval_freq=10000
+        eval_freq=eval_freq
     )
 
 
@@ -254,9 +259,7 @@ def test_rl_wing(save_name, modified_params={}, max_steps=1000):
     dyn = FixedWingDynamics(modified_params=modified_params)
     env = WingEnvRL(dyn, fixed_wing_dt)
     model = PPO.load(save_name)
-    trajectory, _, _ = evaluate_wing(
-        model, env, max_steps, nr_iters=40, render=0
-    )
+    trajectory, _ = evaluate_wing(model, env, max_steps, nr_iters=40, render=0)
     # plot
     plot_wing_pos_3d(
         trajectory, [env.target_point], save_path=save_name + "_plot.png"
@@ -282,7 +285,7 @@ def evaluate_quad(model, env, max_steps=500, nr_iters=1, render=0):
     np.set_printoptions(precision=3, suppress=1)
     for j in range(nr_iters):
         obs = env.reset()
-        drone_trajectory = []
+        drone_trajectory, avg_div = [], []
         for i in range(max_steps):
             if isinstance(model, Net):  # DP
                 obs_state, obs_ref = env.prepare_obs()
@@ -299,11 +302,20 @@ def evaluate_quad(model, env, max_steps=500, nr_iters=1, render=0):
             obs, rewards, done, info = env.step(action)
             if render:
                 env.render()
-            divergences.append(env.get_divergence())
-            if done:
-                num_steps.append(len(drone_trajectory))
-                break
+            avg_div.append(env.get_divergence())
             drone_trajectory.append(env.state)
+            if done:
+                break
+        num_steps.append(len(drone_trajectory))
+        divergences.append(np.mean(avg_div))
+
+    full_runs = np.array(num_steps) == 489
+    if np.sum(full_runs) > 0:
+        div_full_runs = np.array(divergences)[full_runs]
+        print(
+            "Error full runs: %3.2f (%3.2f)" %
+            (np.mean(div_full_runs), np.std(div_full_runs))
+        )
     print(
         "Tracking error: %3.2f (%3.2f)" %
         (np.mean(divergences), np.std(divergences))
@@ -323,7 +335,10 @@ def evaluate_quad(model, env, max_steps=500, nr_iters=1, render=0):
 
 def test_rl_quad(save_name, modified_params={}, max_steps=1000):
     dyn = FlightmareDynamics(modified_params=modified_params)
-    env = QuadEnvRL(dyn, quad_dt)
+    env = QuadEnvRL(
+        dyn, quad_dt, speed_factor=quad_speed, nr_actions=quad_horizon
+    )
+    env.thresh_div = 3
     model = PPO.load(save_name)
     _ = evaluate_quad(model, env, max_steps, nr_iters=1, render=1)
 
@@ -336,7 +351,7 @@ def test_ours_quad(model_path, modified_params={}, max_steps=500):
     dyn = FlightmareDynamics(modified_params=modified_params)
     # param_dict["speed_factor"] = .2
     env = QuadEnvRL(dyn, **param_dict)
-    evaluate_quad(model, env, max_steps, nr_iters=1, render=1)
+    evaluate_quad(model, env, max_steps, nr_iters=40, render=0)
 
 
 def train_quad(model_path, load_model=None, modified_params={}):
@@ -365,24 +380,27 @@ if __name__ == "__main__":
     # )
 
     # ------------------ Fixed wing drone -----------------------
-    # load_name = "trained_models/wing/reinforcement_learning/final/ppo_50"
-    # save_name = "trained_models/wing/reinforcement_learning/ppo_finetuned_2"
-    # scenario = {"vel_drag_factor": .3}
+    load_name = "trained_models/wing/reinforcement_final/rl_350000_steps"
+    # "trained_models/wing/reinforcement_learning/final/ppo_50"
+    save_name = "trained_models/wing/reinforcement_veldrag/rl_12000_steps"
+    scenario = {"vel_drag_factor": .3}
     # train_wing(save_name, load_model=load_name, modified_params=scenario)
-    # finetune_wing(save_name, modified_params={})
     # test_ours_wing(
-    #     "trained_models/wing/current_model",
-    #     modified_params=scenario
+    #     "trained_models/wing/current_model", modified_params=scenario
     # )
-    # test_wing(save_name, modified_params=scenario)
+    test_rl_wing(save_name, modified_params=scenario)
     # evaluate_wing(render=1)
 
     # ------------------ Quadrotor -----------------------
-    # save_name = "trained_models/quad/optimizer_04_model/"
-    # load_path = "trained_models/quad/reinforcement_learning/best_2speed"
-    save_name = "trained_models/quad/reinforcement_learning/best_2speed"
+    # load_path = None
+    # # "trained_models/quad/reinforcement_learning/best_2speed/rl_final"
+    # save_name = "trained_models/quad/reinforcement_learning/best_2speed"
 
-    scenario = {}  # {"translational_drag": np.array([.3, .3, .3])}
-    # test_ours_quad(save_name, modified_params=scenario)
-    train_quad(save_name, load_model=load_path, modified_params=scenario)
-    # test_rl_quad(os.path.join(save_name, "rl_final"))
+    # scenario = {}  # {"translational_drag": np.array([.3, .3, .3])}
+    # test_ours_quad(
+    #     "trained_models/quad/optimizer_04_model/", modified_params=scenario
+    # )
+    # train_quad(save_name, load_model=load_path, modified_params=scenario)
+    # test_rl_quad(
+    #     os.path.join(save_name, "rl_780000_steps"), modified_params=scenario
+    # )

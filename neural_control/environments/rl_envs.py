@@ -19,9 +19,6 @@ metadata = {'render.modes': ['human']}
 
 class CartPoleEnvRL(gym.Env, CartPoleEnv):
 
-    def __init__(self):
-        pass
-
     def __init__(self, dynamics, dt=0.05):
         CartPoleEnv.__init__(self, dynamics, dt=dt)
 
@@ -35,6 +32,10 @@ class CartPoleEnvRL(gym.Env, CartPoleEnv):
 
         self.action_space = spaces.Box(low=-1, high=1, shape=(1, ))
         self.observation_space = spaces.Box(-high, high)
+
+    def set_state(self, state):
+        self.state = state
+        self._state = state
 
     def step(self, action):
         super()._step(action, is_torch=False)
@@ -77,14 +78,14 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
 
         # state and reference
         self.state_inp_dim = 15
-        self.obs_dim = self.state_inp_dim + 10 * 9
+        self.obs_dim = self.state_inp_dim + nr_actions * 9
         high = np.array([10 for _ in range(self.obs_dim)])
         self.observation_space = spaces.Box(
             -high, high, shape=(self.obs_dim, )
         )
 
         self.thresh_stable = 1.5
-        self.thresh_div = 2
+        self.thresh_div = .3
 
         kwargs["dt"] = dt
         kwargs['speed_factor'] = speed_factor
@@ -128,7 +129,7 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
             self.current_ref[self.current_ind, :3] - self.state[:3]
         )
 
-    def get_reward(self, action):
+    def get_reward_mpc(self, action):
         """
         MPC type cost function turned into reward
         """
@@ -150,11 +151,6 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
         # have to use abs because otherwise not comparable to thresh div
         av_rew = np.sum(self.thresh_stable - (np.absolute(self.state[9:12])))
 
-        # print(action)
-        # print(pos_rew)
-        # print(vel_rew)
-        # print(av_rew)
-        # print(u_rew)
         # print()
         reward = .1 * (
             pos_factor * pos_rew + vel_factor * vel_rew + av_factor * av_rew +
@@ -162,6 +158,52 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
         )
 
         return reward
+
+    def get_reward_mario(self, action):
+        """
+        ori_coeff: -0.01        # reward coefficient for orientation
+        ang_vel_coeff: 0   # reward coefficient for angular velocity
+        # epsilon coefficient
+        pos_epsilon: 2        # reward epsilon for position 
+        ori_epsilon: 0.2        # reward epsilon for orientation
+        lin_vel_epsilon: 2   # reward epsilon for linear velocity
+        ang_vel_epsilon: 0.2   # reward epsilon for angular velocity
+        """
+        pos_coeff = -0.02
+        pos_epsilon = 2
+        lin_vel_coeff = -0.02
+        lin_vel_epsilon = 2
+        survive_reward = 0.001
+        act_coeff = -0.02
+        ori_coeff = -0.005  # ori_coeff: -0.01
+        ori_epsilon = .2
+
+        # position
+        pos_loss = np.sum(
+            self.current_ref[self.current_ind, :3] - self.state[:3]
+        )**2
+        pos_reward = pos_coeff * (pos_loss - pos_epsilon)
+        # orientation:
+        ori_loss = np.sum(
+            self.current_ref[self.current_ind, 3:6] - self.state[3:6]
+        )**2
+        ori_reward = ori_coeff * (ori_loss - ori_epsilon)
+        # velocity
+        vel_loss = np.sum(
+            self.current_ref[self.current_ind, 6:9] - self.state[6:9]
+        )**2
+        vel_reward = lin_vel_coeff * (vel_loss - lin_vel_epsilon)
+        # action
+        act_reward = act_coeff * np.sum((.5 - action)**2)
+
+        # print(pos_reward, vel_reward, survive_reward, act_reward, ori_reward)
+        return (
+            pos_reward + vel_reward + survive_reward + act_reward + ori_reward
+        )
+
+    def set_state(self, state):
+        self.state = state
+        self._state.from_np(state)
 
     def step(self, action):
         # rescale action
@@ -182,7 +224,8 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
         reward = 0
         if not done:
             # reward = self.thresh_div - pos_div
-            reward = self.get_reward(action)
+            # reward = self.get_reward(action)
+            reward = self.get_reward_mario(action)
         info = {}
         # print()
         # np.set_printoptions(precision=3, suppress=1)
@@ -248,6 +291,10 @@ class WingEnvRL(gym.Env, SimpleWingEnv):
 
         self.drone_render_object.set_target([self.target_point])
         return self.obs
+
+    def set_state(self, state):
+        self.state = state
+        self._state = state
 
     def get_divergence(self):
         drone_on_line = project_to_line(
