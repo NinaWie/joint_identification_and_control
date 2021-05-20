@@ -49,7 +49,7 @@ class CartpoleDynamics:
         """
         Compute new state from state and action
         """
-        self.timestamp += .1
+        self.timestamp += .05
         # # get action to range [-1, 1]
         # action = torch.sigmoid(action)
         # action = action * 2 - 1
@@ -97,6 +97,7 @@ class CartpoleDynamics:
                 self.cfg["total_mass"]
             )
         )
+        thetaacc += np.sin(self.timestamp) * self.cfg["contact"]
         wind_drag = self.cfg["wind"] * torch.cos(theta * 5)
 
         # swapped these two lines
@@ -108,13 +109,14 @@ class CartpoleDynamics:
             temp - (self.cfg['polemass_length'] * thetaacc * costheta) - sig
         ) / self.cfg["total_mass"]
 
-        if self.cfg["contact"] > 0 and (
-            # first possibility: periodically applied
-            (np.sin(self.timestamp) > 0 and self.enforce_contact == -1)
-            # second possibility: set manually (for dataset generation!)
-            or self.enforce_contact == 1
-        ):
-            xacc += self.cfg["contact"]
+        # # Contact dynamics on the cart
+        # if self.cfg["contact"] > 0 and (
+        #     # first possibility: periodically applied
+        #     (np.sin(self.timestamp) > 0 and self.enforce_contact == -1)
+        #     # second possibility: set manually (for dataset generation!)
+        #     or self.enforce_contact == 1
+        # ):
+        #     xacc += self.cfg["contact"]
 
         x = x + dt * x_dot
         x_dot = x_dot + dt * (xacc - self.cfg["vel_drag"] * x_dot)

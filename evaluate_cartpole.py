@@ -210,8 +210,6 @@ class Evaluator:
                 success[n] = i
                 self.eval_env._reset()
         # print(success)
-        if return_success:
-            return success, velocities
         mean_err = np.mean(success)
         std_err = np.std(success)
         if not self.image_dataset:
@@ -220,6 +218,8 @@ class Evaluator:
                 (np.mean(velocities), np.std(velocities))
             )
             print("Average success: %3.2f (%3.2f)" % (mean_err, std_err))
+        if return_success:
+            return success, velocities
         return mean_err, std_err, data_collection
 
 
@@ -312,7 +312,7 @@ if __name__ == "__main__":
             is_seq=("seq" in args.model or "contact" in args.model)
         )
 
-    modified_params = {"contact": 1}
+    modified_params = {"contact": .75}
     # {"wind": .5}
     # wind 0.01 works for wind added to x directlt, needs much higher (.5)
     # to affect the acceleration much
@@ -329,9 +329,8 @@ if __name__ == "__main__":
         while len(collect_actions) < args.dataset:
             counter += 1
             evaluator.init_buffers()
-            evaluator.eval_env.dynamics.enforce_contact = int(counter % 2 == 0)
             success, suc_std, _ = evaluator.evaluate_in_environment(
-                render=True, max_steps=30
+                render=True, max_steps=400
             )
         collect_actions = np.array(collect_actions)
         # cut off bottom and top
@@ -339,7 +338,7 @@ if __name__ == "__main__":
         collect_states = np.array(collect_states)
         print(collect_states.shape, collect_actions.shape, collect_img.shape)
         np.savez(
-            "data/cartpole_img_29_contact.npz", collect_img, collect_actions,
+            "data/cartpole_31_wind_random.npz", collect_img, collect_actions,
             collect_states
         )
     elif args.eval > 0:
@@ -351,8 +350,9 @@ if __name__ == "__main__":
             nr_iters=args.eval,
             return_success=True
         )
+        is_contact = "bl" if len(modified_params.keys()) == 0 else "mismatch"
         np.savez(
-            f"../presentations/final_res/cartpole_contact_dyn/{args.model}_new.npz",
+            f"../presentations/final_res/cartpole_seq_wind/{args.model}_{is_contact}.npz",
             np.array(successes), np.array(velocities)
         )
     else:

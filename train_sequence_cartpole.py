@@ -186,20 +186,9 @@ class TrainSequenceCartpole(TrainBase):
                     dt=self.delta_t
                 )
                 if i == 0:
-                    print("\nExample dynamics")
-                    self.eval_dynamics.timestamp = 0.1
-                    next_state_eval_contact = self.eval_dynamics(
-                        current_state, actions, self.delta_t
-                    )
-                    self.eval_dynamics.timestamp = -0.1
-                    next_state_eval_noc = self.eval_dynamics(
-                        current_state, actions, self.delta_t
-                    )
                     print("start at ", current_state[0])
                     print("pred", next_state_pred[0].detach())
                     print("gt", next_state_d2[0])
-                    print("next with contact", next_state_eval_contact[0])
-                    print("next ohne contact", next_state_eval_noc[0])
                     print()
 
                 loss = torch.sum((next_state_pred - next_state_d2)**2)
@@ -242,7 +231,7 @@ if __name__ == "__main__":
     # TRAIN DYNAMICS WITH SEQUENCE
     # base_model = None
     # baseline_dyn = None
-    # config["general"]["save_name"] = "final_dyn_seq"
+    # config["general"]["save_name"] = "dyn_seq_wind_random"
     # config["general"]["sample_in"] = "train_env"
     # config["general"]["resample_every"] = 1000
     # config["train_dyn_for_epochs"] = 200
@@ -251,25 +240,25 @@ if __name__ == "__main__":
 
     # # train environment is learnt
     # train_dyn = SequenceCartpoleDynamics()
-    # eval_dyn = CartpoleDynamics({"contact": 1})
+    # eval_dyn = None  # CartpoleDynamics({"contact": .75})
     # trainer = TrainSequenceCartpole(train_dyn, eval_dyn, config)
     # trainer.initialize_model(
-    #     base_model, load_dataset="data/cartpole_img_29_contact.npz"
+    #     base_model, load_dataset="data/cartpole_31_wind_random.npz"
     # )
     # # RUN
     # trainer.run_dynamics(config)
 
     # TRAIN CONTROLLER WITH SEQUENCE
-    base_model = "trained_models/cartpole/final_pretrained_nocontact"
-    baseline_dyn = "trained_models/cartpole/final_dyn_seq"
-    config["general"]["save_name"] = "final_con_seq"
+    base_model = "trained_models/cartpole/final_baseline_nocontact"
+    baseline_dyn = "trained_models/cartpole/dyn_seq_wind_random"
+    config["general"]["save_name"] = "con_seq_wind_random"
 
     config["general"]["sample_in"] = "eval_env"
     config["general"]["resample_every"] = 1000
     config["train_dyn_for_epochs"] = -1
     config["general"]["thresh_div_start"] = 0.2
     # no self play possible for contact dynamics!
-    config["general"]["self_play"] = 0
+    config["general"]["self_play"] = 100
     config["balance"]["learning_rate_controller"] = 1e-6
 
     # train environment is learnt
@@ -277,10 +266,10 @@ if __name__ == "__main__":
     train_dyn.load_state_dict(
         torch.load(os.path.join(baseline_dyn, "dynamics_model"))
     )
-    eval_dyn = CartpoleDynamics({"contact": 1})
+    eval_dyn = CartpoleDynamics()  # {"contact": .75})
     trainer = TrainSequenceCartpole(train_dyn, eval_dyn, config)
     trainer.initialize_model(
-        base_model, load_dataset="data/cartpole_img_29_contact.npz"
+        base_model, load_dataset="data/cartpole_31_wind_random.npz"
     )
     # RUN
     trainer.run_dynamics(config)
