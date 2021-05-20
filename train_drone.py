@@ -2,6 +2,7 @@ import os
 import json
 import time
 import numpy as np
+import copy
 import torch
 import torch.nn.functional as F
 
@@ -46,6 +47,7 @@ class TrainDrone(TrainBase):
             raise ValueError(
                 "sample in must be one of eval_env, train_env, real_flightmare"
             )
+        self.tmp_num_selfplay = self.config["self_play"]
 
     def initialize_model(
         self,
@@ -113,11 +115,14 @@ class TrainDrone(TrainBase):
         self.state_data = QuadDataset(self.epoch_size, **self.config)
         if self.config.get("nr_test_data", 0) > 0:
             print("Initialize test dataset")
+            tmp_selfplay = self.config["self_play"]
+            self.config["self_play"] = 0
             self.test_data = QuadDataset(
                 num_states=self.config["nr_test_data"],
                 test_time=1,
                 **self.config
             )
+            self.config["self_play"] = tmp_selfplay
             self.testloader = torch.utils.data.DataLoader(
                 self.test_data, batch_size=1, shuffle=False, num_workers=0
             )
@@ -156,6 +161,23 @@ class TrainDrone(TrainBase):
         # EVALUATE
         controller = NetworkWrapper(self.net, self.state_data, **self.config)
 
+        # if epoch % self.config["resample_every"] == 0:
+        #     print("COLLECT NEW DATA WITH POLICY")
+        #     self.state_data.num_self_play = self.tmp_num_selfplay
+        #     print("update model")
+        #     self.copied_net = copy.deepcopy(self.net)
+
+        # prevent self play if next epoch is the dynamics model
+        if epoch == 0 or self.results_dict["train_dyn_con"][epoch
+                                                            ] == "controller":
+            self.state_data.num_self_play = self.tmp_num_selfplay
+            self.results_dict["collected_data"].append(
+                self.state_data.num_self_play
+            )
+        else:
+            self.results_dict["collected_data"].append(0)
+
+        print("check: using self play?", self.state_data.num_self_play)
         print("--------- eval in trained simulator (D1 modified) --------")
         evaluator = QuadEvaluator(controller, self.eval_env, **self.config)
         with torch.no_grad():
@@ -165,30 +187,34 @@ class TrainDrone(TrainBase):
         self.results_dict["eval_in_d1_trained_mean"].append(suc_mean)
         self.results_dict["eval_in_d1_trained_std"].append(suc_std)
 
-        if epoch == 0 and self.config["train_dyn_for_epochs"] >= 0:
-            self.tmp_num_selfplay = self.state_data.num_self_play
-            self.state_data.num_self_play = 0
-            print("stop self play")
-        if epoch == self.config["train_dyn_for_epochs"]:
-            self.state_data.num_self_play = self.tmp_num_selfplay
-            print("start self play to", self.tmp_num_selfplay)
+        print("already collected self play", self.state_data.eval_counter)
+        print("saved in results dict", self.results_dict["collected_data"])
+        self.state_data.num_self_play = 0
+
+        # if epoch == 0 and self.config["train_dyn_for_epochs"] >= 0:
+        #     self.tmp_num_selfplay = self.state_data.num_self_play
+        #     self.state_data.num_self_play = 0
+        #     print("no self play")
+        # if epoch == self.config["train_dyn_for_epochs"]:
+        #     self.state_data.num_self_play = self.tmp_num_selfplay
+        #     print("start self play to", self.tmp_num_selfplay)
 
         ### code to evaluate also in D1 and D2
         ### need to ensure that eval_env is with train_dynamics
         # # set self play to zero so no sampled data is added
         # tmp_self_play = self.state_data.num_self_play
         # self.state_data.num_self_play = 0
-        # print("--------- eval in real (D2) -------------")
-        # d2_env = QuadRotorEnvBase(self.eval_dynamics, self.delta_t)
-        # evaluator = QuadEvaluator(
-        #     controller, d2_env, test_time=1, **self.config
-        # )
-        # with torch.no_grad():
-        #     suc_mean, suc_std = evaluator.run_eval(
-        #         "rand", nr_test=10, **self.config
-        #     )
-        # self.results_dict["eval_in_d2_mean"].append(suc_mean)
-        # self.results_dict["eval_in_d2_std"].append(suc_std)
+        print("--------- eval in real (D2) -------------")
+        d2_env = QuadRotorEnvBase(self.eval_dynamics, self.delta_t)
+        evaluator = QuadEvaluator(
+            controller, d2_env, test_time=1, **self.config
+        )
+        with torch.no_grad():
+            suc_mean, suc_std = evaluator.run_eval(
+                "rand", nr_test=10, **self.config
+            )
+        self.results_dict["eval_in_d2_mean"].append(suc_mean)
+        self.results_dict["eval_in_d2_std"].append(suc_std)
 
         # print("--------- eval in base simulator (D1) -------------")
         # base_env = QuadRotorEnvBase(FlightmareDynamics(), self.delta_t)
@@ -201,7 +227,8 @@ class TrainDrone(TrainBase):
         # self.results_dict["eval_in_d1_std"].append(suc_std)
         # self.state_data.num_self_play = tmp_self_play
 
-        self.sample_new_data(epoch)
+        # here, we use only self play data
+        # self.sample_new_data(epoch)
 
         # increase threshold
         if epoch % 5 == 0 and self.config["thresh_div"] < self.thresh_div_end:
@@ -252,11 +279,22 @@ def train_dynamics(base_model, config, trainable_params=1):
     config["return_div"] = 1
     config["suc_up_down"] = -1
 
-    config["epoch_size"] = 500
-    config["train_dyn_for_epochs"] = 10
+    # use only self play
+    config["epoch_size"] = 200
+    config["self_play"] = 200
+
+    config["train_dyn_for_epochs"] = 200
     config["nr_test_data"] = 200
     # make sure not to resample during dynamics training
-    config["resample_every"] = config["train_dyn_for_epochs"] + 1
+    config["resample_every"] = 100  # config["train_dyn_for_epochs"] + 1
+    config["learning_rate_dynamics"] = 0.01
+
+    dynamics_period = ["dynamics" for _ in range(5)]
+    controller_period = ["controller" for _ in range(15)]
+    train_dyn_con = []
+    for i in range(10):
+        train_dyn_con.extend(dynamics_period)
+        train_dyn_con.extend(controller_period)
 
     # train environment is learnt
     train_dynamics = LearntQuadDynamics(trainable_params=trainable_params)
@@ -266,7 +304,7 @@ def train_dynamics(base_model, config, trainable_params=1):
     trainer.initialize_model(base_model, modified_params=modified_params)
 
     # RUN
-    trainer.run_dynamics(config)
+    trainer.run_dynamics(config, train_dyn_con=train_dyn_con)
 
 
 def train_sampling_finetune(base_model, config):
@@ -305,7 +343,7 @@ if __name__ == "__main__":
     # config["thresh_div_start"] = 1
     # config["thresh_stable_start"] = 1.5
 
-    config["save_name"] = "final_dyn_woparams"
+    config["save_name"] = "final_both_iteratively"
 
     config["nr_epochs"] = 400
 

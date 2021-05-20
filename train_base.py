@@ -243,6 +243,11 @@ class TrainBase:
                 # )
             else:
                 # should work for both recurrent and normal
+                # action_copiednet = self.copied_net(in_state, in_ref_state)
+                # action_seq_copiednet = torch.reshape(
+                #     torch.sigmoid(action_copiednet),
+                #     (-1, self.nr_actions, self.action_dim)
+                # )
                 loss = self.train_dynamics_model(current_state, action_seq)
                 self.count_finetune_data += len(current_state)
 
@@ -259,10 +264,22 @@ class TrainBase:
                     )
                     prev_running_loss = running_loss
 
+            # running_dyn_loss += loss_dyn.item()
+            # running_con_loss += loss_con.item()
             running_loss += loss.item()
+            # print(loss_con.item(), loss_dyn.item())
+
         # time_epoch = time.time() - tic
         epoch_loss = running_loss / i
-        self.results_dict["loss"].append(epoch_loss)
+        not_trained = "controller" if train == "dynamics" else "dynamics"
+        self.results_dict["loss_" + train].append(epoch_loss)
+        try:
+            self.results_dict["loss_" + not_trained].append(
+                self.results_dict["loss_" + not_trained][-1]
+            )
+        except IndexError:
+            self.results_dict["loss_" + not_trained].append(0)
+
         self.results_dict["trained"].append(train)
         print(f"Loss ({train}): {round(epoch_loss, 2)}")
         self.writer.add_scalar("Loss/train", epoch_loss)
@@ -393,7 +410,8 @@ class TrainBase:
         # Save model
         self.finalize()
 
-    def run_dynamics(self, config):
+    def run_dynamics(self, config, train_dyn_con=[]):
+        self.results_dict["train_dyn_con"] = train_dyn_con
         try:
             for epoch in range(config["nr_epochs"]):
                 _ = self.evaluate_model(epoch)
@@ -401,13 +419,16 @@ class TrainBase:
                 # train dynamics as long as
                 # - lower than train_dyn_for_epochs
                 # - alternating or use all?
-                if (
-                    epoch <= config.get("train_dyn_for_epochs", 10)
-                    and epoch % config.get("train_dyn_every", 1) == 0
-                ):
-                    model_to_train = "dynamics"
+                if len(train_dyn_con) == 0:
+                    if (
+                        epoch <= config.get("train_dyn_for_epochs", 10)
+                        and epoch % config.get("train_dyn_every", 1) == 0
+                    ):
+                        model_to_train = "dynamics"
+                    else:
+                        model_to_train = "controller"
                 else:
-                    model_to_train = "controller"
+                    model_to_train = train_dyn_con[epoch]
 
                 print(f"\nEpoch {epoch}")
                 self.run_epoch(train=model_to_train)

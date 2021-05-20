@@ -17,8 +17,9 @@ class DroneDataset(torch.utils.data.Dataset):
         self.mean = mean
         self.std = std
         self.num_sampled_states = num_states
-        self.num_self_play = int(self_play * num_states)
-        self.total_dataset_size = self.num_sampled_states + self.num_self_play
+        self.num_self_play = self_play  # int(self_play * num_states)
+        assert self.num_sampled_states >= self.num_self_play, f"sampled {self.num_sampled_states} self play {self.num_self_play} "
+        self.total_dataset_size = self.num_sampled_states
 
         self.kwargs = kwargs
 
@@ -37,7 +38,7 @@ class DroneDataset(torch.utils.data.Dataset):
         if self.num_self_play > 0:
             return (
                 self.eval_counter % self.num_self_play
-            ) + self.num_sampled_states
+            )  # + self.num_sampled_states
 
     def resample_data(self):
         """
@@ -158,6 +159,15 @@ class QuadDataset(DroneDataset):
 
         # transform acceleration
         return inp_drone_states, drone_states, inp_ref_states, torch_ref_states
+
+
+class QuadDynamicsDataset(torch.utils.data.Dataset):
+
+    def __init__(self, num_data, state_size, action_dim):
+        # First constructor: New dataset for training
+        self.num_states = num_data
+        self.states = np.zeros((num_data, state_size))
+        self.actions = np.zeros((num_data, action_dim))
 
 
 class CartpoleDataset(torch.utils.data.Dataset):
