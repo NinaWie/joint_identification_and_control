@@ -301,7 +301,7 @@ if __name__ == "__main__":
     # define whether the parameters are trainable
     trainable_params = 0
 
-    baseline_model = "trained_models/quad/optimizer_04_model"
+    baseline_model = "trained_models/quad/current_model"
     # config["thresh_div_start"] = 1
     # config["thresh_stable_start"] = 1.5
 

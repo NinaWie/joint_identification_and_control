@@ -398,7 +398,7 @@ if __name__ == "__main__":
 
     # scenario = {}  # {"translational_drag": np.array([.3, .3, .3])}
     # test_ours_quad(
-    #     "trained_models/quad/optimizer_04_model/", modified_params=scenario
+    #     "trained_models/quad/current_model/", modified_params=scenario
     # )
     # train_quad(save_name, load_model=load_path, modified_params=scenario)
     # test_rl_quad(
