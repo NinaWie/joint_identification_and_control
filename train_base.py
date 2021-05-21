@@ -201,6 +201,16 @@ class TrainBase:
             # order to correctly apply the action
             in_state, current_state, in_ref_state, ref_states = data
 
+            # print()
+            # print("in state")
+            # print(in_state[0])
+            # print("current state")
+            # print(current_state[0])
+            # print("in ref state")
+            # print(in_ref_state[0])
+            # print("ref state")
+            # print(ref_states[0])
+
             actions = self.net(in_state, in_ref_state)
             actions = torch.sigmoid(actions)
             action_seq = torch.reshape(
@@ -208,6 +218,8 @@ class TrainBase:
             )
 
             if train == "controller":
+                # print("train controller")
+                # print(action_seq[0])
                 loss = self.train_controller_model(
                     current_state, action_seq, in_ref_state, ref_states
                 )

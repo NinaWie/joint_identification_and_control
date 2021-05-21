@@ -324,29 +324,31 @@ class WingDataset(DroneDataset):
         self.nr_actions = nr_actions
         super().__init__(num_states, self_play, mean=mean, std=std, **kwargs)
         if self.mean is None:
-            self.mean = torch.tensor(
-                [
-                    26.69862174987793, 0.3841058909893036, 0.32479792833328247,
-                    11.525899887084961, -0.00016766408225521445,
-                    0.16617104411125183, 0.007394296582788229, 0.018172707409,
-                    0.020353179425001144, -0.0005361468647606671,
-                    0.01662314310669899, 0.004487641621381044
-                ]
-            ).float()
-            self.std = torch.tensor(
-                [
-                    16.626325607299805, 0.8449159860610962, 0.8879243731498718,
-                    0.6243225932121277, 0.28072822093963623, 0.29176747798,
-                    0.04499124363064766, 0.10370047390460968, 0.049977313727,
-                    0.06449887901544571, 0.27508440613746643, 0.05634994804859
-                ]
-            ).float()
+            self.set_fixed_mean()
         else:
             self.mean = torch.tensor(self.mean)
             self.std = torch.tensor(self.std)
         states, ref_states = self.sample_data(self.total_dataset_size)
         (self.normed_states, self.states, self.in_ref_states,
          self.ref_states) = self.prepare_data(states, ref_states)
+
+    def set_fixed_mean(self):
+        self.mean = torch.tensor(
+            [
+                0.0, 0.0, 0.0, 11.525899887084961, -0.00016766408225521445,
+                0.16617104411125183, 0.007394296582788229, 0.018172707409,
+                0.020353179425001144, -0.0005361468647606671,
+                0.01662314310669899, 0.004487641621381044
+            ]
+        ).float()
+        self.std = torch.tensor(
+            [
+                16.626325607299805, 0.8449159860610962, 0.8879243731498718,
+                0.6243225932121277, 0.28072822093963623, 0.29176747798,
+                0.04499124363064766, 0.10370047390460968, 0.049977313727,
+                0.06449887901544571, 0.27508440613746643, 0.05634994804859
+            ]
+        ).float()
 
     def sample_data(self, num_samples):
         """
@@ -414,6 +416,96 @@ class WingDataset(DroneDataset):
         relative_ref = ref_states[:, -1] - states[:, :3]
 
         return normed_states, states, relative_ref, ref_states
+
+
+class WingSequenceDataset(WingDataset):
+
+    def __init__(
+        self,
+        num_data,
+        self_play="all",
+        buffer_len=3,
+        dt=0.05,
+        nr_actions=10,
+        **kwargs
+    ):
+        # placeholders
+        self.nr_actions = nr_actions
+        self.dt = dt
+        # self.state_action = torch.zeros(num_data, buffer_len, 12 + 4)
+        # self.ref_states = torch.zeros(num_data, self.nr_actions)
+
+        # input to neural network: normalized states with relative position
+        self.normed_states = torch.zeros(num_data, buffer_len * (12 + 4))
+        # just the current state
+        self.states = torch.zeros(num_data, 12)
+        # ref that is input to the net
+        self.in_ref_states = torch.zeros(num_data, 3)
+        # unit vector in direction of last state on ref
+        self.ref_states = torch.zeros(num_data, self.nr_actions, 3)
+
+        # for normalization, set mean and std
+        self.set_fixed_mean()
+        self.num_sampled_states = 0
+
+        if self_play == "all":
+            self.num_self_play = num_data
+        else:
+            self.num_self_play = self_play
+        self.eval_counter = 0
+
+    def get_eval_index(self):
+        """
+        compute current index where to add new data
+        """
+        if self.num_self_play > 0:
+            return (self.eval_counter % self.num_self_play)
+
+    def prepare_data(self, np_state_actions, ref_states):
+        # torch format
+        # if len(np_state_actions.shape) == 1:
+        np_state_actions = np.expand_dims(np_state_actions, 0)
+        ref_states = np.expand_dims(ref_states, 0)
+        # if not isinstance(np_state_actions, torch.Tensor):
+        np_state_actions = self.to_torch(np_state_actions)
+        ref_states = self.to_torch(ref_states)
+
+        # current state unnormalized
+        current_state = np_state_actions[:, 0, :12]
+
+        # 1) Normalized state and remove position
+        normed_states = np_state_actions[:, :, :12].clone()
+        # subtract current position
+        normed_states[:, :, :3] = normed_states[:, :, :3] - torch.unsqueeze(
+            current_state[:, :3], 1
+        )
+        # normalize whole history
+        normed_states = ((normed_states - self.mean) / self.std)
+        # add action and flatten
+        history = torch.cat(
+            [normed_states, np_state_actions[:, :, 12:]], dim=2
+        )
+        # flatten
+        history = torch.reshape(
+            history, (-1, history.size()[1] * history.size()[2])
+        )
+
+        # compute ref
+        relative_ref = ref_states - current_state[:, :3]
+        ref_vec_norm = torch.sqrt(torch.sum(relative_ref**2, axis=1))
+
+        # get vector in direction of target
+        normed_ref_vector = (relative_ref.t() / ref_vec_norm).t()
+        # transform to the input states
+        ref_state_seq = self._compute_target_pos(
+            current_state, normed_ref_vector
+        )
+        relative_ref = ref_state_seq[:, -1] - current_state[:, :3]
+        # print(
+        #     history.size(), current_state.size(), relative_ref.size(),
+        #     ref_state_seq.size()
+        # )
+        return history, current_state, relative_ref, ref_state_seq
 
 
 class StateImageDataset(torch.utils.data.Dataset):

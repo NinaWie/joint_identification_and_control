@@ -34,6 +34,7 @@ class FixedWingDynamics:
 
         # pi
         self.pi = np.pi
+        self.timestamp = 0
 
         # update with modified parameters
         self.cfg.update(modified_params)
@@ -229,11 +230,20 @@ class FixedWingDynamics:
             torch.unsqueeze(vel, 2)
         )
 
+        if self.cfg.get("wind", 0) != 0:
+            self.timestamp += 0.05
+            wind_vec_world = torch.zeros(3)
+            wind_vec_world[1] = self.cfg["wind"] * np.cos(self.timestamp)
+            wind_drag = torch.matmul(body_to_inertia, wind_vec_world)
+            # print(wind_vec_world)
+            # print(wind_drag.size())
+        else:
+            wind_drag = 0
         # # Body fixed accelerations
         # see Small Unmanned Aircraft, Beard et al., 2012, p.36
         uvw_dot = (1 / self.cfg["mass"]) * f_xyz[:, :, 0] - torch.cross(
             omega, vel, dim=1
-        ) - self.cfg["vel_drag_factor"] * vel
+        ) - self.cfg["vel_drag_factor"] * vel + wind_drag
 
         # # Change in pitch attitude (change in euler angles)
         # see Small Unmanned Aircraft, Beard et al., 2012, p.36
@@ -336,6 +346,24 @@ class LearntFixedWingDynamics(LearntDynamics, FixedWingDynamics):
 
     def simulate(self, state, action, dt):
         return self.simulate_fixed_wing(state, action, dt)
+
+
+class SequenceFixedWingDynamics(LearntDynamics, FixedWingDynamics):
+
+    def __init__(self, buffer_length=3):
+        FixedWingDynamics.__init__(self)
+        super(SequenceFixedWingDynamics,
+              self).__init__((12 + 4) * buffer_length, 4, out_state_size=12)
+
+    def simulate(self, state, action, dt):
+        return self.simulate_fixed_wing(state, action, dt)
+
+    def forward(self, state, state_action_buffer, action, dt):
+        # run through normal simulator f hat
+        new_state = self.simulate(state, action, dt)
+        # run through residual network delta
+        added_new_state = self.state_transformer(state_action_buffer, action)
+        return new_state + added_new_state
 
 
 class FixedWingDynamicsMPC(FixedWingDynamics):

@@ -10,6 +10,7 @@ class FlightmareDynamics(Dynamics):
         super().__init__(modified_params=modified_params)
 
         self.simulate_rotors = simulate_rotors
+        self.timestamp = 0
 
         # new parameters needed for flightmare simulation
         self.t_BM_ = self.arm_length * np.sqrt(0.5) * torch.tensor(
@@ -89,8 +90,15 @@ class FlightmareDynamics(Dynamics):
             body_to_world,
             torch.unsqueeze(self.torch_translational_drag * vel_body, 2)
         )[:, :, 0]
+
+        if self.cfg.get("wind", 0) != 0:
+            self.timestamp += 0.05
+            wind = torch.zeros(3)
+            wind[1] = self.cfg["wind"] * np.sin(self.timestamp)
+        else:
+            wind = 0
         thrust_min_grav = (
-            thrust[:, :, 0] + self.torch_gravity - translational_drag
+            thrust[:, :, 0] + self.torch_gravity - translational_drag + wind
         )
         return thrust_min_grav
 

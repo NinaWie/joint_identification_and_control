@@ -95,6 +95,10 @@ class FixedWingNetWrapper:
         return suggested_action.detach().numpy()
 
 
+# class WingSequenceWrapper(FixedWingNetWrapper):
+#     def predict_actions(self, state_action_history, ref_state):
+
+
 class CartpoleWrapper:
 
     def __init__(self, model, nr_actions=3, action_dim=1, **kwargs):

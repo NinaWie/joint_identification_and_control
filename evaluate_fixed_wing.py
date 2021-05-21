@@ -7,7 +7,7 @@ import torch
 
 from neural_control.environments.wing_env import SimpleWingEnv, run_wing_flight
 from neural_control.plotting import plot_wing_pos_3d, plot_success
-from neural_control.dataset import WingDataset
+from neural_control.dataset import WingDataset, WingSequenceDataset
 from neural_control.controllers.network_wrapper import FixedWingNetWrapper
 from neural_control.controllers.mpc import MPC
 from neural_control.dynamics.fixed_wing_dynamics import FixedWingDynamics
@@ -30,9 +30,13 @@ class FixedWingEvaluator:
         thresh_div=10,
         thresh_stable=0.8,
         test_time=0,
+        buffer_len=3,
         waypoint_metric=1,
+        is_seq=False,
         **kwargs
     ):
+        # sequence dynamics?
+        self.is_seq = is_seq
         self.controller = controller
         self.dt = dt
         self.horizon = horizon
@@ -43,6 +47,8 @@ class FixedWingEvaluator:
         self.des_speed = 11.5
         self.test_time = test_time
         self.waypoint_metric = waypoint_metric
+
+        self.state_action_history = np.zeros((buffer_len, 12 + 4))
 
     def fly_to_point(self, target_points, max_steps=1000, do_avg_act=0):
         self.eval_env.zero_reset()
@@ -56,11 +62,20 @@ class FixedWingEvaluator:
 
         state = self.eval_env._state
         stable = True
+
+        self.state_action_history[:, :12] = state
+        self.state_action_history[:, 12:] = np.array([.5 for _ in range(4)])
+
         drone_traj, div_to_linear, div_target = [], [], []
         step = 0
         while len(drone_traj) < max_steps:
             current_target = target_points[current_target_ind]
-            action = self.controller.predict_actions(state, current_target)
+            if self.is_seq:
+                action = self.controller.predict_actions(
+                    self.state_action_history, np.array(current_target)
+                )
+            else:
+                action = self.controller.predict_actions(state, current_target)
 
             use_action = average_action(action, step, do_avg_act=do_avg_act)
             step += 1
@@ -75,6 +90,13 @@ class FixedWingEvaluator:
             if self.render:
                 self.eval_env.render()
                 time.sleep(.05)
+
+            # update history
+            self.state_action_history = np.roll(
+                self.state_action_history, 1, axis=0
+            )
+            self.state_action_history[0, :12] = state
+            self.state_action_history[0, 12:] = use_action
 
             # project drone onto line and compute divergence
             drone_on_line = project_to_line(
@@ -164,7 +186,10 @@ def load_model(model_path, epoch="", **kwargs):
     Load model and corresponding parameters
     """
     net, param_dict = load_model_params(model_path, "model_wing", epoch=epoch)
-    dataset = WingDataset(0, **param_dict)
+    if "seq" in model_path:
+        dataset = WingSequenceDataset(1, 0)
+    else:
+        dataset = WingDataset(0, **param_dict)
 
     controller = FixedWingNetWrapper(net, dataset, **param_dict)
     return controller
@@ -218,7 +243,7 @@ if __name__ == "__main__":
             load_dynamics=load_dynamics
         )
 
-    modified_params = {}
+    modified_params = {}  # {"wind": 2}
     # {"residual_factor": 0.0001}
     # {"vel_drag_factor": 0.3}
     # {
@@ -231,9 +256,12 @@ if __name__ == "__main__":
     # }
     # modified_params = {"rho": 1.6}
 
+    is_seq = "seq" in model_name
     dynamics = FixedWingDynamics(modified_params=modified_params)
     eval_env = SimpleWingEnv(dynamics, params["dt"])
-    evaluator = FixedWingEvaluator(controller, eval_env, test_time=1, **params)
+    evaluator = FixedWingEvaluator(
+        controller, eval_env, is_seq=is_seq, test_time=1, **params
+    )
 
     # only run evaluation without render
     if args.eval > 0:
@@ -253,7 +281,7 @@ if __name__ == "__main__":
         # run_mpc_analysis(evaluator)
         exit()
 
-    target_point = [[50, -3, -3], [100, 3, 3]]
+    target_point = [[50, -3, -3]]  # , [100, 3, 3]]
 
     # RUN
     drone_traj, _ = evaluator.fly_to_point(target_point, max_steps=600)

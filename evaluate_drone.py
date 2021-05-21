@@ -14,7 +14,7 @@ from neural_control.trajectory.straight import Hover, Straight
 from neural_control.trajectory.circle import Circle
 from neural_control.trajectory.polynomial import Polynomial
 from neural_control.trajectory.random_traj import Random
-from neural_control.dataset import QuadDataset
+from neural_control.dataset import QuadDataset  # , QuadSequenceDataset # TODO
 from neural_control.controllers.network_wrapper import NetworkWrapper
 from neural_control.controllers.mpc import MPC
 from neural_control.dynamics.quad_dynamics_flightmare import FlightmareDynamics
@@ -41,10 +41,13 @@ class QuadEvaluator():
         max_drone_dist=0.1,
         render=0,
         dt=0.02,
+        is_seq=False,
         test_time=0,
         speed_factor=.6,
+        buffer_len=3,
         **kwargs
     ):
+        self.is_seq = is_seq
         self.controller = controller
         self.eval_env = environment
         self.horizon = horizon
@@ -54,6 +57,7 @@ class QuadEvaluator():
         self.action_counter = 0
         self.test_time = test_time
         self.speed_factor = speed_factor
+        self.state_action_history = np.zeros((buffer_len, 12 + 4))
 
     def help_render(self, sleep=.05):
         """
@@ -126,6 +130,9 @@ class QuadEvaluator():
                 *tuple(reference.initial_pos)
             )
 
+        self.state_action_history[:, :12] = current_np_state
+        self.state_action_history[:, 12:] = np.array([.5 for _ in range(4)])
+
         self.help_render()
 
         (reference_trajectory, drone_trajectory,
@@ -133,9 +140,14 @@ class QuadEvaluator():
         for i in range(max_nr_steps):
             # acc = self.eval_env.get_acceleration()
             trajectory = reference.get_ref_traj(current_np_state, 0)
-            action = self.controller.predict_actions(
-                current_np_state, trajectory.copy()
-            )
+            if self.is_seq:
+                action = self.controller.predict_actions(
+                    self.state_action_history, trajectory.copy()
+                )
+            else:
+                action = self.controller.predict_actions(
+                    current_np_state, trajectory.copy()
+                )
 
             # possible average with previous actions
             use_action = average_action(action, i, do_avg_act=do_avg_act)
@@ -150,6 +162,13 @@ class QuadEvaluator():
                 current_np_state = states[i]
 
             self.help_render(sleep=0)
+
+            # update history
+            self.state_action_history = np.roll(
+                self.state_action_history, 1, axis=0
+            )
+            self.state_action_history[0, :12] = current_np_state
+            self.state_action_history[0, 12:] = use_action
 
             drone_pos = current_np_state[:3]
             drone_trajectory.append(current_np_state)
@@ -304,7 +323,10 @@ def load_model(model_path, epoch=""):
     # load std or other parameters from json
     net, param_dict = load_model_params(model_path, "model_quad", epoch=epoch)
     param_dict["self_play"] = 0
-    dataset = QuadDataset(1, **param_dict)
+    if "seq" in model_path:
+        dataset = QuadSequenceDataset(1, 0)
+    else:
+        dataset = QuadDataset(1, **param_dict)
 
     controller = NetworkWrapper(net, dataset, **param_dict)
 
@@ -366,10 +388,11 @@ if __name__ == "__main__":
 
     # PARAMETERS
     params["render"] = RENDER if not args.unity else 0
+    is_seq = "seq" in args.model
     # params["dt"] = .05
     # params["max_drone_dist"] = 1
     params["speed_factor"] = .4
-    modified_params = {}
+    modified_params = {"wind": 1}
     # {"rotational_drag": np.array([.1, .1, .1])}
     # {"mass": 1}
     # {"translational_drag": np.array([.3, .3, .3])}
@@ -392,7 +415,9 @@ if __name__ == "__main__":
         environment = QuadRotorEnvBase(dynamics, params["dt"])
 
     # EVALUATOR
-    evaluator = QuadEvaluator(controller, environment, test_time=1, **params)
+    evaluator = QuadEvaluator(
+        controller, environment, test_time=1, is_seq=is_seq, **params
+    )
 
     # Specify arguments for the trajectory
     fixed_axis = 1
