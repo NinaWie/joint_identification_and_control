@@ -76,12 +76,15 @@ class FixedWingNetWrapper:
         self.action_counter = 0
         self.take_every_x = take_every_x
 
-    def predict_actions(self, state, ref_state):
+    def predict_actions(self, state, ref_state, timestamp=0):
         # determine whether we also add the sample to our train data
         add_to_dataset = (self.action_counter + 1) % self.take_every_x == 0
 
         normed_state, _, normed_ref, _ = self.dataset.get_and_add_eval_data(
-            state, ref_state, add_to_dataset=add_to_dataset
+            state,
+            ref_state,
+            add_to_dataset=add_to_dataset,
+            timestamp=timestamp
         )
         with torch.no_grad():
             suggested_action = self.net(normed_state, normed_ref)

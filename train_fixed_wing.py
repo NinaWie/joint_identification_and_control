@@ -40,6 +40,8 @@ class TrainFixedWing(TrainBase):
         else:
             raise ValueError("sample in must be one of eval_env, train_env")
 
+        self.tmp_num_selfplay = self.config["self_play"]
+
     def initialize_model(self, base_model=None, base_model_name="model_wing"):
         # Load model or initialize model
         if base_model is not None:
@@ -141,10 +143,17 @@ class TrainFixedWing(TrainBase):
         evaluator = FixedWingEvaluator(
             controller, self.eval_env, **self.config
         )
-        # run with mpc to collect data
-        # eval_env.run_mpc_ref("rand", nr_test=5, max_steps=500)
+
+        if epoch % self.config["resample_every"] == 0:
+            print("START COLLECT DATA")
+            self.state_data.num_self_play = self.tmp_num_selfplay
+
         # run without mpc for evaluation
         print("--------- eval in simulator (D1) -------------")
+        print(
+            "check: self play?", self.state_data.num_self_play, "eval counter",
+            self.state_data.eval_counter
+        )
         with torch.no_grad():
             if epoch == 0 and self.config["self_play"] > 0:
                 # sample to fill all required self play data
@@ -153,30 +162,31 @@ class TrainFixedWing(TrainBase):
             else:
                 suc_mean, suc_std = evaluator.run_eval(nr_test=10)
 
+        self.state_data.num_self_play = 0
         # FOR DYN TRAINING
-        if epoch == 0 and self.config["train_dyn_for_epochs"] >= 0:
-            self.tmp_num_selfplay = self.state_data.num_self_play
-            self.state_data.num_self_play = 0
-            print("stop self play")
-        if epoch == self.config["train_dyn_for_epochs"]:
-            self.state_data.num_self_play = self.tmp_num_selfplay
-            print("start self play to", self.tmp_num_selfplay)
+        # if epoch == 0 and self.config["train_dyn_for_epochs"] >= 0:
+        #     self.tmp_num_selfplay = self.state_data.num_self_play
+        #     self.state_data.num_self_play = 0
+        #     print("stop self play")
+        # if epoch == self.config["train_dyn_for_epochs"]:
+        #     self.state_data.num_self_play = self.tmp_num_selfplay
+        #     print("start self play to", self.tmp_num_selfplay)
 
         # if training dynamics: evaluate in target dynamics
-        if self.config["train_dyn_for_epochs"] >= 0:
-            tmp_self_play = self.state_data.num_self_play
-            self.state_data.num_self_play = 0
-            print("--------- eval in real (D2) -------------")
-            d2_env = SimpleWingEnv(self.eval_dynamics, self.delta_t)
-            evaluator = FixedWingEvaluator(controller, d2_env, **self.config)
-            with torch.no_grad():
-                suc_mean, suc_std = evaluator.run_eval(nr_test=10)
-            self.results_dict["eval_in_d2_mean"].append(suc_mean)
-            self.results_dict["eval_in_d2_std"].append(suc_std)
-            self.state_data.num_self_play = tmp_self_play
-            print("eval samples counter", self.state_data.eval_counter)
+        # if self.config["train_dyn_for_epochs"] >= 0:
+        #     tmp_self_play = self.state_data.num_self_play
+        #     self.state_data.num_self_play = 0
+        #     print("--------- eval in real (D2) -------------")
+        #     d2_env = SimpleWingEnv(self.eval_dynamics, self.delta_t)
+        #     evaluator = FixedWingEvaluator(controller, d2_env, **self.config)
+        #     with torch.no_grad():
+        #         suc_mean, suc_std = evaluator.run_eval(nr_test=10)
+        #     self.results_dict["eval_in_d2_mean"].append(suc_mean)
+        #     self.results_dict["eval_in_d2_std"].append(suc_std)
+        #     self.state_data.num_self_play = tmp_self_play
+        #     print("eval samples counter", self.state_data.eval_counter)
 
-        self.sample_new_data(epoch)
+        # self.sample_new_data(epoch)
 
         # increase thresholds
         if epoch % 5 == 0 and self.config["thresh_div"] < self.thresh_div_end:

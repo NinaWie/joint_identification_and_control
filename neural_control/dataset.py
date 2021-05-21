@@ -54,7 +54,9 @@ class DroneDataset(torch.utils.data.Dataset):
         self.in_ref_states[:num] = prep_in_ref_states
         self.ref_states[:num] = prep_ref_states
 
-    def get_and_add_eval_data(self, states, ref_states, add_to_dataset=False):
+    def get_and_add_eval_data(
+        self, states, ref_states, add_to_dataset=False, timestamp=None
+    ):
         """
         While evaluating, add the data to the dataset with some probability
         to achieve self play
@@ -69,6 +71,9 @@ class DroneDataset(torch.utils.data.Dataset):
             self.in_ref_states[counter] = in_ref_states[0]
             self.ref_states[counter] = ref_states[0]
             self.eval_counter += 1
+            # for wind problem need the timestamp
+            if timestamp is not None:
+                self.timestamps[counter] = timestamp
 
         return normed_states, states, in_ref_states, ref_states
 
@@ -443,6 +448,7 @@ class WingSequenceDataset(WingDataset):
         self.in_ref_states = torch.zeros(num_data, 3)
         # unit vector in direction of last state on ref
         self.ref_states = torch.zeros(num_data, self.nr_actions, 3)
+        self.timestamps = torch.zeros(num_data, 1)
 
         # for normalization, set mean and std
         self.set_fixed_mean()
@@ -453,6 +459,21 @@ class WingSequenceDataset(WingDataset):
         else:
             self.num_self_play = self_play
         self.eval_counter = 0
+
+        self.return_timestamp = False
+
+    def __getitem__(self, index):
+        if self.return_timestamp:
+            return (
+                self.normed_states[index], self.states[index],
+                self.in_ref_states[index], self.ref_states[index],
+                self.timestamps[index]
+            )
+        else:
+            return (
+                self.normed_states[index], self.states[index],
+                self.in_ref_states[index], self.ref_states[index]
+            )
 
     def get_eval_index(self):
         """

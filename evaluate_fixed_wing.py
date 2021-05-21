@@ -72,7 +72,9 @@ class FixedWingEvaluator:
             current_target = target_points[current_target_ind]
             if self.is_seq:
                 action = self.controller.predict_actions(
-                    self.state_action_history, np.array(current_target)
+                    self.state_action_history,
+                    np.array(current_target),
+                    timestamp=self.eval_env.dynamics.timestamp
                 )
             else:
                 action = self.controller.predict_actions(state, current_target)
@@ -243,7 +245,7 @@ if __name__ == "__main__":
             load_dynamics=load_dynamics
         )
 
-    modified_params = {}  # {"wind": 2}
+    modified_params = {"wind": 2}
     # {"residual_factor": 0.0001}
     # {"vel_drag_factor": 0.3}
     # {
