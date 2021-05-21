@@ -38,7 +38,7 @@ class NetworkWrapper:
         # four control signals
         self.action_dim = 4
 
-    def predict_actions(self, current_np_state, ref_states):
+    def predict_actions(self, current_np_state, ref_states, timestamp=None):
         """
         Predict an action for the current state. This function is used by all
         evaluation functions
@@ -47,7 +47,10 @@ class NetworkWrapper:
         add_to_dataset = (self.action_counter + 1) % self.take_every_x == 0
         # preprocess state
         in_state, current_state, ref, _ = self.dataset.get_and_add_eval_data(
-            current_np_state.copy(), ref_states, add_to_dataset=add_to_dataset
+            current_np_state.copy(),
+            ref_states,
+            add_to_dataset=add_to_dataset,
+            timestamp=timestamp
         )
 
         with torch.no_grad():

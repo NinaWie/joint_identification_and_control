@@ -10,9 +10,13 @@ from neural_control.plotting import plot_wing_pos_3d, plot_success
 from neural_control.dataset import WingDataset, WingSequenceDataset
 from neural_control.controllers.network_wrapper import FixedWingNetWrapper
 from neural_control.controllers.mpc import MPC
-from neural_control.dynamics.fixed_wing_dynamics import FixedWingDynamics
+from neural_control.dynamics.fixed_wing_dynamics import (
+    FixedWingDynamics, SequenceFixedWingDynamics
+)
 from neural_control.trajectory.q_funcs import project_to_line
-from evaluate_base import run_mpc_analysis, load_model_params, average_action
+from evaluate_base import (
+    run_mpc_analysis, load_model_params, average_action, dyn_comparison
+)
 
 
 class FixedWingEvaluator:
@@ -32,6 +36,7 @@ class FixedWingEvaluator:
         test_time=0,
         buffer_len=3,
         waypoint_metric=1,
+        eval_dyn=None,
         is_seq=False,
         **kwargs
     ):
@@ -40,6 +45,7 @@ class FixedWingEvaluator:
         self.controller = controller
         self.dt = dt
         self.horizon = horizon
+        self.eval_dyn = eval_dyn
         self.render = render
         self.thresh_div = thresh_div
         self.thresh_stable = thresh_stable
@@ -47,6 +53,8 @@ class FixedWingEvaluator:
         self.des_speed = 11.5
         self.test_time = test_time
         self.waypoint_metric = waypoint_metric
+
+        self.dyn_eval_test = []
 
         self.state_action_history = np.zeros((buffer_len, 12 + 4))
 
@@ -86,6 +94,14 @@ class FixedWingEvaluator:
             #     np.set_printoptions(suppress=1, precision=3)
             #     print(action[0])
             #     print()
+            if step % 10 == 0 and self.eval_dyn is not None:
+                self.dyn_eval_test.append(
+                    dyn_comparison(
+                        self.eval_dyn, state, use_action,
+                        self.state_action_history,
+                        self.eval_env.dynamics.timestamp
+                    )
+                )
             state, stable = self.eval_env.step(
                 use_action, thresh_stable=self.thresh_stable
             )
@@ -148,16 +164,19 @@ class FixedWingEvaluator:
             return np.array(drone_traj), np.array(div_to_linear)
         return np.array(drone_traj), np.array(div_target)
 
-    def run_eval(self, nr_test, return_dists=False):
+    def run_eval(self, nr_test, return_dists=False, x_dist=50, x_std=5):
+        self.dyn_eval_test = []
         mean_div, not_div_time = [], []
         for i in range(nr_test):
             # important! reset after every run
             if isinstance(self.controller, MPC):
                 self.controller._initDynamics()
-            target_point = [
-                np.random.rand(3) * np.array([70, 10, 10]) +
-                np.array([20, -5, -5])
-            ]
+            # target_point = [
+            #     np.random.rand(3) * np.array([70, 10, 10]) +
+            #     np.array([20, -5, -5])
+            # ]
+            rand_y, rand_z = tuple((np.random.rand(2) - .5) * 2 * x_std)
+            target_point = np.array([[x_dist, rand_y, rand_z]])
             # traj_test = run_wing_flight(
             #     self.eval_env, traj_len=300, dt=self.dt, render=0
             # )
@@ -177,6 +196,20 @@ class FixedWingEvaluator:
         #     "Time not diverged: %3.2f (%3.2f)" %
         #     (np.mean(not_div_time), np.std(not_div_time))
         # )
+        if self.eval_dyn is not None:
+            actual_delta = np.array(self.dyn_eval_test)[:, 0] * 10000
+            # [elem[0] for elem in self.dyn_eval_test])
+            trained_delta = np.array(self.dyn_eval_test)[:, 1] * 10000
+            # np.array([elem[0] for elem in self.dyn_eval_test])
+            print(
+                "Average delta: %3.2f (%3.2f)" %
+                (np.mean(actual_delta), np.std(actual_delta))
+            )
+            print(
+                "Average trained delta: %3.2f (%3.2f)" %
+                (np.mean(trained_delta), np.std(trained_delta))
+            )
+
         print("Average error: %3.2f (%3.2f)" % (mean_err, std_err))
         if return_dists:
             return np.array(mean_div)
@@ -258,11 +291,26 @@ if __name__ == "__main__":
     # }
     # modified_params = {"rho": 1.6}
 
+    dyn_trained = None
+    # dyn_trained = SequenceFixedWingDynamics()
+    # dyn_trained.load_state_dict(
+    #     torch.load(
+    #         os.path.join(
+    #             "trained_models/wing/dyn_seq_wing_5", "dynamics_model"
+    #         )
+    #     )
+    # )
+
     is_seq = "seq" in model_name
     dynamics = FixedWingDynamics(modified_params=modified_params)
     eval_env = SimpleWingEnv(dynamics, params["dt"])
     evaluator = FixedWingEvaluator(
-        controller, eval_env, is_seq=is_seq, test_time=1, **params
+        controller,
+        eval_env,
+        eval_dyn=dyn_trained,
+        is_seq=is_seq,
+        test_time=1,
+        **params
     )
 
     # only run evaluation without render

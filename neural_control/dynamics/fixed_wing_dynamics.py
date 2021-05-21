@@ -34,7 +34,7 @@ class FixedWingDynamics:
 
         # pi
         self.pi = np.pi
-        self.timestamp = 0
+        self.timestamp = np.random.rand() * np.pi * 2
 
         # update with modified parameters
         self.cfg.update(modified_params)
