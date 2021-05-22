@@ -141,12 +141,24 @@ class TrainFixedWing(TrainBase):
         )
 
         evaluator = FixedWingEvaluator(
-            controller, self.eval_env, **self.config
+            controller,
+            self.eval_env,
+            # eval_dyn=self.train_dynamics,
+            **self.config
         )
 
+        # previous version with resampling
         if epoch % self.config["resample_every"] == 0:
             print("START COLLECT DATA")
             self.state_data.num_self_play = self.tmp_num_selfplay
+        # if epoch == 0 or self.results_dict["train_dyn_con"][epoch
+        #                                                     ] == "controller":
+        #     self.state_data.num_self_play = self.tmp_num_selfplay
+        #     self.results_dict["collected_data"].append(
+        #         self.state_data.num_self_play
+        #     )
+        # else:
+        #     self.results_dict["collected_data"].append(0)
 
         # run without mpc for evaluation
         print("--------- eval in simulator (D1) -------------")
@@ -160,7 +172,7 @@ class TrainFixedWing(TrainBase):
                 while self.state_data.eval_counter < self.config["self_play"]:
                     suc_mean, suc_std = evaluator.run_eval(nr_test=5)
             else:
-                suc_mean, suc_std = evaluator.run_eval(nr_test=10)
+                suc_mean, suc_std = evaluator.run_eval(nr_test=40)
 
         self.state_data.num_self_play = 0
         # FOR DYN TRAINING
@@ -189,13 +201,13 @@ class TrainFixedWing(TrainBase):
         # self.sample_new_data(epoch)
 
         # increase thresholds
-        if epoch % 5 == 0 and self.config["thresh_div"] < self.thresh_div_end:
-            self.config["thresh_div"] += .2
+        if self.config["thresh_div"] < self.thresh_div_end:
+            self.config["thresh_div"] += .5
             print("increased thresh div", self.config["thresh_div"])
 
-        if epoch % 5 == 0 and self.config["thresh_stable"
-                                          ] < self.thresh_stable_end:
+        if self.config["thresh_stable"] < self.thresh_stable_end:
             self.config["thresh_stable"] += .05
+            print("increased thresh stable", self.config["thresh_stable"])
 
         # save best model
         self.save_model(epoch, suc_mean, suc_std)

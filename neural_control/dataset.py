@@ -165,6 +165,137 @@ class QuadDataset(DroneDataset):
         return inp_drone_states, drone_states, inp_ref_states, torch_ref_states
 
 
+class QuadSequenceDataset(QuadDataset):
+
+    def __init__(
+        self,
+        num_data,
+        self_play="all",
+        buffer_len=3,
+        dt=0.05,
+        nr_actions=10,
+        **kwargs
+    ):
+        # placeholders
+        self.nr_actions = nr_actions
+        self.dt = dt
+        # self.state_action = torch.zeros(num_data, buffer_len, 12 + 4)
+        # self.ref_states = torch.zeros(num_data, self.nr_actions)
+
+        # input to neural network: normalized states with relative position
+        self.normed_states = torch.zeros(num_data, buffer_len * (18 + 4))
+        # just the current state
+        self.states = torch.zeros(num_data, buffer_len, 12 + 4)
+        # ref that is input to the net
+        self.in_ref_states = torch.zeros(num_data, self.nr_actions, 9)
+        # unit vector in direction of last state on ref
+        self.ref_states = torch.zeros(num_data, self.nr_actions, 9)
+        self.timestamps = torch.zeros(num_data, 1)
+
+        self.num_sampled_states = 0
+
+        if self_play == "all":
+            self.num_self_play = num_data
+        else:
+            self.num_self_play = self_play
+        self.eval_counter = 0
+
+        self.return_timestamp = False
+
+    def __getitem__(self, index):
+        if self.return_timestamp:
+            return (
+                self.normed_states[index], self.states[index],
+                self.in_ref_states[index], self.ref_states[index],
+                self.timestamps[index]
+            )
+        else:
+            return (
+                self.normed_states[index], self.states[index],
+                self.in_ref_states[index], self.ref_states[index]
+            )
+
+    def get_eval_index(self):
+        """
+        compute current index where to add new data
+        """
+        if self.num_self_play > 0:
+            return (self.eval_counter % self.num_self_play)
+
+    def prepare_history(self, unprocessed_history):
+        buffer_len = unprocessed_history.size()[1]
+
+        normed_pos = unprocessed_history[:, :, :3] - torch.unsqueeze(
+            unprocessed_history[:, 0, :3], dim=1
+        )
+
+        # get rotation matrix
+        flat_vel = torch.reshape(unprocessed_history[:, :, 6:9], (-1, 3))
+        flat_attitude = torch.reshape(unprocessed_history[:, :, 3:6], (-1, 3))
+        world_to_body = Dynamics.world_to_body_matrix(flat_attitude)
+
+        drone_vel_body = torch.reshape(
+            self.rot_world_to_body(flat_vel, world_to_body),
+            (-1, buffer_len, 3)
+        )
+        # first two columns of rotation matrix
+        drone_rotation_matrix = torch.reshape(
+            world_to_body[:, :, :2], (-1, buffer_len, 6)
+        )
+
+        # for the drone, input is: vel (body and world), av, rotation matrix
+        history = torch.cat(
+            (
+                normed_pos, unprocessed_history[:, :,
+                                                6:9], drone_rotation_matrix,
+                drone_vel_body, unprocessed_history[:, :, 9:]
+            ),
+            dim=2
+        )
+        # flatten
+        history = torch.reshape(
+            history, (-1, history.size()[1] * history.size()[2])
+        )
+        return history
+
+    def prepare_data(self, states, ref_states):
+        """
+        Prepare numpy data for input in ANN:
+        - expand dims
+        - normalize
+        - world to body
+        """
+        # if len(states.shape) == 1:
+        states = np.expand_dims(states, 0)
+        ref_states = np.expand_dims(ref_states, 0)
+
+        # 1) make torch arrays
+        drone_states = self.to_torch(states)
+        torch_ref_states = self.to_torch(ref_states)
+
+        history_input = self.prepare_history(drone_states.clone())
+
+        subtract_drone_vel = torch.unsqueeze(drone_states[:, 0, 6:9], dim=1)
+        subtract_drone_pos = torch.unsqueeze(drone_states[:, 0, :3], dim=1)
+
+        # for the reference, input is: relative pos, vel, vel-drone vel
+        ref_minus_pos = torch_ref_states[:, :, :3] - subtract_drone_pos
+        torch_ref_states[:, :, :3] = ref_minus_pos
+        vel_minus_veldrone = torch_ref_states[:, :, 6:9] - subtract_drone_vel
+        inp_ref_states = torch.cat(
+            (ref_minus_pos, torch_ref_states[:, :, 6:9], vel_minus_veldrone),
+            dim=2
+        )
+        # set unnormalized history also to be relative to zero
+        drone_states[:, :, :3] = drone_states[:, :, :3] - subtract_drone_pos
+        # print(
+        #     history_input.size(), drone_states.size(), inp_ref_states.size(),
+        #     torch_ref_states.size()
+        # )
+        # transform acceleration
+        return history_input, drone_states, inp_ref_states, torch_ref_states
+
+
 class CartpoleDataset(torch.utils.data.Dataset):
     """
     Dataset for training on cartpole task
@@ -443,7 +574,7 @@ class WingSequenceDataset(WingDataset):
         # input to neural network: normalized states with relative position
         self.normed_states = torch.zeros(num_data, buffer_len * (12 + 4))
         # just the current state
-        self.states = torch.zeros(num_data, 12)
+        self.states = torch.zeros(num_data, buffer_len, 12 + 4)
         # ref that is input to the net
         self.in_ref_states = torch.zeros(num_data, 3)
         # unit vector in direction of last state on ref
@@ -482,6 +613,24 @@ class WingSequenceDataset(WingDataset):
         if self.num_self_play > 0:
             return (self.eval_counter % self.num_self_play)
 
+    def prepare_history(self, unprocessed_history):
+        normed_states = unprocessed_history[:, :, :12]
+        # subtract current position
+        normed_states[:, :, :3] = normed_states[:, :, :3] - torch.unsqueeze(
+            normed_states[:, 0, :3], 1
+        )
+        # normalize whole history
+        normed_states = ((normed_states - self.mean) / self.std)
+        # add action and flatten
+        history = torch.cat(
+            [normed_states, unprocessed_history[:, :, 12:]], dim=2
+        )
+        # flatten
+        history = torch.reshape(
+            history, (-1, history.size()[1] * history.size()[2])
+        )
+        return history
+
     def prepare_data(self, np_state_actions, ref_states):
         # torch format
         # if len(np_state_actions.shape) == 1:
@@ -495,21 +644,7 @@ class WingSequenceDataset(WingDataset):
         current_state = np_state_actions[:, 0, :12]
 
         # 1) Normalized state and remove position
-        normed_states = np_state_actions[:, :, :12].clone()
-        # subtract current position
-        normed_states[:, :, :3] = normed_states[:, :, :3] - torch.unsqueeze(
-            current_state[:, :3], 1
-        )
-        # normalize whole history
-        normed_states = ((normed_states - self.mean) / self.std)
-        # add action and flatten
-        history = torch.cat(
-            [normed_states, np_state_actions[:, :, 12:]], dim=2
-        )
-        # flatten
-        history = torch.reshape(
-            history, (-1, history.size()[1] * history.size()[2])
-        )
+        history = self.prepare_history(np_state_actions.clone())
 
         # compute ref
         relative_ref = ref_states - current_state[:, :3]
@@ -526,7 +661,7 @@ class WingSequenceDataset(WingDataset):
         #     history.size(), current_state.size(), relative_ref.size(),
         #     ref_state_seq.size()
         # )
-        return history, current_state, relative_ref, ref_state_seq
+        return history, np_state_actions, relative_ref, ref_state_seq
 
 
 class StateImageDataset(torch.utils.data.Dataset):

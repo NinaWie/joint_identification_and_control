@@ -3,53 +3,42 @@ import os
 import torch
 import numpy as np
 
-from train_fixed_wing import TrainFixedWing
-from neural_control.dataset import WingSequenceDataset
-from neural_control.controllers.network_wrapper import FixedWingNetWrapper
-from neural_control.dynamics.fixed_wing_dynamics import (
-    FixedWingDynamics, SequenceFixedWingDynamics
+from train_drone import TrainDrone
+from neural_control.dataset import QuadSequenceDataset
+from neural_control.controllers.network_wrapper import NetworkWrapper
+from neural_control.dynamics.quad_dynamics_flightmare import (
+    FlightmareDynamics
 )
-from neural_control.drone_loss import fixed_wing_mpc_loss
+from neural_control.dynamics.quad_dynamics_trained import SequenceQuadDynamics
+from neural_control.drone_loss import quad_mpc_loss
 from neural_control.models.hutter_model import Net
 
 
-class TrainSequenceWing(TrainFixedWing):
+class TrainSequenceQuad(TrainDrone):
 
     # def run_epoch(self):
     #     pass
 
-    def initialize_model(self, base_model=None, base_model_name="model_wing"):
-        if base_model is not None:
-            self.net = torch.load(os.path.join(base_model, base_model_name))
-        else:
+    def initialize_model(self, base_model=None, base_model_name="model_quad"):
+        # temporary data
+        self_play_tmp = self.config["self_play"]
+        epoch_size_tmp = self.epoch_size
+        self.config["self_play"] = 0
+        self.epoch_size = 2
+        super().initialize_model(base_model=base_model)
+        self.config["self_play"] = self_play_tmp
+        self.epoch_size = epoch_size_tmp
+        if base_model is None:
             self.net = Net(
-                (self.state_size + self.action_dim) *
-                self.config.get("buffer_len", 3),
-                1,
+                (18 + 4) * self.config.get("buffer_len", 3),
+                self.nr_actions,
                 self.ref_dim,
                 self.action_dim * self.nr_actions,
-                conv=False
+                conv=1
             )
 
-        self.state_data = WingSequenceDataset(self.epoch_size, **self.config)
-        self.model_wrapped = FixedWingNetWrapper(
-            self.net, self.state_data, **self.config
-        )
-        # update mean and std:
-        self.config = self.state_data.get_means_stds(self.config)
-        # add other parameters
-        self.config["horizon"] = self.nr_actions
-        self.config["ref_length"] = self.nr_actions
-        self.config["thresh_div"] = self.thresh_div_start
-        self.config["dt"] = self.delta_t
-        self.config["take_every_x"] = self.self_play_every_x
-        self.config["thresh_stable"] = self.thresh_stable_start
-
-        with open(os.path.join(self.save_path, "config.json"), "w") as outfile:
-            json.dump(self.config, outfile)
-
+        self.state_data = QuadSequenceDataset(self.epoch_size, **self.config)
         self.init_optimizer()
-
         # set is seq for evaluation
         self.config["is_seq"] = True
 
@@ -90,7 +79,7 @@ class TrainSequenceWing(TrainFixedWing):
                 # to double check
                 # eval_dyn_state = current_state.clone()
                 # bl_dyn_state = current_state.clone()
-                # bl_dyn = FixedWingDynamics()
+                # bl_dyn = FlightmareDynamics()
                 self.eval_dynamics.timestamp = timestamps[0]
                 for k in range(self.nr_actions_rnn):
                     # extract action
@@ -109,9 +98,7 @@ class TrainSequenceWing(TrainFixedWing):
                     # print("history")
                     # print(state_action_history[0].detach().numpy())
                     # print("action", action[0].detach().numpy())
-                    if isinstance(
-                        self.train_dynamics, SequenceFixedWingDynamics
-                    ):
+                    if isinstance(self.train_dynamics, SequenceQuadDynamics):
                         current_state = self.train_dynamics(
                             current_state,
                             in_state,
@@ -123,27 +110,28 @@ class TrainSequenceWing(TrainFixedWing):
                             current_state, action, dt=self.delta_t_train
                         )
                     intermediate_states[:, k] = current_state
-                    # roll history
-                    state_action_cat = torch.unsqueeze(
-                        torch.cat((current_state, action), dim=1), dim=1
-                    )
-                    state_action_history = torch.cat(
-                        (state_action_cat, state_action_history[:, :-1]),
-                        dim=1
-                    )
-                    in_state = self.state_data.prepare_history(
-                        state_action_history.clone()
-                    )
+                    # roll history # TODO
+                    # state_action_cat = torch.unsqueeze(
+                    #     torch.cat((current_state, action), dim=1), dim=1
+                    # )
+                    # state_action_history = torch.cat(
+                    #     (state_action_cat, state_action_history[:, :-1]),
+                    #     dim=1
+                    # )
+                    # in_state = self.state_data.prepare_history(
+                    #     state_action_history.clone()
+                    # )
 
                 # if i == 0:
-                #     np.set_printoptions(suppress=1, precision=3)
-                #     print(timestamps[0])
-                #     print("compare trained dyn to gt dyn wo force")
-                #     print(intermediate_states[0].detach().numpy())
-                #     print("eval and bl")
-                #     print(eval_dyn_state[0].detach().numpy())
-                #     print(bl_dyn_state[0].detach().numpy())
-                loss = fixed_wing_mpc_loss(
+                # np.set_printoptions(suppress=1, precision=3)
+                # print(timestamps[0])
+                # print("compare trained dyn to gt dyn wo force")
+                # print(intermediate_states[0].detach().numpy())
+                # print(ref_states[0].detach().numpy())
+                # print("eval and bl")
+                # print(eval_dyn_state[0].detach().numpy())
+                # print(bl_dyn_state[0].detach().numpy())
+                loss = quad_mpc_loss(
                     intermediate_states, ref_states, action_seq, printout=0
                 )
                 # Backprop
@@ -205,37 +193,37 @@ class TrainSequenceWing(TrainFixedWing):
 
 if __name__ == "__main__":
     # LOAD CONFIG
-    with open("configs/wing_config.json", "r") as infile:
+    with open("configs/quad_config.json", "r") as infile:
         config = json.load(infile)
 
     # # USED TO PRETRAIN CONTROLLER: (set random init in evaluate!)
     # # OR FINETUNE WO updated residual
-    # base_model = None
-    # #"trained_models/wing/final_baseline_seq_wing" # finetune
-    # baseline_dyn = None
-    # config["save_name"] = "final_baseline_seq_wing"
-    # # "baseline_seq_wing_finetuned" # finetune
-    # config["sample_in"] = "train_env"
-    # # "eval_env" # finetune
-    # config["resample_every"] = 1000
-    # config["train_dyn_for_epochs"] = -1
-    # config["epoch_size"] = 2000
-    # config["self_play"] = 2000
-    # # config["epoch_size"] = 500 # finetune
-    # # config["self_play"] = 500 # finetune
-    # config["buffer_len"] = 3
+    base_model = None
+    #"trained_models/quad/final_baseline_seq_quad" # finetune
+    baseline_dyn = None
+    config["save_name"] = "baseline_con_seq"
+    # "baseline_seq_quad_finetuned" # finetune
+    config["sample_in"] = "train_env"
+    # "eval_env" # finetune
+    config["resample_every"] = 10000
+    config["train_dyn_for_epochs"] = -1
+    config["epoch_size"] = 1000
+    config["self_play"] = 1000
+    # config["epoch_size"] = 500 # finetune
+    # config["self_play"] = 500 # finetune
+    config["buffer_len"] = 3
 
-    # # train environment is learnt
-    # train_dyn = FixedWingDynamics()
-    # eval_dyn = FixedWingDynamics()  # modified_params={"wind": 2}) # finetune
-    # trainer = TrainSequenceWing(train_dyn, eval_dyn, config)
-    # trainer.initialize_model(base_model)
-    # trainer.run_dynamics(config)
+    # train environment is learnt
+    train_dyn = FlightmareDynamics()
+    eval_dyn = FlightmareDynamics()  # modified_params={"wind": 2}) # finetune
+    trainer = TrainSequenceQuad(train_dyn, eval_dyn, config)
+    trainer.initialize_model(base_model)
+    trainer.run_control(config, curriculum=1)
 
     # # FINETUNE DYNAMICS
-    # base_model = "trained_models/wing/final_baseline_seq_wing"
+    # base_model = "trained_models/quad/final_baseline_seq_quad"
     # baseline_dyn = None
-    # config["save_name"] = "dyn_seq_wing_5"
+    # config["save_name"] = "dyn_seq_quad_5"
 
     # mod_param = {"wind": 2}
 
@@ -249,34 +237,34 @@ if __name__ == "__main__":
     # config["resample_every"] = 10
     # config["waypoint_metric"] = True
 
-    # train_dyn = SequenceFixedWingDynamics()
-    # eval_dyn = FixedWingDynamics(modified_params=mod_param)
-    # trainer = TrainSequenceWing(train_dyn, eval_dyn, config)
+    # train_dyn = SequenceQuadDynamics()
+    # eval_dyn = FlightmareDynamics(modified_params=mod_param)
+    # trainer = TrainSequenceQuad(train_dyn, eval_dyn, config)
     # trainer.initialize_model(base_model)
     # trainer.run_dynamics(config)
 
     # FINETUNE CONTROLLER
-    base_model = "trained_models/wing/final_baseline_seq_wing"
-    baseline_dyn = "trained_models/wing/dyn_seq_wing_2"
-    config["save_name"] = "seq_sanity_check_2"
+    # base_model = "trained_models/quad/final_baseline_seq_quad"
+    # baseline_dyn = "trained_models/quad/dyn_seq_quad_2"
+    # config["save_name"] = "seq_sanity_check_2"
 
-    config["sample_in"] = "eval_env"
-    config["train_dyn_for_epochs"] = -1
-    config["learning_rate_controller"] = 0.00001  # was 0.0001
-    # config["thresh_div_start"] = 4
-    # config["thresh_stable_start"] = 1
-    config["epoch_size"] = 400
-    config["self_play"] = 400
-    config["resample_every"] = 2
-    config["buffer_len"] = 3
+    # config["sample_in"] = "eval_env"
+    # config["train_dyn_for_epochs"] = -1
+    # config["learning_rate_controller"] = 0.00001  # was 0.0001
+    # # config["thresh_div_start"] = 4
+    # # config["thresh_stable_start"] = 1
+    # config["epoch_size"] = 400
+    # config["self_play"] = 400
+    # config["resample_every"] = 2
+    # config["buffer_len"] = 3
 
-    # train environment is learnt
-    # train_dyn = FixedWingDynamics()
-    train_dyn = SequenceFixedWingDynamics()
-    train_dyn.load_state_dict(
-        torch.load(os.path.join(baseline_dyn, "dynamics_model"))
-    )
-    eval_dyn = FixedWingDynamics(modified_params={"wind": 2})
-    trainer = TrainSequenceWing(train_dyn, eval_dyn, config)
-    trainer.initialize_model(base_model)
-    trainer.run_dynamics(config)
+    # # train environment is learnt
+    # # train_dyn = FlightmareDynamics()
+    # train_dyn = SequenceQuadDynamics()
+    # train_dyn.load_state_dict(
+    #     torch.load(os.path.join(baseline_dyn, "dynamics_model"))
+    # )
+    # eval_dyn = FlightmareDynamics(modified_params={"wind": 2})
+    # trainer = TrainSequenceQuad(train_dyn, eval_dyn, config)
+    # trainer.initialize_model(base_model)
+    # trainer.run_dynamics(config)

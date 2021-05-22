@@ -338,7 +338,7 @@ class TrainBase:
 
     def run_control(self, config, sampling_based_finetune=False, curriculum=1):
         if curriculum:
-            self.config["speed_factor"] = 0.4
+            self.config["speed_factor"] = 0.2
             successes = []
         try:
             for epoch in range(config["nr_epochs"]):
@@ -368,7 +368,8 @@ class TrainBase:
         # Save model
         self.finalize()
 
-    def run_dynamics(self, config):
+    def run_dynamics(self, config, train_dyn_con=[]):
+        self.results_dict["train_dyn_con"] = train_dyn_con
         try:
             for epoch in range(config["nr_epochs"]):
                 _ = self.evaluate_model(epoch)
@@ -381,8 +382,17 @@ class TrainBase:
                     and epoch % config.get("train_dyn_every", 1) == 0
                 ):
                     model_to_train = "dynamics"
+                if len(train_dyn_con) == 0:
+                    if (
+                        epoch <= config.get("train_dyn_for_epochs", 10)
+                        and epoch % config.get("train_dyn_every", 1) == 0
+                    ):
+                        model_to_train = "dynamics"
+                    else:
+                        model_to_train = "controller"
                 else:
                     model_to_train = "controller"
+                    model_to_train = train_dyn_con[epoch]
 
                 print(f"\nEpoch {epoch}")
                 self.run_epoch(train=model_to_train)

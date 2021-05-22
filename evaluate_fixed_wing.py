@@ -210,6 +210,7 @@ class FixedWingEvaluator:
                 (np.mean(trained_delta), np.std(trained_delta))
             )
 
+        print("Median error: %3.2f" % (np.median(mean_div)))
         print("Average error: %3.2f (%3.2f)" % (mean_err, std_err))
         if return_dists:
             return np.array(mean_div)

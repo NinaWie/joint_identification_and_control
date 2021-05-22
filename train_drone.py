@@ -88,12 +88,6 @@ class TrainDrone(TrainBase):
                 self.action_dim * self.nr_actions,
                 conv=1
             )
-            (data_std, data_mean) = (self.state_data.std, self.state_data.mean)
-
-        # save std for normalization during test time
-        self.config["std"] = data_std.tolist()
-        self.config["mean"] = data_mean.tolist()
-
         # update the used parameters:
         self.config["horizon"] = self.nr_actions
         self.config["ref_length"] = self.nr_actions
