@@ -15,7 +15,7 @@ from neural_control.dynamics.fixed_wing_dynamics import (
 )
 from neural_control.trajectory.q_funcs import project_to_line
 from evaluate_base import (
-    run_mpc_analysis, load_model_params, average_action, dyn_comparison
+    run_mpc_analysis, load_model_params, average_action, dyn_comparison_wing
 )
 
 
@@ -53,6 +53,7 @@ class FixedWingEvaluator:
         self.des_speed = 11.5
         self.test_time = test_time
         self.waypoint_metric = waypoint_metric
+        self.use_random_actions = 0
 
         self.dyn_eval_test = []
 
@@ -80,14 +81,6 @@ class FixedWingEvaluator:
         step = 0
         while len(drone_traj) < max_steps:
             current_target = target_points[current_target_ind]
-            # if self.controller == "random":
-            # TODO: problem - to collect data, we need wrapper!
-            #     action_prior = np.array([.25, .5, .5, .5])
-            #     sampled_action = np.random.normal(
-            #         scale=.15, size=(self.horizon, 4)
-            #     )
-            #     action = np.clip(sampled_action + action_prior, 0, 1)
-            #     use_action = action[0]
             if self.is_seq:
                 action = self.controller.predict_actions(
                     self.state_action_history,
@@ -97,6 +90,12 @@ class FixedWingEvaluator:
             else:
                 action = self.controller.predict_actions(state, current_target)
             use_action = average_action(action, step, do_avg_act=do_avg_act)
+
+            if self.use_random_actions:
+                action_prior = np.array([.25, .5, .5, .5])
+                sampled_action = np.random.normal(scale=.15, size=(4))
+                use_action = np.clip(sampled_action + action_prior, 0, 1)
+
             step += 1
 
             # if self.render:
@@ -105,7 +104,7 @@ class FixedWingEvaluator:
             #     print()
             if step % 10 == 0 and self.eval_dyn is not None:
                 self.dyn_eval_test.append(
-                    dyn_comparison(
+                    dyn_comparison_wing(
                         self.eval_dyn, state, use_action,
                         self.state_action_history,
                         self.eval_env.dynamics.timestamp
@@ -205,9 +204,9 @@ class FixedWingEvaluator:
         #     (np.mean(not_div_time), np.std(not_div_time))
         # )
         if self.eval_dyn is not None:
-            actual_delta = np.array(self.dyn_eval_test)[:, 0] * 10000
+            actual_delta = np.array(self.dyn_eval_test)[:, 0] * 1000 / self.dt
             # [elem[0] for elem in self.dyn_eval_test])
-            trained_delta = np.array(self.dyn_eval_test)[:, 1] * 10000
+            trained_delta = np.array(self.dyn_eval_test)[:, 1] * 1000 / self.dt
             # np.array([elem[0] for elem in self.dyn_eval_test])
             res_eval["mean_delta"] = np.mean(actual_delta)
             res_eval["std_delta"] = np.std(actual_delta)
@@ -322,7 +321,7 @@ if __name__ == "__main__":
     # dyn_trained.load_state_dict(
     #     torch.load(
     #         os.path.join(
-    #             "trained_models/wing/dyn_seq_wing_5", "dynamics_model"
+    #             "trained_models/wing/iterative_seq_1", "dynamics_model"
     #         )
     #     )
     # )

@@ -14,12 +14,17 @@ from neural_control.trajectory.straight import Hover, Straight
 from neural_control.trajectory.circle import Circle
 from neural_control.trajectory.polynomial import Polynomial
 from neural_control.trajectory.random_traj import Random
-from neural_control.dataset import QuadDataset  # , QuadSequenceDataset # TODO
+from neural_control.dataset import QuadDataset, QuadSequenceDataset
 from neural_control.controllers.network_wrapper import NetworkWrapper
 from neural_control.controllers.mpc import MPC
 from neural_control.dynamics.quad_dynamics_flightmare import FlightmareDynamics
+from neural_control.dynamics.quad_dynamics_trained import (
+    SequenceQuadDynamics, LearntQuadDynamics
+)
 from neural_control.dynamics.quad_dynamics_simple import SimpleDynamics
-from evaluate_base import run_mpc_analysis, load_model_params, average_action
+from evaluate_base import (
+    run_mpc_analysis, load_model_params, average_action, dyn_comparison_quad
+)
 try:
     from neural_control.flightmare import FlightmareWrapper
 except ModuleNotFoundError:
@@ -41,6 +46,7 @@ class QuadEvaluator():
         max_drone_dist=0.1,
         render=0,
         dt=0.02,
+        eval_dyn=None,
         is_seq=False,
         test_time=0,
         speed_factor=.6,
@@ -54,6 +60,8 @@ class QuadEvaluator():
         self.max_drone_dist = max_drone_dist
         self.render = render
         self.dt = dt
+        self.eval_dyn = eval_dyn
+        self.dyn_eval_test = []
         self.action_counter = 0
         self.test_time = test_time
         self.speed_factor = speed_factor
@@ -152,6 +160,17 @@ class QuadEvaluator():
             # possible average with previous actions
             use_action = average_action(action, i, do_avg_act=do_avg_act)
 
+            if i % 10 == 0 and self.eval_dyn is not None:
+                self.dyn_eval_test.append(
+                    dyn_comparison_quad(
+                        self.eval_dyn,
+                        current_np_state,
+                        use_action,
+                        self.state_action_history,
+                        self.eval_env.dynamics.timestamp,
+                        dt=self.dt
+                    )
+                )
             current_np_state, stable = self.eval_env.step(
                 use_action, thresh=thresh_stable
             )
@@ -277,6 +296,7 @@ class QuadEvaluator():
         # Output results
         stable = np.array(stable)
         div_of_full_runs = np.array(div)[stable == np.max(stable)]
+        print("----- control eval")
         print(
             "%s: Average div of full runs: %3.2f (%3.2f)" %
             (reference, np.mean(div_of_full_runs), np.std(div_of_full_runs))
@@ -289,9 +309,33 @@ class QuadEvaluator():
             "%s: Steps until divergence: %3.2f (%3.2f)" %
             (reference, np.mean(stable), np.std(stable))
         )
-        if return_div:
-            return np.mean(div), np.std(div)
-        return np.mean(stable), np.std(stable)
+        res_eval = {
+            "mean_stable": np.mean(stable),
+            "std_stable": np.std(stable),
+            "mean_div": np.mean(div),
+            "std_div": np.std(div)
+        }
+        if self.eval_dyn is not None and len(self.dyn_eval_test) > 0:
+            actual_delta = np.array(self.dyn_eval_test)[:, 0] * 1000 / self.dt
+            # [elem[0] for elem in self.dyn_eval_test])
+            trained_delta = np.array(self.dyn_eval_test)[:, 1] * 1000 / self.dt
+            # np.array([elem[0] for elem in self.dyn_eval_test])
+            res_eval["mean_delta"] = np.mean(actual_delta)
+            res_eval["std_delta"] = np.std(actual_delta)
+            res_eval["mean_trained_delta"] = np.mean(trained_delta)
+            res_eval["std_trained_delta"] = np.std(trained_delta)
+            print("--- Dynamics eval")
+            print(
+                "Average delta: %3.2f (%3.2f)" %
+                (res_eval["mean_delta"], res_eval["std_delta"])
+            )
+            print(
+                "Average trained delta: %3.2f (%3.2f)" % (
+                    res_eval["mean_trained_delta"],
+                    res_eval["std_trained_delta"]
+                )
+            )
+        return res_eval
 
     def collect_training_data(self, outpath="data/jan_2021.npy"):
         """
@@ -392,7 +436,9 @@ if __name__ == "__main__":
     # params["dt"] = .05
     # params["max_drone_dist"] = 1
     params["speed_factor"] = .4
-    modified_params = {"wind": 1}
+    modified_params = {
+        'translational_drag': np.array([0.3, 0.3, 0.3])
+    }  # {"wind": 1}
     # {"rotational_drag": np.array([.1, .1, .1])}
     # {"mass": 1}
     # {"translational_drag": np.array([.3, .3, .3])}
@@ -414,9 +460,24 @@ if __name__ == "__main__":
         )
         environment = QuadRotorEnvBase(dynamics, params["dt"])
 
+    dyn_trained = None
+    # dyn_trained = SequenceQuadDynamics()
+    # dyn_trained.load_state_dict(
+    #     torch.load(
+    #         os.path.join(
+    #             "trained_models/quad/final_dyn_wparams", "dynamics_model"
+    #         )
+    #     ),
+    #     strict=False
+    # )
     # EVALUATOR
     evaluator = QuadEvaluator(
-        controller, environment, test_time=1, is_seq=is_seq, **params
+        controller,
+        environment,
+        test_time=1,
+        eval_dyn=dyn_trained,
+        is_seq=is_seq,
+        **params
     )
 
     # Specify arguments for the trajectory
