@@ -11,6 +11,7 @@ from neural_control.drone_loss import fixed_wing_last_loss, fixed_wing_mpc_loss
 from neural_control.dynamics.fixed_wing_dynamics import (
     FixedWingDynamics, LearntFixedWingDynamics
 )
+from neural_control.dynamics.learnt_dynamics import LearntDynamics
 from neural_control.environments.wing_env import SimpleWingEnv
 from neural_control.models.hutter_model import Net
 from evaluate_fixed_wing import FixedWingEvaluator
@@ -140,17 +141,17 @@ class TrainFixedWing(TrainBase):
             self.net, self.state_data, **self.config
         )
 
+        eval_dyn = self.train_dynamics if isinstance(
+            self.train_dynamics, LearntDynamics
+        ) else None
         evaluator = FixedWingEvaluator(
-            controller,
-            self.eval_env,
-            # eval_dyn=self.train_dynamics,
-            **self.config
+            controller, self.eval_env, eval_dyn=eval_dyn, **self.config
         )
 
         # previous version with resampling
-        if epoch % self.config["resample_every"] == 0:
-            print("START COLLECT DATA")
-            self.state_data.num_self_play = self.tmp_num_selfplay
+        # if epoch % self.config["resample_every"] == 0:
+        #     print("START COLLECT DATA")
+        #     self.state_data.num_self_play = self.tmp_num_selfplay
         # if epoch == 0 or self.results_dict["train_dyn_con"][epoch
         #                                                     ] == "controller":
         #     self.state_data.num_self_play = self.tmp_num_selfplay
@@ -160,21 +161,23 @@ class TrainFixedWing(TrainBase):
         # else:
         #     self.results_dict["collected_data"].append(0)
 
-        # run without mpc for evaluation
-        print("--------- eval in simulator (D1) -------------")
-        print(
-            "check: self play?", self.state_data.num_self_play, "eval counter",
-            self.state_data.eval_counter
-        )
-        with torch.no_grad():
-            if epoch == 0 and self.config["self_play"] > 0:
-                # sample to fill all required self play data
-                while self.state_data.eval_counter < self.config["self_play"]:
-                    suc_mean, suc_std = evaluator.run_eval(nr_test=5)
-            else:
-                suc_mean, suc_std = evaluator.run_eval(nr_test=40)
-
+        # switch off self play
         self.state_data.num_self_play = 0
+
+        # run without mpc for evaluation
+        # print("--------- eval in simulator (D1) -------------")
+        # print(
+        #     "check: self play?", self.state_data.num_self_play, "eval counter",
+        #     self.state_data.eval_counter
+        # )
+        # run eval
+        with torch.no_grad():
+            res_eval = evaluator.run_eval(nr_test=20)
+        for key, val in res_eval.items():
+            self.results_dict[key].append(val)
+        suc_mean = res_eval["mean_div_linear"]
+        suc_std = res_eval["std_div_linear"]
+
         # FOR DYN TRAINING
         # if epoch == 0 and self.config["train_dyn_for_epochs"] >= 0:
         #     self.tmp_num_selfplay = self.state_data.num_self_play

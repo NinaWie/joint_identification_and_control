@@ -58,7 +58,9 @@ class FixedWingEvaluator:
 
         self.state_action_history = np.zeros((buffer_len, 12 + 4))
 
-    def fly_to_point(self, target_points, max_steps=1000, do_avg_act=0):
+    def fly_to_point(
+        self, target_points, max_steps=1000, do_avg_act=0, return_traj=False
+    ):
         self.eval_env.zero_reset()
         if self.render:
             self.eval_env.drone_render_object.set_target(target_points)
@@ -78,6 +80,14 @@ class FixedWingEvaluator:
         step = 0
         while len(drone_traj) < max_steps:
             current_target = target_points[current_target_ind]
+            # if self.controller == "random":
+            # TODO: problem - to collect data, we need wrapper!
+            #     action_prior = np.array([.25, .5, .5, .5])
+            #     sampled_action = np.random.normal(
+            #         scale=.15, size=(self.horizon, 4)
+            #     )
+            #     action = np.clip(sampled_action + action_prior, 0, 1)
+            #     use_action = action[0]
             if self.is_seq:
                 action = self.controller.predict_actions(
                     self.state_action_history,
@@ -86,7 +96,6 @@ class FixedWingEvaluator:
                 )
             else:
                 action = self.controller.predict_actions(state, current_target)
-
             use_action = average_action(action, step, do_avg_act=do_avg_act)
             step += 1
 
@@ -160,38 +169,37 @@ class FixedWingEvaluator:
         if len(drone_traj) == max_steps:
             print("Reached max steps")
             div_target.append(self.thresh_div)
-        if not self.waypoint_metric:
-            return np.array(drone_traj), np.array(div_to_linear)
-        return np.array(drone_traj), np.array(div_target)
+        if return_traj:
+            return np.array(drone_traj)
+        else:
+            return np.array(div_target), np.array(div_to_linear)
 
     def run_eval(self, nr_test, return_dists=False, x_dist=50, x_std=5):
         self.dyn_eval_test = []
-        mean_div, not_div_time = [], []
+        mean_div_target, mean_div_linear = [], []
         for i in range(nr_test):
             # important! reset after every run
             if isinstance(self.controller, MPC):
                 self.controller._initDynamics()
-            # target_point = [
-            #     np.random.rand(3) * np.array([70, 10, 10]) +
-            #     np.array([20, -5, -5])
-            # ]
+            # set target point
             rand_y, rand_z = tuple((np.random.rand(2) - .5) * 2 * x_std)
             target_point = np.array([[x_dist, rand_y, rand_z]])
-            # traj_test = run_wing_flight(
-            #     self.eval_env, traj_len=300, dt=self.dt, render=0
-            # )
-            # target_point = [traj_test[-1, :3]]
-            drone_traj, divergences = self.fly_to_point(target_point)
-            # last_x_points = drone_traj[-20:, :3]
-            # last_x_dists = [
-            #     np.linalg.norm(target_point - p) for p in last_x_points
-            # ]
-            # min_dists.append(np.min(last_x_dists))
-            # not_diverged = np.sum(divergences < self.thresh_div)
-            mean_div.append(np.mean(divergences))
+            # for overfitting
+            # target_point = np.array([[x_dist, -3, 3]])
+            # self.eval_env.dynamics.timestamp = np.pi / 2
+            div_target, div_linear = self.fly_to_point(target_point)
+
+            mean_div_target.append(np.mean(div_target))
+            mean_div_linear.append(np.mean(div_linear))
             # not_div_time.append(not_diverged)
-        mean_err = np.mean(mean_div)
-        std_err = np.std(mean_div)
+
+        res_eval = {
+            "mean_div_target": np.mean(mean_div_target),
+            "mean_div_linear": np.mean(mean_div_linear),
+            "std_div_target": np.std(mean_div_target),
+            "std_div_linear": np.std(mean_div_linear),
+            "median_div_target": np.median(mean_div_target)
+        }
         # print(
         #     "Time not diverged: %3.2f (%3.2f)" %
         #     (np.mean(not_div_time), np.std(not_div_time))
@@ -201,20 +209,37 @@ class FixedWingEvaluator:
             # [elem[0] for elem in self.dyn_eval_test])
             trained_delta = np.array(self.dyn_eval_test)[:, 1] * 10000
             # np.array([elem[0] for elem in self.dyn_eval_test])
+            res_eval["mean_delta"] = np.mean(actual_delta)
+            res_eval["std_delta"] = np.std(actual_delta)
+            res_eval["mean_trained_delta"] = np.mean(trained_delta)
+            res_eval["std_trained_delta"] = np.std(trained_delta)
+            print("--- Dynamics eval")
             print(
                 "Average delta: %3.2f (%3.2f)" %
-                (np.mean(actual_delta), np.std(actual_delta))
+                (res_eval["mean_delta"], res_eval["std_delta"])
             )
             print(
-                "Average trained delta: %3.2f (%3.2f)" %
-                (np.mean(trained_delta), np.std(trained_delta))
+                "Average trained delta: %3.2f (%3.2f)" % (
+                    res_eval["mean_trained_delta"],
+                    res_eval["std_trained_delta"]
+                )
             )
 
-        print("Median error: %3.2f" % (np.median(mean_div)))
-        print("Average error: %3.2f (%3.2f)" % (mean_err, std_err))
-        if return_dists:
-            return np.array(mean_div)
-        return mean_err, std_err
+        print("--- controller eval")
+        print(
+            "Average target error: %3.2f (%3.2f)" %
+            (res_eval["mean_div_target"], res_eval["std_div_target"])
+        )
+        print("Median target error: %3.2f" % (res_eval["median_div_target"]))
+        print(
+            "Average linear error: %3.2f (%3.2f)" %
+            (res_eval["mean_div_linear"], res_eval["std_div_linear"])
+        )
+        if return_dists and self.waypoint_metric:
+            return np.array(mean_div_target)
+        if return_dists and not self.waypoint_metric:
+            return np.array(mean_div_linear)
+        return res_eval
 
 
 def load_model(model_path, epoch="", **kwargs):
@@ -335,7 +360,9 @@ if __name__ == "__main__":
     target_point = [[50, -3, -3]]  # , [100, 3, 3]]
 
     # RUN
-    drone_traj, _ = evaluator.fly_to_point(target_point, max_steps=600)
+    drone_traj = evaluator.fly_to_point(
+        target_point, max_steps=600, return_traj=True
+    )
 
     np.set_printoptions(suppress=True, precision=3)
     print("\n final state", drone_traj[-1])

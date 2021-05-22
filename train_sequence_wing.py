@@ -9,6 +9,7 @@ from neural_control.controllers.network_wrapper import FixedWingNetWrapper
 from neural_control.dynamics.fixed_wing_dynamics import (
     FixedWingDynamics, SequenceFixedWingDynamics
 )
+from evaluate_fixed_wing import FixedWingEvaluator
 from neural_control.drone_loss import fixed_wing_mpc_loss
 from neural_control.models.hutter_model import Net
 
@@ -152,10 +153,13 @@ class TrainSequenceWing(TrainFixedWing):
                     if param.grad is not None:
                         self.writer.add_histogram(name + ".grad", param.grad)
                 self.optimizer_controller.step()
-            else:
+            elif train == "dynamics":
                 self.optimizer_dynamics.zero_grad()
                 next_state_d1 = self.train_dynamics(
-                    current_state, in_state, action_seq[:, 0], dt=self.delta_t
+                    current_state,
+                    in_state,
+                    action_seq[:, 0].detach(),
+                    dt=self.delta_t
                 )
                 next_state_d2 = torch.zeros(next_state_d1.size())
                 # need to do all samples in batch separately
@@ -164,24 +168,27 @@ class TrainSequenceWing(TrainFixedWing):
                     current_state_in = torch.unsqueeze(
                         current_state[sample], 0
                     )
-                    action_in = torch.unsqueeze(action_seq[sample, 0], 0)
+                    action_in = torch.unsqueeze(
+                        action_seq[sample, 0].detach(), 0
+                    )
                     next_state_d2[sample] = self.eval_dynamics(
                         current_state_in, action_in, dt=self.delta_t
                     )
-                if i == 0:
-                    np.set_printoptions(suppress=1, precision=3)
-                    print(timestamps[0])
-                    print(next_state_d1[0].detach().numpy())
-                    print(next_state_d2[0].detach().numpy())
-                    print()
+                # if i == 0:
+                #     np.set_printoptions(suppress=1, precision=3)
+                #     print(timestamps[0])
+                #     print(next_state_d1[0].detach().numpy())
+                #     print(next_state_d2[0].detach().numpy())
+                #     print()
                 loss = torch.sum((next_state_d1 - next_state_d2)**2)
                 loss.backward()
                 self.optimizer_dynamics.step()
                 # delta squared is loss divided by batch size
-                self.results_dict["delta_squared"].append(
+                self.results_dict["loss_delta_squared"].append(
                     loss.item() / next_state_d1.size()[0]
                 )
-                loss *= 1000
+                # approximate delta times 1000 / dt
+                loss = loss * 1000 / (self.batch_size * self.delta_t)
             running_loss += loss.item()
 
         epoch_loss = running_loss / i
@@ -201,6 +208,18 @@ class TrainSequenceWing(TrainFixedWing):
         print(f"Loss ({train}): {round(epoch_loss, 2)}")
         self.writer.add_scalar("Loss/train", epoch_loss)
         return epoch_loss
+
+    def collect_data(self, random=False):
+        controller = "random" if random else FixedWingNetWrapper(
+            self.net, self.state_data, **self.config
+        )
+        evaluator = FixedWingEvaluator(
+            controller, self.eval_env, **self.config
+        )
+        # switch on self play
+        self.state_data.num_self_play = self.tmp_num_selfplay
+        while self.state_data.eval_counter < self.config["self_play"]:
+            _ = evaluator.run_eval(nr_test=5)
 
 
 if __name__ == "__main__":
@@ -257,26 +276,32 @@ if __name__ == "__main__":
 
     # FINETUNE CONTROLLER
     base_model = "trained_models/wing/final_baseline_seq_wing"
-    baseline_dyn = "trained_models/wing/dyn_seq_wing_2"
-    config["save_name"] = "seq_sanity_check_2"
+    baseline_dyn = None  # "trained_models/wing/dyn_seq_wing_2"
+    config["save_name"] = "iterative_2"
 
     config["sample_in"] = "eval_env"
-    config["train_dyn_for_epochs"] = -1
-    config["learning_rate_controller"] = 0.00001  # was 0.0001
-    # config["thresh_div_start"] = 4
-    # config["thresh_stable_start"] = 1
-    config["epoch_size"] = 400
-    config["self_play"] = 400
-    config["resample_every"] = 2
+    # config["train_dyn_for_epochs"] = -1
+    config["learning_rate_controller"] = 0.00005  # was 0.0001
+    config["learning_rate_dynamics"] = 0.01
+    config["thresh_div_start"] = 20
+    config["thresh_stable_start"] = 1.5
+    config["epoch_size"] = 200
+    config["self_play"] = 200
+    # config["resample_every"] = 2
     config["buffer_len"] = 3
+    # variables to check whether we have converged
+    config["eval_var_dyn"] = "mean_trained_delta"
+    config["eval_var_con"] = "mean_div_linear"
+    config["min_epochs"] = 5
 
     # train environment is learnt
     # train_dyn = FixedWingDynamics()
     train_dyn = SequenceFixedWingDynamics()
-    train_dyn.load_state_dict(
-        torch.load(os.path.join(baseline_dyn, "dynamics_model"))
-    )
+    if baseline_dyn is not None:
+        train_dyn.load_state_dict(
+            torch.load(os.path.join(baseline_dyn, "dynamics_model"))
+        )
     eval_dyn = FixedWingDynamics(modified_params={"wind": 2})
     trainer = TrainSequenceWing(train_dyn, eval_dyn, config)
     trainer.initialize_model(base_model)
-    trainer.run_dynamics(config)
+    trainer.run_iterative(config)
