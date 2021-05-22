@@ -127,8 +127,11 @@ class TrainBase:
 
         if os.path.exists("runs"):
             shutil.rmtree("runs")
-        self.writer = SummaryWriter()
+        # self.writer = SummaryWriter()
         self.log_train_dyn = False
+
+        self.tmp_num_selfplay = self.config["self_play"]
+        self.model_to_train = "controller"  # default is controller
 
     def init_optimizer(self):
         # Init train loader
@@ -184,10 +187,10 @@ class TrainBase:
             (next_state_d1 - next_state_d2)**2
         ) + self.l2_lambda * l2_loss
         loss.backward()
-        if self.log_train_dyn:
-            for name, param in self.train_dynamics.named_parameters():
-                if param.grad is not None:
-                    self.writer.add_histogram(name + ".grad", param.grad)
+        # if self.log_train_dyn:
+        #     for name, param in self.train_dynamics.named_parameters():
+        #         if param.grad is not None:
+        #             self.writer.add_histogram(name + ".grad", param.grad)
         self.optimizer_dynamics.step()
 
         self.results_dict["loss_dyn_per_step"].append(loss.item())
@@ -238,7 +241,7 @@ class TrainBase:
         self.results_dict["loss"].append(epoch_loss)
         self.results_dict["trained"].append(train)
         print(f"Loss ({train}): {round(epoch_loss, 2)}")
-        self.writer.add_scalar("Loss/train", epoch_loss)
+        # self.writer.add_scalar("Loss/train", epoch_loss)
         return epoch_loss
 
     def sample_new_data(self, epoch):
@@ -273,11 +276,11 @@ class TrainBase:
         self.results_dict["std_success"].append(suc_std)
 
         # In any case do tensorboard logging
-        for name, param in self.net.named_parameters():
-            self.writer.add_histogram(name, param)
-        self.writer.add_scalar("success_mean", success)
-        self.writer.add_scalar("success_std", suc_std)
-        self.writer.flush()
+        # for name, param in self.net.named_parameters():
+        #     self.writer.add_histogram(name, param)
+        # self.writer.add_scalar("success_mean", success)
+        # self.writer.add_scalar("success_std", suc_std)
+        # self.writer.flush()
 
     def evaluate_model(self, epoch):
         """
@@ -314,10 +317,16 @@ class TrainBase:
                 self.train_dynamics.state_dict(),
                 os.path.join(self.save_path, "dynamics_model")
             )
-        self.writer.close()
+        # self.writer.close()
         print("finished and saved.")
 
     def update_curriculum(self, successes):
+        # get max speed
+        max_speed = self.config.get("max_speed", 0.4)
+        if max_speed == self.config["speed_factor"]:
+            # no need to increase anymore
+            return successes
+
         current_possible_steps = 1000 / (
             self.config["speed_factor"] / self.config["delta_t"]
         )
@@ -334,6 +343,12 @@ class TrainBase:
             self.config["thresh_div"] = 0.1
             successes = []
             self.current_score = 0 if self.suc_up_down == 1 else np.inf
+            if max_speed == self.config["speed_factor"]:
+                # from now on measure divergence
+                self.current_score = np.inf
+                self.config["return_div"] = 1
+                self.config["suc_up_down"] = -1
+
         return successes
 
     def run_control(self, config, sampling_based_finetune=False, curriculum=1):
@@ -342,6 +357,11 @@ class TrainBase:
             successes = []
         try:
             for epoch in range(config["nr_epochs"]):
+                self.current_epoch = epoch
+                # collect new data by self play
+                if epoch % self.config["resample_every"] == 0:
+                    self.collect_data(allocate=False)
+
                 _ = self.evaluate_model(epoch)
 
                 if curriculum:
@@ -357,11 +377,6 @@ class TrainBase:
                     )
                     self.results_dict["samples_in_d2"].append(
                         self.state_data.eval_counter
-                    )
-                else:
-                    print(
-                        "Data used for training:",
-                        epoch * (self.epoch_size * (1 + self.self_play))
                     )
         except KeyboardInterrupt:
             pass
@@ -424,6 +439,7 @@ class TrainBase:
         # Run training
         try:
             for epoch in range(config["nr_epochs"]):
+                self.current_epoch = epoch
                 just_switched = 0
                 # SWITCH:
                 # was dynamics, now switching to controller?
@@ -443,9 +459,6 @@ class TrainBase:
                             print(key, torch.sum(torch.abs(val)).item())
                             continue
                         print(key, val)
-                    print(
-                        "Reset the best model score, was:", self.current_score
-                    )
                     epoch_counter = 0
                     self.model_to_train = "controller"
                     for param in self.train_dynamics.parameters():
@@ -465,15 +478,15 @@ class TrainBase:
                     self.model_to_train = "dynamics"
                     just_switched = 1
                     epoch_counter = 0
-                    self.current_score = 0 if self.suc_up_down == 1 else np.inf
+                    # Reset score for optimal model saving
+                    # self.current_score = np.inf
                     for param in self.train_dynamics.parameters():
                         param.requires_grad = True
 
                 # If switched to dynamics or beginning: collect new data
                 if just_switched or epoch == 0:
-                    print("COLLLECT DATA")
                     self.results_dict["samples_in_d2"].append(self.epoch_size)
-                    self.collect_data()
+                    self.collect_data(allocate=True)
                 else:
                     self.results_dict["samples_in_d2"].append(0)
 

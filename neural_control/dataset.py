@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 import numpy as np
 import os
 from neural_control.environments.drone_env import full_state_training_data
@@ -53,6 +54,55 @@ class DroneDataset(torch.utils.data.Dataset):
         self.states[:num] = prep_states
         self.in_ref_states[:num] = prep_in_ref_states
         self.ref_states[:num] = prep_ref_states
+
+    def allocate_self_play(self, num_new):
+        if np.all(self.states.numpy() == 0):
+            print("no need to allocate in first epoch")
+            return True
+
+        self.num_sampled_states = len(self.states)
+        pad_tuple = list(
+            [0 for _ in range(len(self.normed_states.size()) * 2)]
+        )
+        pad_tuple[-1] = num_new
+        self.normed_states = F.pad(
+            input=self.normed_states, pad=pad_tuple, mode='constant', value=0
+        )
+
+        pad_tuple = list([0 for _ in range(len(self.states.size()) * 2)])
+        pad_tuple[-1] = num_new
+        self.states = F.pad(
+            input=self.states, pad=pad_tuple, mode='constant', value=0
+        )
+
+        pad_tuple = list(
+            [0 for _ in range(len(self.in_ref_states.size()) * 2)]
+        )
+        pad_tuple[-1] = num_new
+        self.in_ref_states = F.pad(
+            input=self.in_ref_states, pad=pad_tuple, mode='constant', value=0
+        )
+
+        pad_tuple = list([0 for _ in range(len(self.ref_states.size()) * 2)])
+        pad_tuple[-1] = num_new
+        self.ref_states = F.pad(
+            input=self.ref_states, pad=pad_tuple, mode='constant', value=0
+        )
+        try:
+            pad_tuple = list(
+                [0 for _ in range(len(self.timestamps.size()) * 2)]
+            )
+            pad_tuple[-1] = num_new
+            self.timestamps = F.pad(
+                input=self.timestamps, pad=pad_tuple, mode='constant', value=0
+            )
+        except AttributeError:
+            pass
+        print(
+            "allocated new space", self.states.size(),
+            self.normed_states.size(), self.in_ref_states.size(),
+            self.ref_states.size()
+        )
 
     def get_and_add_eval_data(
         self, states, ref_states, add_to_dataset=False, timestamp=None
@@ -214,13 +264,6 @@ class QuadSequenceDataset(QuadDataset):
                 self.normed_states[index], self.states[index],
                 self.in_ref_states[index], self.ref_states[index]
             )
-
-    def get_eval_index(self):
-        """
-        compute current index where to add new data
-        """
-        if self.num_self_play > 0:
-            return (self.eval_counter % self.num_self_play)
 
     def prepare_history(self, unprocessed_history):
         buffer_len = unprocessed_history.size()[1]
@@ -605,13 +648,6 @@ class WingSequenceDataset(WingDataset):
                 self.normed_states[index], self.states[index],
                 self.in_ref_states[index], self.ref_states[index]
             )
-
-    def get_eval_index(self):
-        """
-        compute current index where to add new data
-        """
-        if self.num_self_play > 0:
-            return (self.eval_counter % self.num_self_play)
 
     def prepare_history(self, unprocessed_history):
         normed_states = unprocessed_history[:, :, :12]

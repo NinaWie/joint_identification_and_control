@@ -46,10 +46,10 @@ class SequenceQuadDynamics(LearntDynamics, FlightmareDynamics):
     def __init__(self, buffer_length=3):
         FlightmareDynamics.__init__(self)
         super(SequenceQuadDynamics,
-              self).__init__((12 + 4) * buffer_length, 4, out_state_size=12)
+              self).__init__((18 + 4) * buffer_length, 4, out_state_size=12)
 
     def simulate(self, state, action, dt):
-        return self.simulate_quadrotor(state, action, dt)
+        return self.simulate_quadrotor(action, state, dt)
 
     def forward(self, state, state_action_buffer, action, dt):
         # run through normal simulator f hat

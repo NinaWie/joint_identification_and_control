@@ -13,6 +13,7 @@ from neural_control.dynamics.quad_dynamics_flightmare import (
     FlightmareDynamics
 )
 from neural_control.dynamics.quad_dynamics_trained import LearntQuadDynamics
+from neural_control.dynamics.learnt_dynamics import LearntDynamics
 from neural_control.controllers.network_wrapper import NetworkWrapper
 from neural_control.environments.drone_env import QuadRotorEnvBase
 from evaluate_drone import QuadEvaluator
@@ -63,8 +64,6 @@ class TrainDrone(TrainBase):
                 config_path = os.path.join(base_model, "param_dict.json")
             with open(config_path, "r") as outfile:
                 previous_parameters = json.load(outfile)
-            data_std = np.array(previous_parameters["std"]).astype(float)
-            data_mean = np.array(previous_parameters["mean"]).astype(float)
             if previous_parameters["dt"] != self.delta_t:
                 raise RuntimeWarning(
                     f"dt difference: {previous_parameters['dt']} in loaded\
@@ -130,9 +129,9 @@ class TrainDrone(TrainBase):
 
         # Backprop
         loss.backward()
-        for name, param in self.net.named_parameters():
-            if param.grad is not None:
-                self.writer.add_histogram(name + ".grad", param.grad)
+        # for name, param in self.net.named_parameters():
+        #     if param.grad is not None:
+        #         self.writer.add_histogram(name + ".grad", param.grad)
         self.optimizer_controller.step()
         return loss
 
@@ -140,22 +139,37 @@ class TrainDrone(TrainBase):
         # EVALUATE
         controller = NetworkWrapper(self.net, self.state_data, **self.config)
 
+        self.state_data.num_self_play = 0
         print("--------- eval in trained simulator (D1 modified) --------")
-        evaluator = QuadEvaluator(controller, self.eval_env, **self.config)
+        eval_dyn = (
+            self.train_dynamics
+            if isinstance(self.train_dynamics, LearntDynamics) else None
+        )
+        evaluator = QuadEvaluator(
+            controller, self.eval_env, eval_dyn=eval_dyn, **self.config
+        )
         with torch.no_grad():
-            suc_mean, suc_std = evaluator.run_eval(
-                "rand", nr_test=10, **self.config
+            res_eval = evaluator.run_eval("rand", nr_test=10, **self.config)
+
+        # logging
+        if self.config["return_div"]:
+            suc_mean, suc_std = (res_eval["mean_div"], res_eval["std_div"])
+        else:
+            suc_mean, suc_std = (
+                res_eval["mean_stable"], res_eval["std_stable"]
             )
+        for key, val in res_eval.items():
+            self.results_dict[key].append(val)
         self.results_dict["eval_in_d1_trained_mean"].append(suc_mean)
         self.results_dict["eval_in_d1_trained_std"].append(suc_std)
 
-        if epoch == 0 and self.config["train_dyn_for_epochs"] >= 0:
-            self.tmp_num_selfplay = self.state_data.num_self_play
-            self.state_data.num_self_play = 0
-            print("stop self play")
-        if epoch == self.config["train_dyn_for_epochs"]:
-            self.state_data.num_self_play = self.tmp_num_selfplay
-            print("start self play to", self.tmp_num_selfplay)
+        # if epoch == 0 and self.config["train_dyn_for_epochs"] >= 0:
+        #     self.tmp_num_selfplay = self.state_data.num_self_play
+        #     self.state_data.num_self_play = 0
+        #     print("stop self play")
+        # if epoch == self.config["train_dyn_for_epochs"]:
+        #     self.state_data.num_self_play = self.tmp_num_selfplay
+        #     print("start self play to", self.tmp_num_selfplay)
 
         ### code to evaluate also in D1 and D2
         ### need to ensure that eval_env is with train_dynamics
@@ -183,7 +197,7 @@ class TrainDrone(TrainBase):
         # self.results_dict["eval_in_d1_std"].append(suc_std)
         # self.state_data.num_self_play = tmp_self_play
 
-        self.sample_new_data(epoch)
+        # self.sample_new_data(epoch)
 
         # increase threshold
         if epoch % 5 == 0 and self.config["thresh_div"] < self.thresh_div_end:
@@ -195,6 +209,20 @@ class TrainDrone(TrainBase):
 
         self.results_dict["thresh_div"].append(self.config["thresh_div"])
         return suc_mean, suc_std
+
+    def collect_data(self, allocate=False):
+        print("COLLECT DATA")
+        self.state_data.num_self_play = self.tmp_num_selfplay
+        if allocate and self.current_epoch > 0:
+            self.state_data.allocate_self_play(self.tmp_num_selfplay)
+
+        controller = NetworkWrapper(self.net, self.state_data, **self.config)
+        evaluator = QuadEvaluator(controller, self.eval_env, **self.config)
+        prev_eval_counter = self.state_data.eval_counter
+        with torch.no_grad():
+            while self.state_data.eval_counter < self.config[
+                "self_play"] + prev_eval_counter:
+                evaluator.run_eval("rand", nr_test=5, **self.config)
 
 
 def train_control(base_model, config):
@@ -225,6 +253,7 @@ def train_dynamics(base_model, config, trainable_params=1):
     """
     modified_params = config["modified_params"]
     config["sample_in"] = "train_env"
+    # config["sample_in"] = "eval_env"
 
     config["thresh_div_start"] = 1
     config["thresh_div_end"] = 3
@@ -239,6 +268,15 @@ def train_dynamics(base_model, config, trainable_params=1):
     # make sure not to resample during dynamics training
     config["resample_every"] = config["train_dyn_for_epochs"] + 1
 
+    # config["epoch_size"] = 1
+    # config["self_play"] = 200
+    # config["min_epochs"] = 5
+    # config["eval_var_dyn"] = "mean_trained_delta"
+    # config["eval_var_con"] = "mean_div"
+    # config["min_epochs"] = 5
+    # config["suc_up_down"] = -1
+    # config["return_div"] = 1
+
     # train environment is learnt
     train_dynamics = LearntQuadDynamics(trainable_params=trainable_params)
     eval_dynamics = FlightmareDynamics(modified_params)
@@ -248,6 +286,7 @@ def train_dynamics(base_model, config, trainable_params=1):
 
     # RUN
     trainer.run_dynamics(config)
+    # trainer.run_iterative(config)
 
 
 def train_sampling_finetune(base_model, config):

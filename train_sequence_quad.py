@@ -12,6 +12,7 @@ from neural_control.dynamics.quad_dynamics_flightmare import (
 from neural_control.dynamics.quad_dynamics_trained import SequenceQuadDynamics
 from neural_control.drone_loss import quad_mpc_loss
 from neural_control.models.hutter_model import Net
+from evaluate_drone import QuadEvaluator
 
 
 class TrainSequenceQuad(TrainDrone):
@@ -110,40 +111,42 @@ class TrainSequenceQuad(TrainDrone):
                             current_state, action, dt=self.delta_t_train
                         )
                     intermediate_states[:, k] = current_state
-                    # roll history # TODO
-                    # state_action_cat = torch.unsqueeze(
-                    #     torch.cat((current_state, action), dim=1), dim=1
-                    # )
-                    # state_action_history = torch.cat(
-                    #     (state_action_cat, state_action_history[:, :-1]),
-                    #     dim=1
-                    # )
-                    # in_state = self.state_data.prepare_history(
-                    #     state_action_history.clone()
-                    # )
+                    # roll history
+                    state_action_cat = torch.unsqueeze(
+                        torch.cat((current_state, action), dim=1), dim=1
+                    )
+                    state_action_history = torch.cat(
+                        (state_action_cat, state_action_history[:, :-1]),
+                        dim=1
+                    )
+                    in_state = self.state_data.prepare_history(
+                        state_action_history.clone()
+                    )
 
                 # if i == 0:
-                # np.set_printoptions(suppress=1, precision=3)
-                # print(timestamps[0])
-                # print("compare trained dyn to gt dyn wo force")
-                # print(intermediate_states[0].detach().numpy())
-                # print(ref_states[0].detach().numpy())
-                # print("eval and bl")
-                # print(eval_dyn_state[0].detach().numpy())
-                # print(bl_dyn_state[0].detach().numpy())
+                #     np.set_printoptions(suppress=1, precision=3)
+                #     print(timestamps[0])
+                #     print("compare trained dyn to gt dyn wo force")
+                #     print(intermediate_states[0].detach().numpy())
+                #     print("eval and bl")
+                #     print(eval_dyn_state[0].detach().numpy())
+                #     print(bl_dyn_state[0].detach().numpy())
                 loss = quad_mpc_loss(
                     intermediate_states, ref_states, action_seq, printout=0
                 )
                 # Backprop
                 loss.backward()
-                for name, param in self.net.named_parameters():
-                    if param.grad is not None:
-                        self.writer.add_histogram(name + ".grad", param.grad)
+                # for name, param in self.net.named_parameters():
+                #     if param.grad is not None:
+                #         self.writer.add_histogram(name + ".grad", param.grad)
                 self.optimizer_controller.step()
-            else:
+            elif train == "dynamics":
                 self.optimizer_dynamics.zero_grad()
                 next_state_d1 = self.train_dynamics(
-                    current_state, in_state, action_seq[:, 0], dt=self.delta_t
+                    current_state,
+                    in_state,
+                    action_seq[:, 0].detach(),
+                    dt=self.delta_t
                 )
                 next_state_d2 = torch.zeros(next_state_d1.size())
                 # need to do all samples in batch separately
@@ -152,24 +155,27 @@ class TrainSequenceQuad(TrainDrone):
                     current_state_in = torch.unsqueeze(
                         current_state[sample], 0
                     )
-                    action_in = torch.unsqueeze(action_seq[sample, 0], 0)
+                    action_in = torch.unsqueeze(
+                        action_seq[sample, 0].detach(), 0
+                    )
                     next_state_d2[sample] = self.eval_dynamics(
                         current_state_in, action_in, dt=self.delta_t
                     )
-                if i == 0:
-                    np.set_printoptions(suppress=1, precision=3)
-                    print(timestamps[0])
-                    print(next_state_d1[0].detach().numpy())
-                    print(next_state_d2[0].detach().numpy())
-                    print()
+                # if i == 0:
+                #     np.set_printoptions(suppress=1, precision=3)
+                #     print(timestamps[0])
+                #     print(next_state_d1[0].detach().numpy())
+                #     print(next_state_d2[0].detach().numpy())
+                #     print()
                 loss = torch.sum((next_state_d1 - next_state_d2)**2)
                 loss.backward()
                 self.optimizer_dynamics.step()
                 # delta squared is loss divided by batch size
-                self.results_dict["delta_squared"].append(
+                self.results_dict["loss_delta_squared"].append(
                     loss.item() / next_state_d1.size()[0]
                 )
-                loss *= 1000
+                # approximate delta times 1000 / dt
+                loss = loss * 1000 / (self.batch_size * self.delta_t)
             running_loss += loss.item()
 
         epoch_loss = running_loss / i
@@ -187,7 +193,7 @@ class TrainSequenceQuad(TrainDrone):
         self.results_dict["loss"].append(epoch_loss)
         self.results_dict["trained"].append(train)
         print(f"Loss ({train}): {round(epoch_loss, 2)}")
-        self.writer.add_scalar("Loss/train", epoch_loss)
+        # self.writer.add_scalar("Loss/train", epoch_loss)
         return epoch_loss
 
 
@@ -198,73 +204,60 @@ if __name__ == "__main__":
 
     # # USED TO PRETRAIN CONTROLLER: (set random init in evaluate!)
     # # OR FINETUNE WO updated residual
-    base_model = None
-    #"trained_models/quad/final_baseline_seq_quad" # finetune
-    baseline_dyn = None
-    config["save_name"] = "baseline_con_seq"
-    # "baseline_seq_quad_finetuned" # finetune
-    config["sample_in"] = "train_env"
-    # "eval_env" # finetune
-    config["resample_every"] = 10000
-    config["train_dyn_for_epochs"] = -1
-    config["epoch_size"] = 1000
-    config["self_play"] = 1000
-    # config["epoch_size"] = 500 # finetune
-    # config["self_play"] = 500 # finetune
-    config["buffer_len"] = 3
-
-    # train environment is learnt
-    train_dyn = FlightmareDynamics()
-    eval_dyn = FlightmareDynamics()  # modified_params={"wind": 2}) # finetune
-    trainer = TrainSequenceQuad(train_dyn, eval_dyn, config)
-    trainer.initialize_model(base_model)
-    trainer.run_control(config, curriculum=1)
-
-    # # FINETUNE DYNAMICS
-    # base_model = "trained_models/quad/final_baseline_seq_quad"
-    # baseline_dyn = None
-    # config["save_name"] = "dyn_seq_quad_5"
-
-    # mod_param = {"wind": 2}
-
-    # config["learning_rate_dynamics"] = 0.01  # was 0.0001
-    # config["sample_in"] = "eval_env"
-    # config["thresh_div_start"] = 20
-    # config["thresh_stable_start"] = 1.5
-    # config["train_dyn_for_epochs"] = 200
-    # config["epoch_size"] = 200
-    # config["self_play"] = 200
-    # config["resample_every"] = 10
-    # config["waypoint_metric"] = True
-
-    # train_dyn = SequenceQuadDynamics()
-    # eval_dyn = FlightmareDynamics(modified_params=mod_param)
-    # trainer = TrainSequenceQuad(train_dyn, eval_dyn, config)
-    # trainer.initialize_model(base_model)
-    # trainer.run_dynamics(config)
-
-    # FINETUNE CONTROLLER
-    # base_model = "trained_models/quad/final_baseline_seq_quad"
-    # baseline_dyn = "trained_models/quad/dyn_seq_quad_2"
-    # config["save_name"] = "seq_sanity_check_2"
-
-    # config["sample_in"] = "eval_env"
+    # base_model = None # "trained_models/quad/baseline_con_seq"
+    # config["save_name"] = "baseline_con_seq_2"
+    # # "baseline_seq_quad_finetuned" # finetune
+    # config["sample_in"] = "train_env"
+    # # "eval_env" # finetune
+    # config["resample_every"] = 10000
     # config["train_dyn_for_epochs"] = -1
-    # config["learning_rate_controller"] = 0.00001  # was 0.0001
-    # # config["thresh_div_start"] = 4
-    # # config["thresh_stable_start"] = 1
-    # config["epoch_size"] = 400
-    # config["self_play"] = 400
-    # config["resample_every"] = 2
+    # config["epoch_size"] = 1000
+    # config["self_play"] = 1000
+    # # config["epoch_size"] = 500 # finetune
+    # # config["self_play"] = 500 # finetune
     # config["buffer_len"] = 3
 
+    # # for finetuning
+    # # config["thresh_div_start"] = 3
+    # # config["thresh_stable_start"] = 2
+    # # config["suc_up_down"] = -1
+    # # config["return_div"] = 1
+
     # # train environment is learnt
-    # # train_dyn = FlightmareDynamics()
-    # train_dyn = SequenceQuadDynamics()
-    # train_dyn.load_state_dict(
-    #     torch.load(os.path.join(baseline_dyn, "dynamics_model"))
-    # )
-    # eval_dyn = FlightmareDynamics(modified_params={"wind": 2})
+    # train_dyn = FlightmareDynamics()
+    # eval_dyn = FlightmareDynamics()  # modified_params={"wind": 2}) # finetune
     # trainer = TrainSequenceQuad(train_dyn, eval_dyn, config)
     # trainer.initialize_model(base_model)
-    # trainer.run_dynamics(config)
+    # trainer.run_control(config, curriculum=0)
+
+    # # FINETUNE DYNAMICS ITERATIVELY
+    base_model = "trained_models/quad/final_baseline_con_seq"
+    baseline_dyn = None
+    config["save_name"] = "iterative_seq_veldrag_3"
+
+    mod_param = {
+        'translational_drag': np.array([0.3, 0.3, 0.3])
+    }  # {"wind": 1}
+    config["learning_rate_controller"] = 0.00001
+    config["learning_rate_dynamics"] = 0.001
+    config["thresh_div_start"] = 1
+    config["thresh_stable_start"] = 2
+    config["sample_in"] = "eval_env"
+    config["epoch_size"] = 200
+    config["self_play"] = 200
+    config["buffer_len"] = 3
+    config["eval_var_dyn"] = "mean_trained_delta"
+    config["eval_var_con"] = "mean_div"
+    config["min_epochs"] = 5
+    config["suc_up_down"] = -1
+    config["return_div"] = 1
+
+    train_dyn = SequenceQuadDynamics()
+    if baseline_dyn is not None:
+        train_dyn.load_state_dict(
+            torch.load(os.path.join(baseline_dyn, "dynamics_model"))
+        )
+    eval_dyn = FlightmareDynamics(modified_params=mod_param)
+    trainer = TrainSequenceQuad(train_dyn, eval_dyn, config)
+    trainer.initialize_model(base_model)
+    trainer.run_iterative(config)

@@ -149,9 +149,9 @@ class TrainSequenceWing(TrainFixedWing):
                 )
                 # Backprop
                 loss.backward()
-                for name, param in self.net.named_parameters():
-                    if param.grad is not None:
-                        self.writer.add_histogram(name + ".grad", param.grad)
+                # for name, param in self.net.named_parameters():
+                #     if param.grad is not None:
+                #         self.writer.add_histogram(name + ".grad", param.grad)
                 self.optimizer_controller.step()
             elif train == "dynamics":
                 self.optimizer_dynamics.zero_grad()
@@ -208,18 +208,6 @@ class TrainSequenceWing(TrainFixedWing):
         print(f"Loss ({train}): {round(epoch_loss, 2)}")
         self.writer.add_scalar("Loss/train", epoch_loss)
         return epoch_loss
-
-    def collect_data(self, random=False):
-        controller = "random" if random else FixedWingNetWrapper(
-            self.net, self.state_data, **self.config
-        )
-        evaluator = FixedWingEvaluator(
-            controller, self.eval_env, **self.config
-        )
-        # switch on self play
-        self.state_data.num_self_play = self.tmp_num_selfplay
-        while self.state_data.eval_counter < self.config["self_play"]:
-            _ = evaluator.run_eval(nr_test=5)
 
 
 if __name__ == "__main__":

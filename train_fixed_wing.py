@@ -41,8 +41,6 @@ class TrainFixedWing(TrainBase):
         else:
             raise ValueError("sample in must be one of eval_env, train_env")
 
-        self.tmp_num_selfplay = self.config["self_play"]
-
     def initialize_model(self, base_model=None, base_model_name="model_wing"):
         # Load model or initialize model
         if base_model is not None:
@@ -217,6 +215,21 @@ class TrainFixedWing(TrainBase):
 
         self.results_dict["thresh_div"].append(self.config["thresh_div"])
         return suc_mean, suc_std
+
+    def collect_data(self, random=False, allocate=False):
+        # TODO: allocate
+        controller = FixedWingNetWrapper(
+            self.net, self.state_data, **self.config
+        )
+        evaluator = FixedWingEvaluator(
+            controller, self.eval_env, **self.config
+        )
+        if random:
+            evaluator.use_random_actions = True
+        # switch on self play
+        self.state_data.num_self_play = self.tmp_num_selfplay
+        while self.state_data.eval_counter < self.config["self_play"]:
+            _ = evaluator.run_eval(nr_test=5)
 
 
 def train_control(base_model, config):
