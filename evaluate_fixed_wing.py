@@ -105,9 +105,12 @@ class FixedWingEvaluator:
             if step % 10 == 0 and self.eval_dyn is not None:
                 self.dyn_eval_test.append(
                     dyn_comparison_wing(
-                        self.eval_dyn, state, use_action,
+                        self.eval_dyn,
+                        state,
+                        use_action,
                         self.state_action_history,
-                        self.eval_env.dynamics.timestamp
+                        self.eval_env.dynamics.timestamp,
+                        dt=self.dt
                     )
                 )
             state, stable = self.eval_env.step(

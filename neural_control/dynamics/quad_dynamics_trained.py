@@ -45,8 +45,10 @@ class SequenceQuadDynamics(LearntDynamics, FlightmareDynamics):
 
     def __init__(self, buffer_length=3):
         FlightmareDynamics.__init__(self)
-        super(SequenceQuadDynamics,
-              self).__init__((18 + 4) * buffer_length, 4, out_state_size=12)
+        # input state action history has 22 channels
+        super(SequenceQuadDynamics, self).__init__(20, 4, out_state_size=12)
+        self.conv_history_1 = nn.Conv1d(22, 20, kernel_size=3)
+        self.conv_history_2 = nn.Conv1d(20, 20, kernel_size=3)
 
     def simulate(self, state, action, dt):
         return self.simulate_quadrotor(action, state, dt)
@@ -54,6 +56,11 @@ class SequenceQuadDynamics(LearntDynamics, FlightmareDynamics):
     def forward(self, state, state_action_buffer, action, dt):
         # run through normal simulator f hat
         new_state = self.simulate(state, action, dt)
+        # conv layers for history
+        history = torch.transpose(state_action_buffer, 1, 2)
+        history = torch.relu(self.conv_history_1(history))
+        history = torch.relu(self.conv_history_2(history))
+        history = torch.reshape(history, (-1, 20))
         # run through residual network delta
-        added_new_state = self.state_transformer(state_action_buffer, action)
+        added_new_state = self.state_transformer(history, action)
         return new_state + added_new_state

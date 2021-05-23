@@ -206,7 +206,7 @@ class TrainSequenceWing(TrainFixedWing):
         self.results_dict["loss"].append(epoch_loss)
         self.results_dict["trained"].append(train)
         print(f"Loss ({train}): {round(epoch_loss, 2)}")
-        self.writer.add_scalar("Loss/train", epoch_loss)
+        # self.writer.add_scalar("Loss/train", epoch_loss)
         return epoch_loss
 
 
@@ -265,22 +265,22 @@ if __name__ == "__main__":
     # FINETUNE CONTROLLER
     base_model = "trained_models/wing/final_baseline_seq_wing"
     baseline_dyn = None  # "trained_models/wing/dyn_seq_wing_2"
-    config["save_name"] = "iterative_2"
+    config["save_name"] = "iterative_seq_wing_3"
 
     config["sample_in"] = "eval_env"
     # config["train_dyn_for_epochs"] = -1
-    config["learning_rate_controller"] = 0.00005  # was 0.0001
-    config["learning_rate_dynamics"] = 0.01
-    config["thresh_div_start"] = 20
-    config["thresh_stable_start"] = 1.5
-    config["epoch_size"] = 200
-    config["self_play"] = 200
+    config["learning_rate_controller"] = 0.00001  # was 0.0001
+    config["learning_rate_dynamics"] = 0.005
+    # config["thresh_div_start"] = 20
+    # config["thresh_stable_start"] = 1.5
+    config["epoch_size"] = 500
+    config["self_play"] = 500
     # config["resample_every"] = 2
     config["buffer_len"] = 3
     # variables to check whether we have converged
     config["eval_var_dyn"] = "mean_trained_delta"
     config["eval_var_con"] = "mean_div_linear"
-    config["min_epochs"] = 5
+    config["min_epochs"] = 8
 
     # train environment is learnt
     # train_dyn = FixedWingDynamics()

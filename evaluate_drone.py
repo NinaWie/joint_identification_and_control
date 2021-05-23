@@ -66,6 +66,7 @@ class QuadEvaluator():
         self.test_time = test_time
         self.speed_factor = speed_factor
         self.state_action_history = np.zeros((buffer_len, 12 + 4))
+        self.use_random_actions = False
 
     def help_render(self, sleep=.05):
         """
@@ -150,7 +151,11 @@ class QuadEvaluator():
             trajectory = reference.get_ref_traj(current_np_state, 0)
             if self.is_seq:
                 action = self.controller.predict_actions(
-                    self.state_action_history, trajectory.copy()
+                    self.state_action_history,
+                    trajectory.copy(),
+                    is_seq=1,
+                    hist_conv=1,
+                    timestamp=self.eval_env.dynamics.timestamp
                 )
             else:
                 action = self.controller.predict_actions(
@@ -159,6 +164,10 @@ class QuadEvaluator():
 
             # possible average with previous actions
             use_action = average_action(action, i, do_avg_act=do_avg_act)
+            if self.use_random_actions:
+                if i == 0:
+                    print("Attention: use random action")
+                use_action = np.random.rand(4)
 
             if i % 10 == 0 and self.eval_dyn is not None:
                 self.dyn_eval_test.append(
@@ -436,9 +445,7 @@ if __name__ == "__main__":
     # params["dt"] = .05
     # params["max_drone_dist"] = 1
     params["speed_factor"] = .4
-    modified_params = {
-        'translational_drag': np.array([0.3, 0.3, 0.3])
-    }  # {"wind": 1}
+    modified_params = {"wind": 1}
     # {"rotational_drag": np.array([.1, .1, .1])}
     # {"mass": 1}
     # {"translational_drag": np.array([.3, .3, .3])}
@@ -465,7 +472,7 @@ if __name__ == "__main__":
     # dyn_trained.load_state_dict(
     #     torch.load(
     #         os.path.join(
-    #             "trained_models/quad/final_dyn_wparams", "dynamics_model"
+    #             "trained_models/quad/iterative_seq_wind_conv", "dynamics_model"
     #         )
     #     ),
     #     strict=False

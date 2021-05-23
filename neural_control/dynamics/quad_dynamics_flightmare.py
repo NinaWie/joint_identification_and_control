@@ -92,9 +92,9 @@ class FlightmareDynamics(Dynamics):
         )[:, :, 0]
 
         if self.cfg.get("wind", 0) != 0:
-            self.timestamp += 0.05
             wind = torch.zeros(3)
             wind[1] = self.cfg["wind"] * np.sin(self.timestamp)
+            self.timestamp += 0.05
         else:
             wind = 0
         thrust_min_grav = (

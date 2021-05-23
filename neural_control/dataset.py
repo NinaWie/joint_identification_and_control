@@ -233,7 +233,7 @@ class QuadSequenceDataset(QuadDataset):
         # self.ref_states = torch.zeros(num_data, self.nr_actions)
 
         # input to neural network: normalized states with relative position
-        self.normed_states = torch.zeros(num_data, buffer_len * (18 + 4))
+        self.normed_states = torch.zeros(num_data, buffer_len, (18 + 4))
         # just the current state
         self.states = torch.zeros(num_data, buffer_len, 12 + 4)
         # ref that is input to the net
@@ -296,9 +296,9 @@ class QuadSequenceDataset(QuadDataset):
             dim=2
         )
         # flatten
-        history = torch.reshape(
-            history, (-1, history.size()[1] * history.size()[2])
-        )
+        # history = torch.reshape(
+        #     history, (-1, history.size()[1] * history.size()[2])
+        # )
         return history
 
     def prepare_data(self, states, ref_states):

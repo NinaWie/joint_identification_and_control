@@ -103,9 +103,9 @@ class TrainFixedWing(TrainBase):
 
         # Backprop
         loss.backward()
-        for name, param in self.net.named_parameters():
-            if param.grad is not None:
-                self.writer.add_histogram(name + ".grad", param.grad)
+        # for name, param in self.net.named_parameters():
+        #     if param.grad is not None:
+        #         self.writer.add_histogram(name + ".grad", param.grad)
         self.optimizer_controller.step()
         return loss
 
@@ -217,7 +217,15 @@ class TrainFixedWing(TrainBase):
         return suc_mean, suc_std
 
     def collect_data(self, random=False, allocate=False):
-        # TODO: allocate
+        print("COLLECT DATA")
+        # switch on self play
+        self.state_data.num_self_play = self.tmp_num_selfplay
+
+        if allocate and self.current_epoch > 0:
+            self.state_data.allocate_self_play(self.tmp_num_selfplay)
+        else:
+            self.state_data.num_sampled_states = 0
+
         controller = FixedWingNetWrapper(
             self.net, self.state_data, **self.config
         )
@@ -226,10 +234,14 @@ class TrainFixedWing(TrainBase):
         )
         if random:
             evaluator.use_random_actions = True
-        # switch on self play
-        self.state_data.num_self_play = self.tmp_num_selfplay
-        while self.state_data.eval_counter < self.config["self_play"]:
+        prev_eval_counter = self.state_data.eval_counter
+        while self.state_data.eval_counter < self.config["self_play"
+                                                         ] + prev_eval_counter:
             _ = evaluator.run_eval(nr_test=5)
+        print(
+            len(self.state_data.states), self.state_data.get_eval_index(),
+            self.state_data.eval_counter, self.state_data.num_sampled_states
+        )
 
 
 def train_control(base_model, config):

@@ -231,10 +231,10 @@ class FixedWingDynamics:
         )
 
         if self.cfg.get("wind", 0) != 0:
-            self.timestamp += 0.05
             wind_vec_world = torch.zeros(3)
             wind_vec_world[1] = self.cfg["wind"] * np.cos(self.timestamp)
             wind_drag = torch.matmul(body_to_inertia, wind_vec_world)
+            self.timestamp += 0.05
             # print(wind_vec_world)
             # print(wind_drag.size())
         else:

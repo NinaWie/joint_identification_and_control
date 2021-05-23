@@ -38,7 +38,14 @@ class NetworkWrapper:
         # four control signals
         self.action_dim = 4
 
-    def predict_actions(self, current_np_state, ref_states, timestamp=None):
+    def predict_actions(
+        self,
+        current_np_state,
+        ref_states,
+        timestamp=None,
+        is_seq=0,
+        hist_conv=0
+    ):
         """
         Predict an action for the current state. This function is used by all
         evaluation functions
@@ -54,7 +61,9 @@ class NetworkWrapper:
         )
 
         with torch.no_grad():
-            suggested_action = self.net(in_state, ref)
+            suggested_action = self.net(
+                in_state, ref, is_seq=is_seq, hist_conv=hist_conv
+            )
 
             suggested_action = torch.sigmoid(suggested_action)
 

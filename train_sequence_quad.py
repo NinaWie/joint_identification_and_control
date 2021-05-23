@@ -11,7 +11,7 @@ from neural_control.dynamics.quad_dynamics_flightmare import (
 )
 from neural_control.dynamics.quad_dynamics_trained import SequenceQuadDynamics
 from neural_control.drone_loss import quad_mpc_loss
-from neural_control.models.hutter_model import Net
+from neural_control.models.history_conv_model import Net
 from evaluate_drone import QuadEvaluator
 
 
@@ -31,11 +31,12 @@ class TrainSequenceQuad(TrainDrone):
         self.epoch_size = epoch_size_tmp
         if base_model is None:
             self.net = Net(
-                (18 + 4) * self.config.get("buffer_len", 3),
+                (18 + 4),
                 self.nr_actions,
                 self.ref_dim,
                 self.action_dim * self.nr_actions,
-                conv=1
+                conv=1,
+                hist_conv=True
             )
 
         self.state_data = QuadSequenceDataset(self.epoch_size, **self.config)
@@ -64,7 +65,7 @@ class TrainSequenceQuad(TrainDrone):
             # print()
             current_state = state_action_history[:, 0, :12]
 
-            actions = self.net(in_state, in_ref_state)
+            actions = self.net(in_state, in_ref_state, is_seq=1, hist_conv=1)
             actions = torch.sigmoid(actions)
             action_seq = torch.reshape(
                 actions, (-1, self.nr_actions, self.action_dim)
@@ -203,19 +204,19 @@ if __name__ == "__main__":
         config = json.load(infile)
 
     # # USED TO PRETRAIN CONTROLLER: (set random init in evaluate!)
-    # # OR FINETUNE WO updated residual
-    # base_model = None # "trained_models/quad/baseline_con_seq"
-    # config["save_name"] = "baseline_con_seq_2"
+    # OR FINETUNE WO updated residual
+    # base_model = "trained_models/quad/baseline_con_seq_conv"
+    # config["save_name"] = "baseline_con_seq_conv_2"
     # # "baseline_seq_quad_finetuned" # finetune
     # config["sample_in"] = "train_env"
     # # "eval_env" # finetune
-    # config["resample_every"] = 10000
+    # config["resample_every"] = 2
     # config["train_dyn_for_epochs"] = -1
     # config["epoch_size"] = 1000
     # config["self_play"] = 1000
     # # config["epoch_size"] = 500 # finetune
     # # config["self_play"] = 500 # finetune
-    # config["buffer_len"] = 3
+    # config["buffer_len"] = 5
 
     # # for finetuning
     # # config["thresh_div_start"] = 3
@@ -228,27 +229,27 @@ if __name__ == "__main__":
     # eval_dyn = FlightmareDynamics()  # modified_params={"wind": 2}) # finetune
     # trainer = TrainSequenceQuad(train_dyn, eval_dyn, config)
     # trainer.initialize_model(base_model)
-    # trainer.run_control(config, curriculum=0)
+    # trainer.run_control(config, curriculum=1)  # finetune 0
 
     # # FINETUNE DYNAMICS ITERATIVELY
     base_model = "trained_models/quad/final_baseline_con_seq"
     baseline_dyn = None
-    config["save_name"] = "iterative_seq_veldrag_3"
+    config["save_name"] = "iterative_seq_wind_conv"
 
-    mod_param = {
-        'translational_drag': np.array([0.3, 0.3, 0.3])
-    }  # {"wind": 1}
+    # mod_param = {'translational_drag': np.array([0.3, 0.3, 0.3])}
+    mod_param = {"wind": 1}
     config["learning_rate_controller"] = 0.00001
-    config["learning_rate_dynamics"] = 0.001
+    config["learning_rate_dynamics"] = 0.01
     config["thresh_div_start"] = 1
+    config["thresh_div_end"] = 1.2
     config["thresh_stable_start"] = 2
     config["sample_in"] = "eval_env"
-    config["epoch_size"] = 200
-    config["self_play"] = 200
-    config["buffer_len"] = 3
+    config["epoch_size"] = 2000
+    config["self_play"] = 2000
+    config["buffer_len"] = 5
     config["eval_var_dyn"] = "mean_trained_delta"
     config["eval_var_con"] = "mean_div"
-    config["min_epochs"] = 5
+    config["min_epochs"] = 30
     config["suc_up_down"] = -1
     config["return_div"] = 1
 
