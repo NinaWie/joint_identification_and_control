@@ -280,6 +280,7 @@ class QuadEvaluator():
         """
         Function to evaluate a trajectory multiple times
         """
+        self.dyn_eval_test = []
         if nr_test == 0:
             return 0, 0
         div, stable = [], []
@@ -325,9 +326,9 @@ class QuadEvaluator():
             "std_div": np.std(div)
         }
         if self.eval_dyn is not None and len(self.dyn_eval_test) > 0:
-            actual_delta = np.array(self.dyn_eval_test)[:, 0] * 1000 / self.dt
+            actual_delta = np.array(self.dyn_eval_test)[:, 0]
             # [elem[0] for elem in self.dyn_eval_test])
-            trained_delta = np.array(self.dyn_eval_test)[:, 1] * 1000 / self.dt
+            trained_delta = np.array(self.dyn_eval_test)[:, 1]
             # np.array([elem[0] for elem in self.dyn_eval_test])
             res_eval["mean_delta"] = np.mean(actual_delta)
             res_eval["std_delta"] = np.std(actual_delta)
@@ -472,7 +473,8 @@ if __name__ == "__main__":
     # dyn_trained.load_state_dict(
     #     torch.load(
     #         os.path.join(
-    #             "trained_models/quad/iterative_seq_wind_conv", "dynamics_model"
+    #             "trained_models/quad/iterative_seq_dyn_pretrained",
+    #             "dynamics_model"
     #         )
     #     ),
     #     strict=False
@@ -484,6 +486,7 @@ if __name__ == "__main__":
         test_time=1,
         eval_dyn=dyn_trained,
         is_seq=is_seq,
+        # buffer_len=5,
         **params
     )
 

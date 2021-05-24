@@ -352,8 +352,9 @@ class SequenceFixedWingDynamics(LearntDynamics, FixedWingDynamics):
 
     def __init__(self, buffer_length=3):
         FixedWingDynamics.__init__(self)
-        super(SequenceFixedWingDynamics,
-              self).__init__((12 + 4) * buffer_length, 4, out_state_size=12)
+        super(SequenceFixedWingDynamics, self).__init__(
+            (12 + 4) * buffer_length, 4, out_state_size=12, std=0.001
+        )
 
     def simulate(self, state, action, dt):
         return self.simulate_fixed_wing(state, action, dt)

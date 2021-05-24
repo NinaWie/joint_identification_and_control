@@ -9,7 +9,8 @@ class LearntDynamics(torch.nn.Module):
         state_size,
         action_size,
         out_state_size=None,
-        transform_action=False
+        transform_action=False,
+        std=0.0001
     ):
         super(LearntDynamics, self).__init__()
         self.transform_action = transform_action
@@ -21,7 +22,6 @@ class LearntDynamics(torch.nn.Module):
             out_state_size = state_size
         # residual network
         self.linear_state_1 = nn.Linear(state_size + action_size, 64)
-        std = 0.0001
         torch.nn.init.normal_(self.linear_state_1.weight, mean=0.0, std=std)
         torch.nn.init.normal_(self.linear_state_1.bias, mean=0.0, std=std)
 

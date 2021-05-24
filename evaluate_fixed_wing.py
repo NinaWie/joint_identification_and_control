@@ -207,9 +207,9 @@ class FixedWingEvaluator:
         #     (np.mean(not_div_time), np.std(not_div_time))
         # )
         if self.eval_dyn is not None:
-            actual_delta = np.array(self.dyn_eval_test)[:, 0] * 1000 / self.dt
+            actual_delta = np.array(self.dyn_eval_test)[:, 0]
             # [elem[0] for elem in self.dyn_eval_test])
-            trained_delta = np.array(self.dyn_eval_test)[:, 1] * 1000 / self.dt
+            trained_delta = np.array(self.dyn_eval_test)[:, 1]
             # np.array([elem[0] for elem in self.dyn_eval_test])
             res_eval["mean_delta"] = np.mean(actual_delta)
             res_eval["std_delta"] = np.std(actual_delta)
@@ -324,7 +324,8 @@ if __name__ == "__main__":
     # dyn_trained.load_state_dict(
     #     torch.load(
     #         os.path.join(
-    #             "trained_models/wing/iterative_seq_1", "dynamics_model"
+    #             "trained_models/wing/iterative_seq_dyn_pretrained",
+    #             "dynamics_model"
     #         )
     #     )
     # )
@@ -340,6 +341,7 @@ if __name__ == "__main__":
         test_time=1,
         **params
     )
+    # evaluator.use_random_actions = True
 
     # only run evaluation without render
     if args.eval > 0:

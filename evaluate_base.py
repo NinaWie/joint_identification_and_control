@@ -155,8 +155,10 @@ def dyn_comparison_wing(
     # print("trained")
     # print(state_trained.numpy())
     # print()
-    actual_delta = torch.sum((state_mod - state_bl)**2)
-    trained_delta = torch.sum((state_mod - state_trained)**2)
+    actual_delta = torch.sqrt(torch.sum(((state_mod - state_bl) / dt)**2))
+    trained_delta = torch.sqrt(
+        torch.sum(((state_mod - state_trained) / dt)**2)
+    )
     return [actual_delta.item(), trained_delta.item()]
 
 
@@ -173,7 +175,10 @@ def dyn_comparison_quad(
 
     # DYN EVALUATION
     dyn_bl = FlightmareDynamics()
-    dyn_mod = FlightmareDynamics({"wind": 1})
+    dyn_mod = FlightmareDynamics(
+        {"wind": 1}
+        # {'translational_drag': np.array([0.3, 0.3, 0.3])}
+    )
     dyn_mod.timestamp = timestamp
     # pass through dynamics
     state_bl = dyn_bl(state_torch, action_torch, dt=dt)
@@ -190,6 +195,8 @@ def dyn_comparison_quad(
     # print("trained")
     # print(state_trained.numpy())
     # print()
-    actual_delta = torch.sum((state_mod - state_bl)**2)
-    trained_delta = torch.sum((state_mod - state_trained)**2)
+    actual_delta = torch.sqrt(torch.sum(((state_mod - state_bl) / dt)**2))
+    trained_delta = torch.sqrt(
+        torch.sum(((state_mod - state_trained) / dt)**2)
+    )
     return [actual_delta.item(), trained_delta.item()]
