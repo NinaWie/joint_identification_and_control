@@ -264,17 +264,17 @@ if __name__ == "__main__":
 
     # FINETUNE CONTROLLER
     base_model = "trained_models/wing/final_baseline_seq_wing"
-    baseline_dyn = None  # "trained_models/wing/dyn_seq_wing_2"
-    config["save_name"] = "iterative_seq_wing_3"
+    baseline_dyn = None  # "trained_models/wing/iterative_seq_dyn_pretrained"
+    config["save_name"] = "iterative_seq_dyn_random"
 
     config["sample_in"] = "eval_env"
     # config["train_dyn_for_epochs"] = -1
-    config["learning_rate_controller"] = 0.00001  # was 0.0001
+    config["learning_rate_controller"] = 0.0001  # was 0.0001
     config["learning_rate_dynamics"] = 0.005
-    # config["thresh_div_start"] = 20
-    # config["thresh_stable_start"] = 1.5
-    config["epoch_size"] = 500
-    config["self_play"] = 500
+    config["thresh_div_start"] = 20
+    config["thresh_stable_start"] = 1.5
+    config["epoch_size"] = 200
+    config["self_play"] = 200  # TODO
     # config["resample_every"] = 2
     config["buffer_len"] = 3
     # variables to check whether we have converged
@@ -292,4 +292,4 @@ if __name__ == "__main__":
     eval_dyn = FixedWingDynamics(modified_params={"wind": 2})
     trainer = TrainSequenceWing(train_dyn, eval_dyn, config)
     trainer.initialize_model(base_model)
-    trainer.run_iterative(config)
+    trainer.run_iterative(config)  # , start_with="controller")

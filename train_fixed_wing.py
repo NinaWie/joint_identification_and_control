@@ -202,13 +202,13 @@ class TrainFixedWing(TrainBase):
         # self.sample_new_data(epoch)
 
         # increase thresholds
-        if self.config["thresh_div"] < self.thresh_div_end:
-            self.config["thresh_div"] += .5
-            print("increased thresh div", self.config["thresh_div"])
+        # if self.config["thresh_div"] < self.thresh_div_end:
+        #     self.config["thresh_div"] += .5
+        #     print("increased thresh div", self.config["thresh_div"])
 
-        if self.config["thresh_stable"] < self.thresh_stable_end:
-            self.config["thresh_stable"] += .05
-            print("increased thresh stable", self.config["thresh_stable"])
+        # if self.config["thresh_stable"] < self.thresh_stable_end:
+        #     self.config["thresh_stable"] += .05
+        #     print("increased thresh stable", self.config["thresh_stable"])
 
         # save best model
         self.save_model(epoch, suc_mean, suc_std)
@@ -216,7 +216,7 @@ class TrainFixedWing(TrainBase):
         self.results_dict["thresh_div"].append(self.config["thresh_div"])
         return suc_mean, suc_std
 
-    def collect_data(self, random=False, allocate=False):
+    def collect_data(self, random=False, allocate=False, mpc=False):
         print("COLLECT DATA")
         # switch on self play
         self.state_data.num_self_play = self.tmp_num_selfplay
@@ -233,7 +233,14 @@ class TrainFixedWing(TrainBase):
             controller, self.eval_env, **self.config
         )
         if random:
+            print("USE RANDOM")
             evaluator.use_random_actions = True
+        if mpc:
+            print("USE MPC")
+            from neural_control.controllers.mpc import MPC
+            evaluator.use_mpc = MPC(
+                horizon=20, dt=0.1, dynamics="fixed_wing_3D"
+            )
         prev_eval_counter = self.state_data.eval_counter
         while self.state_data.eval_counter < self.config["self_play"
                                                          ] + prev_eval_counter:

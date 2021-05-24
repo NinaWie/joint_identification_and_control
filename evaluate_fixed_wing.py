@@ -54,6 +54,7 @@ class FixedWingEvaluator:
         self.test_time = test_time
         self.waypoint_metric = waypoint_metric
         self.use_random_actions = 0
+        self.use_mpc = None
 
         self.dyn_eval_test = []
 
@@ -91,10 +92,17 @@ class FixedWingEvaluator:
                 action = self.controller.predict_actions(state, current_target)
             use_action = average_action(action, step, do_avg_act=do_avg_act)
 
+            # REPLACE ACTION BY RANDOM
             if self.use_random_actions:
                 action_prior = np.array([.25, .5, .5, .5])
                 sampled_action = np.random.normal(scale=.15, size=(4))
                 use_action = np.clip(sampled_action + action_prior, 0, 1)
+
+            # REPLACE BY MPC
+            if self.use_mpc:
+                use_action = self.use_mpc.predict_actions(
+                    state, current_target
+                )[0]
 
             step += 1
 
