@@ -46,7 +46,8 @@ class SequenceQuadDynamics(LearntDynamics, FlightmareDynamics):
     def __init__(self, buffer_length=3):
         FlightmareDynamics.__init__(self)
         # input state action history has 22 channels
-        super(SequenceQuadDynamics, self).__init__(20, 4, out_state_size=12)
+        super(SequenceQuadDynamics,
+              self).__init__(22 * buffer_length, 4, out_state_size=12)
         self.conv_history_1 = nn.Conv1d(22, 20, kernel_size=3)
         self.conv_history_2 = nn.Conv1d(20, 20, kernel_size=3)
 
@@ -56,11 +57,20 @@ class SequenceQuadDynamics(LearntDynamics, FlightmareDynamics):
     def forward(self, state, state_action_buffer, action, dt):
         # run through normal simulator f hat
         new_state = self.simulate(state, action, dt)
-        # conv layers for history
-        history = torch.transpose(state_action_buffer, 1, 2)
-        history = torch.relu(self.conv_history_1(history))
-        history = torch.relu(self.conv_history_2(history))
-        history = torch.reshape(history, (-1, 20))
+        # select only three
+        state_action_buffer = state_action_buffer[:, [0, 2, 4]]
+        # FOR CONVOLUTION
+        # history = torch.transpose(state_action_buffer, 1, 2)
+        # history = torch.tanh(self.conv_history_1(history))
+        # # history = torch.relu(self.conv_history_2(history))
+        # history = torch.reshape(history, (-1, 20))
+        # state_action_buffer[:, :, 3:6] = state_action_buffer[:, :, 3:6] * .1
+        history = torch.reshape(
+            state_action_buffer, (
+                -1,
+                state_action_buffer.size()[1] * state_action_buffer.size()[2]
+            )
+        )
         # run through residual network delta
         added_new_state = self.state_transformer(history, action)
         return new_state + added_new_state

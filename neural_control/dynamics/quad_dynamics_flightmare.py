@@ -10,7 +10,7 @@ class FlightmareDynamics(Dynamics):
         super().__init__(modified_params=modified_params)
 
         self.simulate_rotors = simulate_rotors
-        self.timestamp = 0
+        self.timestamp = np.random.rand() * np.pi * 2
 
         # new parameters needed for flightmare simulation
         self.t_BM_ = self.arm_length * np.sqrt(0.5) * torch.tensor(

@@ -176,7 +176,7 @@ def dyn_comparison_quad(
     # DYN EVALUATION
     dyn_bl = FlightmareDynamics()
     dyn_mod = FlightmareDynamics(
-        {"wind": 1}
+        {"wind": 2}
         # {'translational_drag': np.array([0.3, 0.3, 0.3])}
     )
     dyn_mod.timestamp = timestamp

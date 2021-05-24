@@ -11,7 +11,7 @@ from neural_control.dynamics.quad_dynamics_flightmare import (
 )
 from neural_control.dynamics.quad_dynamics_trained import SequenceQuadDynamics
 from neural_control.drone_loss import quad_mpc_loss
-from neural_control.models.history_conv_model import Net
+from neural_control.models.hutter_model import Net
 from evaluate_drone import QuadEvaluator
 
 
@@ -149,6 +149,10 @@ class TrainSequenceQuad(TrainDrone):
                     action_seq[:, 0].detach(),
                     dt=self.delta_t
                 )
+                bl_dyn = FlightmareDynamics()
+                next_state_bl = bl_dyn(
+                    current_state, action_seq[:, 0], dt=self.delta_t
+                )
                 next_state_d2 = torch.zeros(next_state_d1.size())
                 # need to do all samples in batch separately
                 for sample in range(timestamps.size()[0]):
@@ -167,6 +171,7 @@ class TrainSequenceQuad(TrainDrone):
                 #     print(timestamps[0])
                 #     print(next_state_d1[0].detach().numpy())
                 #     print(next_state_d2[0].detach().numpy())
+                #     print(next_state_bl[0].detach().numpy())
                 #     print()
                 loss = torch.sum((next_state_d1 - next_state_d2)**2)
                 loss.backward()
@@ -234,26 +239,26 @@ if __name__ == "__main__":
     # # FINETUNE DYNAMICS ITERATIVELY
     base_model = "trained_models/quad/final_baseline_con_seq"
     baseline_dyn = None
-    config["save_name"] = "iterative_seq_wind_conv"
+    config["save_name"] = "iterative_seq_dyn"
 
     # mod_param = {'translational_drag': np.array([0.3, 0.3, 0.3])}
-    mod_param = {"wind": 1}
+    mod_param = {"wind": 2}
     config["learning_rate_controller"] = 0.00001
-    config["learning_rate_dynamics"] = 0.01
+    config["learning_rate_dynamics"] = 0.001
     config["thresh_div_start"] = 1
     config["thresh_div_end"] = 1.2
     config["thresh_stable_start"] = 2
     config["sample_in"] = "eval_env"
-    config["epoch_size"] = 2000
-    config["self_play"] = 2000
+    config["epoch_size"] = 200
+    config["self_play"] = 200
     config["buffer_len"] = 5
     config["eval_var_dyn"] = "mean_trained_delta"
     config["eval_var_con"] = "mean_div"
-    config["min_epochs"] = 30
+    config["min_epochs"] = 10
     config["suc_up_down"] = -1
     config["return_div"] = 1
 
-    train_dyn = SequenceQuadDynamics()
+    train_dyn = SequenceQuadDynamics(buffer_length=3)
     if baseline_dyn is not None:
         train_dyn.load_state_dict(
             torch.load(os.path.join(baseline_dyn, "dynamics_model"))

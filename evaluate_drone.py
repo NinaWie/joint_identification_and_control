@@ -446,7 +446,7 @@ if __name__ == "__main__":
     # params["dt"] = .05
     # params["max_drone_dist"] = 1
     params["speed_factor"] = .4
-    modified_params = {"wind": 1}
+    modified_params = {"wind": 2}
     # {"rotational_drag": np.array([.1, .1, .1])}
     # {"mass": 1}
     # {"translational_drag": np.array([.3, .3, .3])}
@@ -469,12 +469,11 @@ if __name__ == "__main__":
         environment = QuadRotorEnvBase(dynamics, params["dt"])
 
     dyn_trained = None
-    # dyn_trained = SequenceQuadDynamics()
+    # dyn_trained = SequenceQuadDynamics(buffer_length=3)
     # dyn_trained.load_state_dict(
     #     torch.load(
     #         os.path.join(
-    #             "trained_models/quad/iterative_seq_dyn_pretrained",
-    #             "dynamics_model"
+    #             "trained_models/quad/iterative_seq_dyn", "dynamics_model"
     #         )
     #     ),
     #     strict=False
