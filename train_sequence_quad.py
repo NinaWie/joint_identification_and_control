@@ -108,9 +108,21 @@ class TrainSequenceQuad(TrainDrone):
                             dt=self.delta_t_train
                         )
                     else:
-                        current_state = self.train_dynamics(
-                            current_state, action, dt=self.delta_t_train
-                        )
+                        # current_state = self.train_dynamics(
+                        #     current_state, action, dt=self.delta_t_train
+                        # )
+                        next_state_d2 = torch.zeros(current_state.size())
+                        # need to do all samples in batch separately
+                        for sample in range(timestamps.size()[0]):
+                            self.train_dynamics.timestamp = timestamps[sample]
+                            current_state_in = torch.unsqueeze(
+                                current_state[sample], 0
+                            )
+                            action_in = torch.unsqueeze(action[sample], 0)
+                            next_state_d2[sample] = self.train_dynamics(
+                                current_state_in, action_in, dt=self.delta_t
+                            )
+                        current_state = next_state_d2
                     intermediate_states[:, k] = current_state
                     # roll history
                     state_action_cat = torch.unsqueeze(
@@ -238,8 +250,8 @@ if __name__ == "__main__":
 
     # # FINETUNE DYNAMICS ITERATIVELY
     base_model = "trained_models/quad/final_baseline_con_seq"
-    baseline_dyn = None
-    config["save_name"] = "iterative_seq_dyn"
+    baseline_dyn = "trained_models/quad/iterative_seq_dyn"
+    config["save_name"] = "iterative_seq_con"
 
     # mod_param = {'translational_drag': np.array([0.3, 0.3, 0.3])}
     mod_param = {"wind": 2}
@@ -249,15 +261,16 @@ if __name__ == "__main__":
     config["thresh_div_end"] = 1.2
     config["thresh_stable_start"] = 2
     config["sample_in"] = "eval_env"
-    config["epoch_size"] = 200
-    config["self_play"] = 200
+    config["epoch_size"] = 1000
+    config["self_play"] = 1000
     config["buffer_len"] = 5
     config["eval_var_dyn"] = "mean_trained_delta"
     config["eval_var_con"] = "mean_div"
-    config["min_epochs"] = 10
+    config["min_epochs"] = 5
     config["suc_up_down"] = -1
     config["return_div"] = 1
 
+    # train_dyn = FlightmareDynamics(modified_params=mod_param)
     train_dyn = SequenceQuadDynamics(buffer_length=3)
     if baseline_dyn is not None:
         train_dyn.load_state_dict(
@@ -266,4 +279,4 @@ if __name__ == "__main__":
     eval_dyn = FlightmareDynamics(modified_params=mod_param)
     trainer = TrainSequenceQuad(train_dyn, eval_dyn, config)
     trainer.initialize_model(base_model)
-    trainer.run_iterative(config)
+    trainer.run_iterative(config, start_with="controller")

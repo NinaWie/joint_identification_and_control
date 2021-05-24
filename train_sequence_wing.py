@@ -120,9 +120,21 @@ class TrainSequenceWing(TrainFixedWing):
                             dt=self.delta_t_train
                         )
                     else:
-                        current_state = self.train_dynamics(
-                            current_state, action, dt=self.delta_t_train
-                        )
+                        # current_state = self.train_dynamics(
+                        #     current_state, action, dt=self.delta_t_train
+                        # )
+                        next_state_d2 = torch.zeros(current_state.size())
+                        # need to do all samples in batch separately
+                        for sample in range(timestamps.size()[0]):
+                            self.train_dynamics.timestamp = timestamps[sample]
+                            current_state_in = torch.unsqueeze(
+                                current_state[sample], 0
+                            )
+                            action_in = torch.unsqueeze(action[sample], 0)
+                            next_state_d2[sample] = self.train_dynamics(
+                                current_state_in, action_in, dt=self.delta_t
+                            )
+                        current_state = next_state_d2
                     intermediate_states[:, k] = current_state
                     # roll history
                     state_action_cat = torch.unsqueeze(
@@ -264,26 +276,26 @@ if __name__ == "__main__":
 
     # FINETUNE CONTROLLER
     base_model = "trained_models/wing/final_baseline_seq_wing"
-    baseline_dyn = None  # "trained_models/wing/iterative_seq_dyn_pretrained"
-    config["save_name"] = "iterative_seq_dyn_random"
+    baseline_dyn = "trained_models/wing/iterative_seq_dyn_pretrained"
+    config["save_name"] = "iterative_seq_con"
 
     config["sample_in"] = "eval_env"
     # config["train_dyn_for_epochs"] = -1
-    config["learning_rate_controller"] = 0.0001  # was 0.0001
+    config["learning_rate_controller"] = 0.00001  # was 0.0001
     config["learning_rate_dynamics"] = 0.005
     config["thresh_div_start"] = 20
     config["thresh_stable_start"] = 1.5
-    config["epoch_size"] = 200
-    config["self_play"] = 200  # TODO
+    config["epoch_size"] = 1000  # 200 for dyn training
+    config["self_play"] = 1000  # 200 for dyn training
     # config["resample_every"] = 2
     config["buffer_len"] = 3
     # variables to check whether we have converged
     config["eval_var_dyn"] = "mean_trained_delta"
     config["eval_var_con"] = "mean_div_linear"
-    config["min_epochs"] = 8
+    config["min_epochs"] = 5  # 8 for dyn training
 
     # train environment is learnt
-    # train_dyn = FixedWingDynamics()
+    # for check: train_dyn = FixedWingDynamics(modified_params={"wind": 2})
     train_dyn = SequenceFixedWingDynamics()
     if baseline_dyn is not None:
         train_dyn.load_state_dict(
@@ -292,4 +304,5 @@ if __name__ == "__main__":
     eval_dyn = FixedWingDynamics(modified_params={"wind": 2})
     trainer = TrainSequenceWing(train_dyn, eval_dyn, config)
     trainer.initialize_model(base_model)
-    trainer.run_iterative(config)  # , start_with="controller")
+    # trainer.run_iterative(config, start_with="controller")
+    trainer.run_sequentially(config, start_with="controller")
