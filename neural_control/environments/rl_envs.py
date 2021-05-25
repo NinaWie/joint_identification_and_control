@@ -171,11 +171,13 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
         """
         pos_coeff = -0.02
         pos_epsilon = 2
-        lin_vel_coeff = -0.02
+        lin_vel_coeff = -0.002
         lin_vel_epsilon = 2
-        survive_reward = 0.001
-        act_coeff = -0.02
-        ori_coeff = -0.005  # ori_coeff: -0.01
+        survive_reward = 0.1  #  0.001 mario
+        act_coeff = -0.001
+        ori_coeff = -0.01  # ori_coeff: -0.01
+        omega_coefficient = -0.001
+        omega_epsilon = 2
         ori_epsilon = .2
 
         # position
@@ -193,12 +195,21 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
             self.current_ref[self.current_ind, 6:9] - self.state[6:9]
         )**2
         vel_reward = lin_vel_coeff * (vel_loss - lin_vel_epsilon)
+        # body rates
+        # omega_loss = np.sum(
+        #     self.current_ref[self.current_ind, 9:] - self.state[9:]
+        # )**2
+        # omega_reward = omega_coefficient * (omega_loss - omega_epsilon)
         # action
         act_reward = act_coeff * np.sum((.5 - action)**2)
 
-        # print(pos_reward, vel_reward, survive_reward, act_reward, ori_reward)
+        # print(
+        #     "pos", pos_reward, "vel", vel_reward, "survive", survive_reward,
+        #     "act", act_reward, "ori", ori_reward, "omega", omega_reward
+        # )
         return (
-            pos_reward + vel_reward + survive_reward + act_reward + ori_reward
+            pos_reward + vel_reward + survive_reward + act_reward +
+            ori_reward  # + omega_reward
         )
 
     def set_state(self, state):

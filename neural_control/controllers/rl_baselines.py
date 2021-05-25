@@ -21,9 +21,9 @@ from neural_control.trajectory.q_funcs import project_to_line
 # PARAMS
 fixed_wing_dt = 0.05
 cartpole_dt = 0.05
-quad_dt = 0.1
-quad_speed = 0.2
-quad_horizon = 10
+quad_dt = 0.02
+quad_speed = 0.5
+quad_horizon = 3
 
 
 class EvalCallback(BaseCallback):
@@ -92,7 +92,12 @@ def train_main(
     save_name = os.path.join(model_path, "rl")
 
     if load_model is None:
-        model = PPO('MlpPolicy', env, verbose=1)
+        model = PPO(
+            'MlpPolicy',
+            env,
+            verbose=1,
+            tensorboard_log="./rl_quad_tensorboard/"
+        )
     else:
         model = PPO.load(load_model, env=env)
 
@@ -364,7 +369,7 @@ def train_quad(model_path, load_model=None, modified_params={}):
         env,
         evaluate_quad,
         load_model=load_model,
-        total_timesteps=500000,
+        total_timesteps=2000000,
         eval_freq=10000
     )
 
@@ -380,27 +385,27 @@ if __name__ == "__main__":
     # )
 
     # ------------------ Fixed wing drone -----------------------
-    load_name = "trained_models/wing/reinforcement_final/rl_350000_steps"
-    # "trained_models/wing/reinforcement_learning/final/ppo_50"
-    save_name = "trained_models/wing/reinforcement_veldrag/rl_12000_steps"
-    scenario = {"vel_drag_factor": .3}
-    # train_wing(save_name, load_model=load_name, modified_params=scenario)
-    # test_ours_wing(
-    #     "trained_models/wing/current_model", modified_params=scenario
-    # )
-    test_rl_wing(save_name, modified_params=scenario)
+    # load_name = "trained_models/wing/reinforcement_final/rl_350000_steps"
+    # # "trained_models/wing/reinforcement_learning/final/ppo_50"
+    # save_name = "trained_models/wing/reinforcement_veldrag/rl_12000_steps"
+    # scenario = {"vel_drag_factor": .3}
+    # # train_wing(save_name, load_model=load_name, modified_params=scenario)
+    # # test_ours_wing(
+    # #     "trained_models/wing/current_model", modified_params=scenario
+    # # )
+    # test_rl_wing(save_name, modified_params=scenario)
     # evaluate_wing(render=1)
 
     # ------------------ Quadrotor -----------------------
     # load_path = None
     # # "trained_models/quad/reinforcement_learning/best_2speed/rl_final"
-    # save_name = "trained_models/quad/reinforcement_learning/best_2speed"
+    save_name = "trained_models/quad/reinforcement_learning/lowdt"
 
-    # scenario = {}  # {"translational_drag": np.array([.3, .3, .3])}
+    scenario = {}  # {"translational_drag": np.array([.3, .3, .3])}
     # test_ours_quad(
     #     "trained_models/quad/current_model/", modified_params=scenario
     # )
-    # train_quad(save_name, load_model=load_path, modified_params=scenario)
+    train_quad(save_name, load_model=None, modified_params=scenario)
     # test_rl_quad(
-    #     os.path.join(save_name, "rl_780000_steps"), modified_params=scenario
+    #     os.path.join(save_name, "rl_420000_steps"), modified_params=scenario
     # )
