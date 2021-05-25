@@ -255,22 +255,22 @@ if __name__ == "__main__":
 
     # mod_param = {'translational_drag': np.array([0.3, 0.3, 0.3])}
     mod_param = {"wind": 2}
-    config["learning_rate_controller"] = 0.00001
+    config["learning_rate_controller"] = 0.000001
     config["learning_rate_dynamics"] = 0.001
     config["thresh_div_start"] = 1
     config["thresh_div_end"] = 1.2
     config["thresh_stable_start"] = 2
     config["sample_in"] = "eval_env"
-    config["epoch_size"] = 1000
-    config["self_play"] = 1000
+    config["epoch_size"] = 1000  # 200 for dyn training
+    config["self_play"] = 1000  # 200 for dyn training
     config["buffer_len"] = 5
     config["eval_var_dyn"] = "mean_trained_delta"
     config["eval_var_con"] = "mean_div"
-    config["min_epochs"] = 5
+    config["min_epochs"] = 5  # 8 for dyn training
     config["suc_up_down"] = -1
     config["return_div"] = 1
 
-    # train_dyn = FlightmareDynamics(modified_params=mod_param)
+    # for check: train_dyn = FlightmareDynamics(modified_params=mod_param)
     train_dyn = SequenceQuadDynamics(buffer_length=3)
     if baseline_dyn is not None:
         train_dyn.load_state_dict(
@@ -279,4 +279,5 @@ if __name__ == "__main__":
     eval_dyn = FlightmareDynamics(modified_params=mod_param)
     trainer = TrainSequenceQuad(train_dyn, eval_dyn, config)
     trainer.initialize_model(base_model)
-    trainer.run_iterative(config, start_with="controller")
+    # trainer.run_iterative(config, start_with="controller")
+    trainer.run_sequentially(config, start_with="controller")
