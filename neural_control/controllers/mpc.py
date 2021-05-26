@@ -52,7 +52,10 @@ class MPC(object):
                     raw_key = key[4:]
                     raw_val = val[0].item()
                     numpy_modified_params[raw_key] = raw_val
-            self.modified_dynamics = modified_params
+                elif "." in key:
+                    np_val = val.numpy()
+                    numpy_modified_params[key] = np_val
+            self.modified_dynamics = numpy_modified_params
 
         # Gravity
         self._gz = 9.81

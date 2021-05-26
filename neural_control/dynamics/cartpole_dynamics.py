@@ -190,8 +190,16 @@ class ImageCartpoleDynamics(torch.nn.Module, CartpoleDynamics):
 
 class CartpoleDynamicsMPC(CartpoleDynamics):
 
-    def __init__(self, modified_params={}):
+    def __init__(self, modified_params={}, use_residual=False):
         CartpoleDynamics.__init__(self, modified_params=modified_params)
+        self.use_residual = use_residual
+        if use_residual and "linear_state_1.weight" in modified_params:
+            self.weight1 = modified_params["linear_state_1.weight"]
+            self.bias1 = modified_params["linear_state_1.bias"]
+            self.weight2 = modified_params["linear_state_2.weight"]
+        elif len(modified_params) > 0:
+            print("Using identified system but only parameters, no res")
+            self.use_residual = False
 
     def simulate_cartpole(self, dt):
         (x, x_dot, theta, theta_dot) = (
@@ -228,7 +236,16 @@ class CartpoleDynamicsMPC(CartpoleDynamics):
         ) / self.cfg["total_mass"]
 
         x_state_dot = ca.vertcat(x_dot, x_acc, theta_dot, thetaacc + wind_drag)
-        X = x_state + dt * x_state_dot
+
+        if self.use_residual:
+            state_action = ca.vertcat(x_state, action)
+            residual_state_1 = ca.tanh(
+                self.weight1 @ state_action + self.bias1
+            )
+            residual_state = self.weight2 @ residual_state_1
+        else:
+            residual_state = 0
+        X = x_state + dt * x_state_dot + residual_state
 
         F = ca.Function('F', [x_state, action], [X], ['x', 'u'], ['ode'])
         return F

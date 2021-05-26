@@ -257,6 +257,7 @@ if __name__ == "__main__":
 
     if args.model == "mpc":
         load_dynamics = None
+        # "trained_models/cartpole/cartpole_finetuned_300/dynamics_model"
         controller_model = MPC(
             horizon=20,
             dt=dt,
