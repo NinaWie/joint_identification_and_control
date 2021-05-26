@@ -29,13 +29,19 @@ class CartPoleEnvRL(gym.Env, CartPoleEnv):
         high = np.array(
             [self.x_threshold * 2, 20, self.theta_threshold_radians * 2, 20]
         )
-
+        self.thresh_div = 10  # only placeholder
         self.action_space = spaces.Box(low=-1, high=1, shape=(1, ))
         self.observation_space = spaces.Box(-high, high)
 
     def set_state(self, state):
         self.state = state
         self._state = state
+
+    def get_reward(self):
+        survive_reward = 0.1
+        angle_reward = .5 * (1.5 - abs(self.state[2]))
+        vel_reward = .4 * (1.5 - abs(self.state[1]))
+        return survive_reward + angle_reward + vel_reward
 
     def step(self, action):
         super()._step(action, is_torch=False)

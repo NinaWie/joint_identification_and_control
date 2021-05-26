@@ -129,7 +129,7 @@ def train_cartpole(model_path, load_model=None, modified_params={}):
         evaluate_cartpole,
         load_model=load_model,
         total_timesteps=200000,
-        eval_freq=5000
+        eval_freq=200
     )
 
 
@@ -376,7 +376,7 @@ def train_quad(model_path, load_model=None, modified_params={}):
 
 if __name__ == "__main__":
     # ------------------ CartPole -----------------------
-    # save_name = "trained_models/cartpole/reinforcement_learning/smallvel_finetuned"
+    # save_name = "trained_models/cartpole/reinforcement_learning/lesssteps_finetuned"
     # load_name = "trained_models/cartpole/reinforcement_learning/smallvel/rl_final"
     # scenario = {"wind": .5}
     # train_cartpole(save_name, load_model=load_name, modified_params=scenario)
