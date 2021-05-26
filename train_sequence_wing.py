@@ -269,7 +269,7 @@ if __name__ == "__main__":
 
     config["sample_in"] = "eval_env"
     # config["train_dyn_for_epochs"] = -1
-    config["learning_rate_controller"] = 0.0001  # was 0.0001
+    config["learning_rate_controller"] = 0.00001  # was 0.0001
     config["learning_rate_dynamics"] = 0.005
     config["thresh_div_start"] = 20
     config["thresh_stable_start"] = 1.5
