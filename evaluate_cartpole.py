@@ -173,8 +173,6 @@ class Evaluator:
                 success[n] = i
                 self.eval_env._reset()
         # print(success)
-        if return_success:
-            return success, velocities
         mean_err = np.mean(success)
         std_err = np.std(success)
         if not self.image_dataset:
@@ -183,6 +181,8 @@ class Evaluator:
                 (np.mean(velocities), np.std(velocities))
             )
             print("Average success: %3.2f (%3.2f)" % (mean_err, std_err))
+        if return_success:
+            return success, velocities
         return mean_err, std_err, data_collection
 
 

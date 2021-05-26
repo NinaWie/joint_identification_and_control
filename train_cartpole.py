@@ -98,7 +98,7 @@ class TrainCartpole(TrainBase):
             )
         else:
             self.state_data = CartpoleDataset(
-                num_states=self.config["sample_data"], **self.config
+                num_states=self.epoch_size, **self.config
             )
         with open(os.path.join(self.save_path, "config.json"), "w") as outfile:
             json.dump(self.config, outfile)
@@ -139,7 +139,7 @@ class TrainCartpole(TrainBase):
         if self.swingup:
             loss = cartpole_loss_swingup(current_state)
         else:
-            loss = cartpole_loss_mpc(intermediate_states, ref_states)
+            loss = cartpole_loss_mpc(intermediate_states, ref_states, action)
 
         loss.backward()
         for name, param in self.net.named_parameters():
@@ -308,15 +308,16 @@ class TrainCartpole(TrainBase):
 
     def evaluate_model(self, epoch):
 
+        print("number data", len(self.state_data.states))
         if self.swingup:
             new_data = self.evaluate_swingup(epoch)
         else:
             new_data = self.evaluate_balance(epoch)
 
-        print(
-            "self play:", self.state_data.eval_counter,
-            self.state_data.get_eval_index()
-        )
+        # print(
+        #     "self play:", self.state_data.eval_counter,
+        #     self.state_data.get_eval_index()
+        # )
 
         # Renew dataset dynamically
         if (epoch + 1) % self.resample_every == 0:
@@ -489,9 +490,11 @@ def train_norm_dynamics(base_model, config, not_trainable="all"):
     """
     modified_params = config["general"]["modified_params"]
     config["sample_in"] = "train_env"
-    config["train_dyn_for_epochs"] = 2
+    config["train_dyn_for_epochs"] = 30
     config["thresh_div_start"] = 0.2
     config["train_dyn_every"] = 1
+    config["general"]["resample_every"] = 1000
+    config["general"]["epoch_size"] = 300
 
     # train environment is learnt
     train_dyn = LearntCartpoleDynamics(not_trainable=not_trainable)
@@ -508,12 +511,12 @@ if __name__ == "__main__":
         config = json.load(infile)
 
     # # NORMAL TRAINING OF CONTROLLER FROM SCRATCH AND WITH FINETUNING
-    # baseline_model = None  #  "trained_models/cartpole/current_model"
+    # baseline_model = "trained_models/cartpole/current_model"
     # baseline_dyn = None
-    # config["general"]["save_name"] = "cartpole_controller"
+    # config["general"]["save_name"] = "cartpole_finetuned_300"
     # mod_params = {"wind": .5}
     # config["general"]["modified_params"] = mod_params
-    # train_control(baseline_model, config)
+    # # train_control(baseline_model, config)
     # train_norm_dynamics(baseline_model, config, not_trainable="all")
 
     # # FINETUNE DYNAMICS (TRAIN RESIDUAL)
