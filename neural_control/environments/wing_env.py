@@ -9,14 +9,13 @@ from neural_control.environments.rendering import (
 )
 
 
-class SimpleWingEnv(gym.Env):
+class SimpleWingEnv():
     """
     Fixed wing drone environment
     """
 
     def __init__(self, dynamics, dt):
         self.dt = dt
-        self.reset()
         self.dynamics = dynamics
         self.renderer = Renderer(viewer_shape=(1000, 500), y_axis=7)
         self.renderer.add_object(Ground())

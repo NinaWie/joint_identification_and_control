@@ -92,14 +92,15 @@ class Random:
 
 class PolyObject():
 
-    def __init__(self, reference_arr):
+    def __init__(self, reference_arr, shift_one=1):
         self.points = np.array(
             [
                 reference_arr[i] for i in range(len(reference_arr))
                 if i % 20 == 0
             ]
         )
-        self.points[:, 2] += 1
+        if shift_one:
+            self.points[:, 2] += 1
 
     def draw(self, renderer):
         for p in range(len(self.points) - 1):

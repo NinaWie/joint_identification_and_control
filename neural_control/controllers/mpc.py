@@ -51,7 +51,10 @@ class MPC(object):
                     raw_key = key[4:]
                     raw_val = val[0].item()
                     numpy_modified_params[raw_key] = raw_val
-            self.modified_dynamics = modified_params
+                elif "." in key:
+                    np_val = val.numpy()
+                    numpy_modified_params[key] = np_val
+            self.modified_dynamics = numpy_modified_params
 
         # Gravity
         self._gz = 9.81
@@ -181,7 +184,7 @@ class MPC(object):
             dyn = SimpleDynamicsMPC()
             F = dyn.drone_dynamics_simple(self._dt)
         elif self.dynamics_model == "flightmare":
-            dyn = FlightmareDynamicsMPC()
+            dyn = FlightmareDynamicsMPC(self.modified_dynamics)
             F = dyn.drone_dynamics_flightmare(self._dt)
         elif self.dynamics_model == "fixed_wing_2D":
             F = fixed_wing_dynamics_mpc(self._dt)

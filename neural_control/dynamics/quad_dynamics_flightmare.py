@@ -228,16 +228,20 @@ class FlightmareDynamics(Dynamics):
 
 class FlightmareDynamicsMPC(Dynamics):
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, modified_params={}, use_residual=True):
 
-        # # run rotors params:
-        # kappa_ = 0.016
-        # motor_tau_inv_ = 1 / 0.05
-        # b_allocation = ca.SX(self.b_allocation_np)
-        # b_allocation_inv = ca.SX(np.linalg.inv(self.b_allocation_np))
-        # motor_tau = 0.0001
-        # motor_tau_inv = 1 / motor_tau
+        # change the config accordingly
+        super().__init__(modified_params)
+
+        self.use_residual = use_residual
+        if use_residual and "linear_state_1.weight" in modified_params:
+            print("using residual network, load param")
+            self.weight1 = modified_params["linear_state_1.weight"]
+            self.bias1 = modified_params["linear_state_1.bias"]
+            self.weight2 = modified_params["linear_state_2.weight"]
+        elif len(modified_params) > 0:
+            print("Using identified system but only parameters, no res")
+            self.use_residual = False
 
     def drone_dynamics_flightmare(self, dt):
 
@@ -321,10 +325,22 @@ class FlightmareDynamicsMPC(Dynamics):
         az_new = az + dt * euler_rate_z
 
         # stack together
-        X = ca.vertcat(
+        X_prev = ca.vertcat(
             px_new, py_new, pz_new, ax_new, ay_new, az_new, vx_new, vy_new,
             vz_new, avx_new, avy_new, avz_new
         )
+
+        if self.use_residual:
+            state_action = ca.vertcat(self._x, self._u)
+            residual_state_1 = ca.tanh(
+                self.weight1 @ state_action + self.bias1
+            )
+            residual_state = self.weight2 @ residual_state_1
+        else:
+            residual_state = 0
+
+        X = X_prev + residual_state
+
         # Fold
         F = ca.Function('F', [self._x, self._u], [X], ['x', 'u'], ['ode'])
         return F

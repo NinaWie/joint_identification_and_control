@@ -369,10 +369,19 @@ class SequenceFixedWingDynamics(LearntDynamics, FixedWingDynamics):
 
 class FixedWingDynamicsMPC(FixedWingDynamics):
 
-    def __init__(self, modified_params={}):
+    def __init__(self, modified_params={}, use_residual=False):
 
         # change the config accordingly
         super().__init__(modified_params)
+
+        self.use_residual = use_residual
+        if use_residual and "linear_state_1.weight" in modified_params:
+            self.weight1 = modified_params["linear_state_1.weight"]
+            self.bias1 = modified_params["linear_state_1.bias"]
+            self.weight2 = modified_params["linear_state_2.weight"]
+        elif len(modified_params) > 0:
+            print("Using identified system but only parameters, no res")
+            self.use_residual = False
 
         # if I is loaded, it's not in the config
         if "I" in modified_params.keys():
@@ -537,8 +546,16 @@ class FixedWingDynamicsMPC(FixedWingDynamics):
             px_dot, py_dot, pz_dot, uvw_dot, eul_phi_dot, eul_theta_dot,
             eul_psi_dot, omega_dot[0], omega_dot[1], omega_dot[2]
         )
+        if self.use_residual:
+            state_action = ca.vertcat(x_state, u_control)
+            residual_state_1 = ca.tanh(
+                self.weight1 @ state_action + self.bias1
+            )
+            residual_state = self.weight2 @ residual_state_1
+        else:
+            residual_state = 0
 
-        X = x_state + dt * x_dot
+        X = x_state + dt * x_dot + residual_state
 
         F = ca.Function('F', [x_state, u_control], [X], ['x', 'u'], ['ode'])
         return F
@@ -559,12 +576,29 @@ if __name__ == "__main__":
     normal_dyn = FixedWingDynamics()
     next_state = normal_dyn.simulate_fixed_wing(state_test, action_test, 0.05)
     print("------------")
-    print(next_state[0])
+    print("normal dyn", next_state[0])
+
+    load_dynamics = "trained_models/wing/final_dyn_veldrag_woparams/dynamics_model"
+    if load_dynamics is not None:
+        import torch
+        modified_params = torch.load(load_dynamics)
+        # transform loaded torch parameters into normal
+        numpy_modified_params = {}
+        for key, val in modified_params.items():
+            if "cfg." in key:
+                raw_key = key[4:]
+                raw_val = val[0].item()
+                numpy_modified_params[raw_key] = raw_val
+            elif "." in key:
+                np_val = val.numpy()
+                numpy_modified_params[key] = np_val
 
     # test: compare to mpc
     # if test doesnt work, remove clamp!!
-    mpc_dyn = FixedWingDynamicsMPC()
+    mpc_dyn = FixedWingDynamicsMPC(
+        modified_params=numpy_modified_params, use_residual=0
+    )
     F = mpc_dyn.simulate_fixed_wing(0.05)
     mpc_state = F(state_test_np, action_test_np)
     print("--------------------")
-    print(mpc_state)
+    print("mpc dyn", mpc_state)

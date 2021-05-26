@@ -194,11 +194,39 @@ class TrainBase:
         self.optimizer_dynamics.step()
 
         self.results_dict["loss_dyn_per_step"].append(loss.item())
-        return loss * 10000
+        return loss
+
+    def test_dynamics(self):
+        test_loss = []
+        with torch.no_grad():
+            for i, data in enumerate(self.testloader, 0):
+                # batch size 1
+                in_state, current_state, in_ref_state, ref_states = data
+                actions = self.net(in_state, in_ref_state)
+                actions = torch.sigmoid(actions)
+                action_seq = torch.reshape(
+                    actions, (-1, self.nr_actions, self.action_dim)
+                )
+                next_state_d1 = self.train_dynamics(
+                    current_state, action_seq[:, 0], dt=self.delta_t
+                )
+                next_state_d2 = self.eval_dynamics(
+                    current_state, action_seq[:, 0], dt=self.delta_t
+                )
+                # compute l2 norm between them (not MSE)
+                test_loss.append(
+                    torch.sum((next_state_d1 - next_state_d2)**2).item()
+                )
+        self.results_dict["loss_dyn_val_mean"].append(np.mean(test_loss))
+        self.results_dict["loss_dyn_val_std"].append(np.std(test_loss))
+        print("Test error dynamics", np.mean(test_loss), np.std(test_loss))
 
     def run_epoch(self, train="controller"):
         # tic_epoch = time.time()
         running_loss = 0
+        prev_running_loss = 0
+        # evaluate on test data two times every epoch
+        eval_on_test_every = len(self.trainloader) // 2
         for i, data in enumerate(self.trainloader, 0):
             # inputs are normalized states, current state is unnormalized in
             # order to correctly apply the action
@@ -234,6 +262,19 @@ class TrainBase:
                 # should work for both recurrent and normal
                 loss = self.train_dynamics_model(current_state, action_seq)
                 self.count_finetune_data += len(current_state)
+
+                # evaluate on test data every 20 batches
+                if (i + 1) % eval_on_test_every == 0 and self.config.get(
+                    "nr_test_data", 0
+                ) > 0:
+                    # test on test dataset
+                    self.test_dynamics()
+                    # add accumulated loss
+                    self.results_dict["loss_dyn_train_smoothed"].append(
+                        (running_loss - prev_running_loss) /
+                        (eval_on_test_every * self.batch_size)
+                    )
+                    prev_running_loss = running_loss
 
             running_loss += loss.item()
         # time_epoch = time.time() - tic

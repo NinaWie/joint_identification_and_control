@@ -305,8 +305,7 @@ if __name__ == "__main__":
             model_path, epoch=args.epoch, name="model_wing", **params
         )
     else:
-        load_dynamics = None
-        # 'trained_models/wing/train_vel_drag_5/dynamics_model'
+        load_dynamics = 'trained_models/wing/dyn_veldrag_tanh/dynamics_model'
         controller = MPC(
             horizon=20,
             dt=0.1,
@@ -354,17 +353,17 @@ if __name__ == "__main__":
     # only run evaluation without render
     if args.eval > 0:
         # tic = time.time()
-        out_path = "../presentations/analysis"
+        out_path = "../presentations/final_res"
         evaluator.render = 0
         dists_from_target = evaluator.run_eval(
             nr_test=args.eval, return_dists=True
         )
-        # np.save(
-        #     os.path.join(
-        #         out_path,
-        #         f"{model_name}_{'_'.join(modified_params.keys())}.npy"
-        #     ), dists_from_target
-        # )
+        np.save(
+            os.path.join(
+                out_path,
+                f"{model_name}_{'_'.join(modified_params.keys())}.npy"
+            ), dists_from_target
+        )
         # print("time for 100 trajectories", time.time() - tic)
         # run_mpc_analysis(evaluator)
         exit()

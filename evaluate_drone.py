@@ -435,7 +435,10 @@ if __name__ == "__main__":
     if model_path.split(os.sep)[-1] == "mpc":
         # mpc parameters:
         params = {"horizon": 10, "dt": .1}
-        controller = MPC(dynamics=DYNAMICS, **params)
+        load_dynamics = 'trained_models/quad/dyn_tanh_woparams/dynamics_model'
+        controller = MPC(
+            dynamics=DYNAMICS, load_dynamics=load_dynamics, **params
+        )
     # Neural controller
     else:
         controller, params = load_model(model_path, epoch=args.epoch)
