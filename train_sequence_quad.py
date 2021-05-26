@@ -70,6 +70,10 @@ class TrainSequenceQuad(TrainDrone):
             action_seq = torch.reshape(
                 actions, (-1, self.nr_actions, self.action_dim)
             )
+             if i % 20 == 0 and train == "dynamics":
+                action_seq = torch.rand(
+                    current_state.size()[0], self.nr_actions, 4
+                )
             # print("actions")
             # print(action_seq[0].detach().numpy())
             if train == "controller":
@@ -178,13 +182,24 @@ class TrainSequenceQuad(TrainDrone):
                     next_state_d2[sample] = self.eval_dynamics(
                         current_state_in, action_in, dt=self.delta_t
                     )
-                # if i == 0:
-                #     np.set_printoptions(suppress=1, precision=3)
-                #     print(timestamps[0])
-                #     print(next_state_d1[0].detach().numpy())
-                #     print(next_state_d2[0].detach().numpy())
-                #     print(next_state_bl[0].detach().numpy())
-                #     print()
+                if i == 0:
+                    np.set_printoptions(suppress=1, precision=3)
+                    print(torch.sin(timestamps[0]))
+                    print("tr", next_state_d1[0].detach().numpy())
+                    d2_example = next_state_d2[0].detach().numpy()
+                    d1_example = next_state_bl[0].detach().numpy()
+                    print("d2", d2_example)
+                    print("d1", d1_example)
+                    if torch.sin(timestamps[0]) > .5:
+                        assert d2_example[1] > d1_example[1]
+                    elif torch.sin(timestamps[0]) < -.5:
+                        assert d2_example[1] < d1_example[1]
+                    else:
+                        if not d2_example[1] == d1_example[1]:
+                            print(timestamps.detach().numpy())
+                            print(next_state_d2.detach().numpy())
+                            print(next_state_d1.detach().numpy())
+                            print(next_state_bl.detach().numpy())
                 loss = torch.sum((next_state_d1 - next_state_d2)**2)
                 loss.backward()
                 self.optimizer_dynamics.step()
@@ -250,8 +265,8 @@ if __name__ == "__main__":
 
     # # FINETUNE DYNAMICS ITERATIVELY
     base_model = "trained_models/quad/final_baseline_con_seq"
-    baseline_dyn = "trained_models/quad/iterative_seq_dyn"
-    config["save_name"] = "iterative_seq_con"
+    baseline_dyn = "trained_models/quad/iterative_seq_newwind_dyn"
+    config["save_name"] = "iterative_seq_newwind_con"
 
     # mod_param = {'translational_drag': np.array([0.3, 0.3, 0.3])}
     mod_param = {"wind": 2}
@@ -261,16 +276,17 @@ if __name__ == "__main__":
     config["thresh_div_end"] = 1.2
     config["thresh_stable_start"] = 2
     config["sample_in"] = "eval_env"
-    config["epoch_size"] = 1000  # 200 for dyn training
-    config["self_play"] = 1000  # 200 for dyn training
+    config["epoch_size"] = 500  # 200  # for dyn training
+    config["self_play"] = 500  # 200  # for dyn training
     config["buffer_len"] = 5
     config["eval_var_dyn"] = "mean_trained_delta"
     config["eval_var_con"] = "mean_div"
-    config["min_epochs"] = 5  # 8 for dyn training
+    config["min_epochs"] = 3  # for dyn training # 5 for con training
     config["suc_up_down"] = -1
+    config["self_play_every_x"] = 5
     config["return_div"] = 1
 
-    # for check: train_dyn = FlightmareDynamics(modified_params=mod_param)
+    # train_dyn = FlightmareDynamics(modified_params=mod_param)
     train_dyn = SequenceQuadDynamics(buffer_length=3)
     if baseline_dyn is not None:
         train_dyn.load_state_dict(

@@ -91,7 +91,7 @@ class FixedWingNetWrapper:
         self.action_counter = 0
         self.take_every_x = take_every_x
 
-    def predict_actions(self, state, ref_state, timestamp=0):
+    def predict_actions(self, state, ref_state, timestamp=None):
         # determine whether we also add the sample to our train data
         add_to_dataset = (self.action_counter + 1) % self.take_every_x == 0
         if (timestamp
