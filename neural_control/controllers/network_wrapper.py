@@ -52,6 +52,9 @@ class NetworkWrapper:
         """
         # determine whether we also add the sample to our train data
         add_to_dataset = (self.action_counter + 1) % self.take_every_x == 0
+        if (timestamp
+            is not None) and (np.abs(np.sin(timestamp)) - 0.5 < 0.05):
+            add_to_dataset = False
         # preprocess state
         in_state, current_state, ref, _ = self.dataset.get_and_add_eval_data(
             current_np_state.copy(),
@@ -91,7 +94,9 @@ class FixedWingNetWrapper:
     def predict_actions(self, state, ref_state, timestamp=0):
         # determine whether we also add the sample to our train data
         add_to_dataset = (self.action_counter + 1) % self.take_every_x == 0
-
+        if (timestamp
+            is not None) and (np.abs(np.sin(timestamp)) - 0.5 < 0.05):
+            add_to_dataset = False
         normed_state, _, normed_ref, _ = self.dataset.get_and_add_eval_data(
             state,
             ref_state,

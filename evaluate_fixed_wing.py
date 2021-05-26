@@ -188,6 +188,7 @@ class FixedWingEvaluator:
         self.dyn_eval_test = []
         mean_div_target, mean_div_linear = [], []
         for i in range(nr_test):
+            self.eval_env.dynamics.reset_wind()
             # important! reset after every run
             if isinstance(self.controller, MPC):
                 self.controller._initDynamics()
@@ -201,6 +202,11 @@ class FixedWingEvaluator:
 
             mean_div_target.append(np.mean(div_target))
             mean_div_linear.append(np.mean(div_linear))
+            # np.set_printoptions(suppress=True, precision=3)
+            # print(
+            #     self.eval_env.dynamics.wind_direction, target_point,
+            #     div_target, np.mean(div_linear)
+            # )
             # not_div_time.append(not_diverged)
 
         res_eval = {
@@ -332,7 +338,7 @@ if __name__ == "__main__":
     # dyn_trained.load_state_dict(
     #     torch.load(
     #         os.path.join(
-    #             "trained_models/wing/iterative_seq_dyn_pretrained",
+    #             "trained_models/wing/sequential_seq_newwind_dyn",
     #             "dynamics_model"
     #         )
     #     )

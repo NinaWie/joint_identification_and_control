@@ -34,7 +34,8 @@ class FixedWingDynamics:
 
         # pi
         self.pi = np.pi
-        self.timestamp = np.random.rand() * np.pi * 2
+        self.reset_wind()
+        # self.timestamp = np.random.rand() * np.pi * 2
 
         # update with modified parameters
         self.cfg.update(modified_params)
@@ -48,6 +49,16 @@ class FixedWingDynamics:
                 [-self.cfg["I_xz"], 0, self.cfg["I_zz"]]
             ]
         )
+
+    def reset_wind(self):
+        wind_rand = np.random.rand()
+        if wind_rand > .6:
+            self.timestamp = 0
+        elif wind_rand < .3:
+            self.timestamp = -1
+        else:
+            self.timestamp = 1
+        # self.wind_direction = -1 if wind_rand < .5 else 1
 
     def normalize_action(self, thrust, ome_x, ome_y, ome_z):
         T = thrust * 7
@@ -232,11 +243,15 @@ class FixedWingDynamics:
 
         if self.cfg.get("wind", 0) != 0:
             wind_vec_world = torch.zeros(3)
-            wind_vec_world[1] = self.cfg["wind"] * np.cos(self.timestamp)
+            wind_vec_world[1] = self.timestamp * self.cfg["wind"]
+            # if np.sin(self.timestamp) > .5:
+            #     wind_vec_world[1] = self.cfg["wind"]
+            # elif np.sin(self.timestamp) < -.5:
+            #     wind_vec_world[1] = -1 * self.cfg["wind"]
             wind_drag = torch.matmul(body_to_inertia, wind_vec_world)
-            self.timestamp += 0.05
-            # print(wind_vec_world)
-            # print(wind_drag.size())
+            # print(self.timestamp, wind_vec_world, wind_drag)
+            # print(wind_vec_world[1])
+            # self.timestamp += 0.05
         else:
             wind_drag = 0
         # # Body fixed accelerations

@@ -80,6 +80,10 @@ class TrainSequenceWing(TrainFixedWing):
             action_seq = torch.reshape(
                 actions, (-1, self.nr_actions, self.action_dim)
             )
+            if i % 20 == 0 and train == "dynamics":
+                action_seq = torch.rand(
+                    current_state.size()[0], self.nr_actions, 4
+                )
             # print("actions")
             # print(action_seq[0].detach().numpy())
             if train == "controller":
@@ -276,26 +280,27 @@ if __name__ == "__main__":
 
     # FINETUNE CONTROLLER
     base_model = "trained_models/wing/final_baseline_seq_wing"
-    baseline_dyn = "trained_models/wing/iterative_seq_dyn_pretrained"
-    config["save_name"] = "iterative_seq_con"
+    baseline_dyn = None  # "trained_models/wing/iterative_seq_newwind_dyn"
+    config["save_name"] = "iterative_seq_newwind"
 
     config["sample_in"] = "eval_env"
     # config["train_dyn_for_epochs"] = -1
-    config["learning_rate_controller"] = 0.00001  # was 0.0001
+    config["learning_rate_controller"] = 0.000005  # was 0.0001
     config["learning_rate_dynamics"] = 0.005
     config["thresh_div_start"] = 20
-    config["thresh_stable_start"] = 1.5
-    config["epoch_size"] = 1000  # 200 for dyn training
-    config["self_play"] = 1000  # 200 for dyn training
+    config["thresh_stable_start"] = 3
+    config["epoch_size"] = 200  # for dyn training # 1000
+    config["self_play"] = 200  # for dyn training # 1000
     # config["resample_every"] = 2
     config["buffer_len"] = 3
     # variables to check whether we have converged
     config["eval_var_dyn"] = "mean_trained_delta"
     config["eval_var_con"] = "mean_div_linear"
-    config["min_epochs"] = 5  # 8 for dyn training
+    config["self_play_every_x"] = 5
+    config["min_epochs"] = 5  # for dyn training
 
     # train environment is learnt
-    # for check: train_dyn = FixedWingDynamics(modified_params={"wind": 2})
+    # train_dyn = FixedWingDynamics(modified_params={"wind": 2})
     train_dyn = SequenceFixedWingDynamics()
     if baseline_dyn is not None:
         train_dyn.load_state_dict(
@@ -304,5 +309,5 @@ if __name__ == "__main__":
     eval_dyn = FixedWingDynamics(modified_params={"wind": 2})
     trainer = TrainSequenceWing(train_dyn, eval_dyn, config)
     trainer.initialize_model(base_model)
-    # trainer.run_iterative(config, start_with="controller")
-    trainer.run_sequentially(config, start_with="controller")
+    trainer.run_iterative(config, start_with="dynamics")
+    # trainer.run_sequentially(config, start_with="controller")
