@@ -21,9 +21,9 @@ from neural_control.trajectory.q_funcs import project_to_line
 # PARAMS
 fixed_wing_dt = 0.05
 cartpole_dt = 0.05
-quad_dt = 0.02
-quad_speed = 0.5
-quad_horizon = 3
+quad_dt = 0.1
+quad_speed = 0.2
+quad_horizon = 10
 
 
 class EvalCallback(BaseCallback):
@@ -345,7 +345,7 @@ def test_rl_quad(save_name, modified_params={}, max_steps=1000):
     )
     env.thresh_div = 3
     model = PPO.load(save_name)
-    _ = evaluate_quad(model, env, max_steps, nr_iters=1, render=1)
+    _ = evaluate_quad(model, env, max_steps, nr_iters=30, render=0)
 
 
 def test_ours_quad(model_path, modified_params={}, max_steps=500):
@@ -374,6 +374,17 @@ def train_quad(model_path, load_model=None, modified_params={}):
     )
 
 
+def test_marios():
+    from neural_control.environments.rl_envs import QuadEnvMario
+    dyn = FlightmareDynamics(modified_params={})
+    env = QuadEnvMario(
+        dyn, quad_dt, speed_factor=quad_speed, nr_actions=quad_horizon
+    )
+    path = "trained_models/quad/reinforcement_learning/single_observation_best_model"
+    save = "trained_models/mario_finetuned"
+    train_main(save, env, evaluate_quad, load_model=path)
+
+
 if __name__ == "__main__":
     # ------------------ CartPole -----------------------
     # save_name = "trained_models/cartpole/reinforcement_learning/lesssteps_finetuned"
@@ -397,15 +408,16 @@ if __name__ == "__main__":
     # evaluate_wing(render=1)
 
     # ------------------ Quadrotor -----------------------
-    # load_path = None
-    # # "trained_models/quad/reinforcement_learning/best_2speed/rl_final"
-    save_name = "trained_models/quad/reinforcement_learning/lowdt"
+    load_path = "trained_models/quad/reinforcement_learning/best_2speed/rl_final"
+    # # # "trained_models/quad/reinforcement_learning/best_2speed/rl_final"
+    save_name = "trained_models/quad/reinforcement_learning/finetuned"
 
-    scenario = {}  # {"translational_drag": np.array([.3, .3, .3])}
+    scenario = {"translational_drag": np.array([.3, .3, .3])}
     # test_ours_quad(
     #     "trained_models/quad/current_model/", modified_params=scenario
     # )
-    train_quad(save_name, load_model=None, modified_params=scenario)
+    train_quad(save_name, load_model=load_path, modified_params=scenario)
     # test_rl_quad(
-    #     os.path.join(save_name, "rl_420000_steps"), modified_params=scenario
+    #     os.path.join(save_name, "rl_280000_steps"), modified_params=scenario
     # )
+    # test_marios()

@@ -344,3 +344,19 @@ class WingEnvRL(gym.Env, SimpleWingEnv):
 
     def render(self, mode="human"):
         SimpleWingEnv.render(self, mode=mode)
+
+
+class QuadEnvMario(QuadEnvRL):
+
+    def __init__(self, dynamics, dt, speed_factor=.5, nr_actions=1):
+        super().__init__(
+            dynamics, dt, speed_factor=speed_factor, nr_actions=nr_actions
+        )
+        self.action_space = spaces.Box(low=-1, high=1, shape=(4, ))
+
+        # state and reference
+        self.state_inp_dim = 15
+        self.obs_dim = 27
+        self.observation_space = spaces.Box(
+            -np.inf, np.inf, shape=(self.obs_dim, )
+        )
