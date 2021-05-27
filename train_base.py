@@ -425,7 +425,7 @@ class TrainBase:
                     just_switched = 1
 
                 # If switched to dynamics or beginning: collect new data
-                if just_switched or epoch == 0:
+                if just_switched:
                     # or self.model_to_train == "controller"
                     allocate_new = not (self.model_to_train == "controller")
                     self.results_dict["samples_in_d2"].append(self.epoch_size)
@@ -440,6 +440,42 @@ class TrainBase:
                 # evaluate
                 _ = self.evaluate_model(epoch)
 
+        except KeyboardInterrupt:
+            pass
+        # Save model
+        self.finalize()
+
+    def run_dynamics(self, config):
+        try:
+            for epoch in range(config["nr_epochs"]):
+                _ = self.evaluate_model(epoch)
+
+                # train dynamics as long as
+                # - lower than train_dyn_for_epochs
+                # - alternating or use all?
+                if (
+                    epoch <= config.get("train_dyn_for_epochs", 10)
+                    and epoch % config.get("train_dyn_every", 1) == 0
+                ):
+                    model_to_train = "dynamics"
+                else:
+                    model_to_train = "controller"
+
+                print(f"\nEpoch {epoch}")
+                self.run_epoch(train=model_to_train)
+
+                self.results_dict["samples_in_d2"].append(
+                    self.count_finetune_data
+                )
+
+                if epoch == config["train_dyn_for_epochs"]:
+                    print("Params of dynamics model after training:")
+                    for key, val in self.train_dynamics.state_dict().items():
+                        if len(val) > 10:
+                            print(key, torch.sum(torch.abs(val)).item())
+                            continue
+                        print(key, val)
+                    self.current_score = 0 if self.suc_up_down == 1 else np.inf
         except KeyboardInterrupt:
             pass
         # Save model

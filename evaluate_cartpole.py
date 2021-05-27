@@ -145,7 +145,7 @@ class Evaluator:
                         )
                     )
                     # ------------- Predict action ------------------
-                    if self.image_dataset:
+                    if False:  # self.image_dataset:
                         action_seq = torch.rand(1, 4) - .5
                     else:
                         if isinstance(
@@ -226,6 +226,12 @@ class Evaluator:
                 success[n] = i
                 self.eval_env._reset()
         # print(success)
+        res = {
+            "mean_vel": np.mean(velocities),
+            "std_vel": np.std(velocities),
+            "mean_stable": np.mean(success),
+            "std_stable": np.std(success)
+        }
         dyn_eval_test = np.array(self.dyn_eval_test)
         if len(self.dyn_eval_test) > 0:
             print(
@@ -236,6 +242,9 @@ class Evaluator:
                 "Dynamic trained: %3.2f (%3.2f)" %
                 (np.mean(dyn_eval_test[:, 1]), np.std(dyn_eval_test[:, 1]))
             )
+            res["mean_dyn_trained"] = np.mean(dyn_eval_test[:, 1])
+            res["std_dyn_trained"] = np.std(dyn_eval_test[:, 1])
+            res["mean_dyn_gap"] = np.mean(dyn_eval_test[:, 0])
         mean_err = np.mean(success)
         std_err = np.std(success)
         if not self.image_dataset:
@@ -246,7 +255,7 @@ class Evaluator:
             print("Average success: %3.2f (%3.2f)" % (mean_err, std_err))
         if return_success:
             return success, velocities
-        return mean_err, std_err, data_collection
+        return res
 
 
 def run_saved_arr(path):
@@ -366,17 +375,15 @@ if __name__ == "__main__":
         while len(collect_actions) < args.dataset:
             counter += 1
             evaluator.init_buffers()
-            success, suc_std, _ = evaluator.evaluate_in_environment(
-                render=True, max_steps=400
-            )
+            _ = evaluator.evaluate_in_environment(render=True, max_steps=400)
         collect_actions = np.array(collect_actions)
         # cut off bottom and top
         collect_img = np.array(collect_img)
         collect_states = np.array(collect_states)
         print(collect_states.shape, collect_actions.shape, collect_img.shape)
         np.savez(
-            "data/cartpole_31_wind_random.npz", collect_img, collect_actions,
-            collect_states
+            f"data/cartpole_seq_{args.dataset}.npz", collect_img,
+            collect_actions, collect_states
         )
     elif args.eval > 0:
         # set to random initial state
@@ -394,6 +401,6 @@ if __name__ == "__main__":
         )
     else:
         evaluator.initialize_straight = False
-        success, suc_std, _ = evaluator.evaluate_in_environment(
+        _ = evaluator.evaluate_in_environment(
             render=True, max_steps=500, nr_iters=1
         )
