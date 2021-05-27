@@ -245,8 +245,9 @@ class CartpoleDynamicsMPC(CartpoleDynamics):
         if use_residual and "linear_state_1.weight" in modified_params:
             print("Set weights for residual in MPC F")
             self.weight1 = modified_params["linear_state_1.weight"]
-            self.bias1 = modified_params["linear_state_1.bias"]
+            # self.bias1 = modified_params["linear_state_1.bias"]
             self.weight2 = modified_params["linear_state_2.weight"]
+            self.weight3 = modified_params["linear_state_3.weight"]
         elif len(modified_params) > 0:
             print("Using identified system but only parameters, no res")
             self.use_residual = False
@@ -258,6 +259,28 @@ class CartpoleDynamicsMPC(CartpoleDynamics):
         )
         action = ca.SX.sym("action")
         x_state = ca.vertcat(x, x_dot, theta, theta_dot)
+
+        x_h0 = ca.SX.sym('h0')
+        x_h1 = ca.SX.sym('h1')
+        x_h2 = ca.SX.sym('h2')
+        x_h3 = ca.SX.sym('h3')
+        x_h4 = ca.SX.sym('h4')
+        x_h5 = ca.SX.sym('h5')
+        x_h6 = ca.SX.sym('h6')
+        x_h7 = ca.SX.sym('h7')
+        x_h8 = ca.SX.sym('h8')
+        x_h9 = ca.SX.sym('h9')
+        x_h10 = ca.SX.sym('h10')
+        x_h11 = ca.SX.sym('h11')
+        x_h12 = ca.SX.sym('h12')
+        x_h13 = ca.SX.sym('h13')
+        x_h14 = ca.SX.sym('h14')
+        x_h15 = ca.SX.sym('h15')
+
+        history = ca.vertcat(
+            x_h0, x_h1, x_h2, x_h3, x_h4, x_h5, x_h6, x_h7, x_h8, x_h9, x_h10,
+            x_h11, x_h12, x_h13, x_h14, x_h15
+        )
 
         # helper variables
         force = self.cfg["max_force_mag"] * action
@@ -289,19 +312,22 @@ class CartpoleDynamicsMPC(CartpoleDynamics):
 
         if self.use_residual:
             print("USING res in mpc function")
-            state_action = ca.vertcat(
-                x_state, action, x_state, action, x_state, action, action
-            )
-            residual_state_1 = ca.tanh(
-                self.weight1 @ state_action + self.bias1
-            )
-            residual_state = self.weight2 @ residual_state_1
+            # state_action = ca.vertcat(
+            #     x_state, action, x_state, action, x_state, action, action
+            # )
+            # residual_state_1 = ca.tanh(self.weight1 @ history + self.bias1)
+            # residual_state = self.weight2 @ residual_state_1
+            residual_state_1 = ca.tanh(self.weight1 @ history)
+            residual_state_2 = ca.tanh(self.weight2 @ residual_state_1)
+            residual_state = ca.tanh(self.weight3 @ residual_state_2)
         else:
             residual_state = 0
 
         X = x_state + dt * x_state_dot + residual_state
 
-        F = ca.Function('F', [x_state, action], [X], ['x', 'u'], ['ode'])
+        F = ca.Function(
+            'F', [x_state, action, history], [X], ['x', 'u', 'h'], ['ode']
+        )
         return F
 
 

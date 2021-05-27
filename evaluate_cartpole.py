@@ -161,7 +161,7 @@ class Evaluator:
                             )
                         else:
                             action_seq = self.controller.predict_actions(
-                                new_state, 0
+                                new_state, network_input
                             )
                             if self.mpc:
                                 action_seq = torch.tensor([action_seq])
@@ -336,7 +336,7 @@ if __name__ == "__main__":
     thresh_div = 0.3
 
     if args.model == "mpc":
-        load_dynamics = "trained_models/cartpole/con_seq_400/dynamics_model"
+        load_dynamics = "trained_models/cartpole/con_seq_500/dynamics_model"
         controller_model = MPC(
             horizon=20,
             dt=dt,

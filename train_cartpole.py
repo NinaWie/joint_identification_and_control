@@ -645,18 +645,19 @@ if __name__ == "__main__":
     # trainer.run_dynamics(config)
 
     # TRAIN CONTROLLER WITH SEQUENCE
-    num_samples = 400
+    num_samples = 500
     base_model = "trained_models/cartpole/final_baseline_nocontact"
     baseline_dyn = None  # "trained_models/cartpole/dyn_seq_1000_newdata"
     config["save_name"] = f"con_seq_{num_samples}"
 
     config["sample_in"] = "eval_env"
     config["resample_every"] = 1000
-    config["train_dyn_for_epochs"] = 10
+    config["train_dyn_for_epochs"] = 50
     config["thresh_div_start"] = 0.2
     # no self play possible for contact dynamics!
     config["self_play"] = 0
     config["learning_rate_controller"] = 1e-6
+    config["learning_rate_dynamics"] = 0.1
     config["min_epochs"] = 100
     config["eval_var_dyn"] = "mean_dyn_trained"
     config["eval_var_con"] = "mean_vel"

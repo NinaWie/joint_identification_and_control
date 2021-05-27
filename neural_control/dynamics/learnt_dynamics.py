@@ -21,17 +21,23 @@ class LearntDynamics(torch.nn.Module):
         if out_state_size is None:
             out_state_size = state_size
         # residual network
-        self.linear_state_1 = nn.Linear(state_size + action_size, 64)
+        self.linear_state_1 = nn.Linear(
+            state_size + action_size, 64, bias=False
+        )
         torch.nn.init.normal_(self.linear_state_1.weight, mean=0.0, std=std)
-        torch.nn.init.normal_(self.linear_state_1.bias, mean=0.0, std=std)
+        # torch.nn.init.normal_(self.linear_state_1.bias, mean=0.0, std=std)
 
-        self.linear_state_2 = nn.Linear(64, out_state_size, bias=False)
+        self.linear_state_2 = nn.Linear(64, 64, bias=False)
         torch.nn.init.normal_(self.linear_state_2.weight, mean=0.0, std=std)
+
+        self.linear_state_3 = nn.Linear(64, out_state_size, bias=False)
+        torch.nn.init.normal_(self.linear_state_3.weight, mean=0.0, std=std)
 
     def state_transformer(self, state, action):
         state_action = torch.cat((state, action), dim=1)
         layer_1 = torch.tanh(self.linear_state_1(state_action))
-        new_state = self.linear_state_2(layer_1)
+        layer_2 = torch.tanh(self.linear_state_2(layer_1))
+        new_state = self.linear_state_3(layer_2)
         return new_state
 
     def forward(self, state, action, dt):
