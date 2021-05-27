@@ -56,7 +56,7 @@ class EvalCallback(BaseCallback):
         self.res_dict = defaultdict(list)
 
     def _on_step(self) -> bool:
-        if self.n_calls % self.eval_freq == 0:
+        if (self.n_calls - 1) % self.eval_freq == 0:
             if self.eval_env.thresh_div < 3:
                 self.eval_env.thresh_div += .05
                 print("increased thresh div", self.eval_env.thresh_div)
@@ -249,7 +249,7 @@ def train_wing(model_path, load_model=None, modified_params={}):
     dyn = FixedWingDynamics(modified_params=modified_params)
     env = WingEnvRL(dyn, fixed_wing_dt)
 
-    eval_freq = 10000 if load_model is None else 3000
+    eval_freq = 10000 if load_model is None else 200
     train_main(
         model_path,
         env,
@@ -396,11 +396,11 @@ if __name__ == "__main__":
     # )
 
     # ------------------ Fixed wing drone -----------------------
-    # load_name = "trained_models/wing/reinforcement_final/rl_350000_steps"
+    load_name = "trained_models/wing/reinforcement_final/rl_150000_steps"
     # # "trained_models/wing/reinforcement_learning/final/ppo_50"
-    # save_name = "trained_models/wing/reinforcement_veldrag/rl_12000_steps"
-    # scenario = {"vel_drag_factor": .3}
-    # # train_wing(save_name, load_model=load_name, modified_params=scenario)
+    save_name = "trained_models/wing/reinforcement_veldrag_200"
+    scenario = {"vel_drag_factor": .3}
+    train_wing(save_name, load_model=load_name, modified_params=scenario)
     # # test_ours_wing(
     # #     "trained_models/wing/current_model", modified_params=scenario
     # # )
@@ -408,15 +408,15 @@ if __name__ == "__main__":
     # evaluate_wing(render=1)
 
     # ------------------ Quadrotor -----------------------
-    load_path = "trained_models/quad/reinforcement_learning/best_2speed/rl_final"
-    # # # "trained_models/quad/reinforcement_learning/best_2speed/rl_final"
-    save_name = "trained_models/quad/reinforcement_learning/finetuned"
+    # load_path = "trained_models/quad/reinforcement_learning/best_2speed/rl_final"
+    # # # # "trained_models/quad/reinforcement_learning/best_2speed/rl_final"
+    # save_name = "trained_models/quad/reinforcement_learning/finetuned"
 
-    scenario = {"translational_drag": np.array([.3, .3, .3])}
-    # test_ours_quad(
-    #     "trained_models/quad/current_model/", modified_params=scenario
-    # )
-    train_quad(save_name, load_model=load_path, modified_params=scenario)
+    # scenario = {"translational_drag": np.array([.3, .3, .3])}
+    # # test_ours_quad(
+    # #     "trained_models/quad/current_model/", modified_params=scenario
+    # # )
+    # train_quad(save_name, load_model=load_path, modified_params=scenario)
     # test_rl_quad(
     #     os.path.join(save_name, "rl_280000_steps"), modified_params=scenario
     # )
