@@ -375,7 +375,7 @@ class TrainCartpole(TrainBase):
                 loss = torch.sum((next_state_pred - next_state_d2)**2)
                 loss.backward()
                 self.optimizer_dynamics.step()
-                self.results_dict["loss_dyn_per_step"].append(loss.item())
+                # self.results_dict["loss_dyn_per_step"].append(loss.item())
                 loss *= 1000
 
             running_loss += loss.item()
@@ -459,6 +459,7 @@ class TrainCartpole(TrainBase):
         success_std = res_eval["std_vel"]
         for key, val in res_eval.items():
             self.results_dict[key].append(val)
+        self.results_dict["evaluate_at"].append(epoch)
         self.save_model(epoch, success_mean, success_std)
 
         # increase thresholds
@@ -644,13 +645,14 @@ if __name__ == "__main__":
     # trainer.run_dynamics(config)
 
     # TRAIN CONTROLLER WITH SEQUENCE
+    num_samples = 200
     base_model = "trained_models/cartpole/final_baseline_nocontact"
-    baseline_dyn = "trained_models/cartpole/dyn_seq_1000_newdata"
-    config["save_name"] = "con_seq_1000"
+    baseline_dyn = None  # "trained_models/cartpole/dyn_seq_1000_newdata"
+    config["save_name"] = f"con_seq_{num_samples}"
 
     config["sample_in"] = "eval_env"
     config["resample_every"] = 1000
-    config["train_dyn_for_epochs"] = -1
+    config["train_dyn_for_epochs"] = 50
     config["thresh_div_start"] = 0.2
     # no self play possible for contact dynamics!
     config["self_play"] = 0
@@ -658,13 +660,15 @@ if __name__ == "__main__":
     config["min_epochs"] = 100
     config["eval_var_dyn"] = "mean_dyn_trained"
     config["eval_var_con"] = "mean_vel"
-    config["suc_up_down"] = 0
+    config["suc_up_down"] = -1
+    config["use_samples"] = num_samples
 
     # train environment is learnt
     train_dyn = SequenceCartpoleDynamics()
-    train_dyn.load_state_dict(
-        torch.load(os.path.join(baseline_dyn, "dynamics_model"))
-    )
+    if baseline_dyn is not None:
+        train_dyn.load_state_dict(
+            torch.load(os.path.join(baseline_dyn, "dynamics_model"))
+        )
     eval_dyn = CartpoleDynamics({"contact": 1})
     trainer = TrainCartpole(train_dyn, eval_dyn, config, train_seq_dyn=1)
     trainer.initialize_model(

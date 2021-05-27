@@ -439,15 +439,18 @@ class CartpoleSequenceDataset:
         self,
         load_data_path="data/cartpole_img_26_contact.npz",
         self_play=200,
+        use_samples=200,
         dt=0.05,
         **kwargs
     ):
         npz_loaded = np.load(load_data_path)
         (collect_actions,
          collect_states) = (npz_loaded["arr_1"], npz_loaded["arr_2"])
-        print("loaded data", collect_states.shape, collect_actions.shape)
-        self.states = collect_states
-        self.actions = collect_actions
+        self.states = collect_states[:use_samples]
+        self.actions = collect_actions[:use_samples]
+        print(
+            "loaded data", use_samples, self.states.shape, self.actions.shape
+        )
 
         if self_play == "all":
             self.num_self_play = len(self.states)

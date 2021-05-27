@@ -448,7 +448,9 @@ class TrainBase:
     def run_dynamics(self, config):
         try:
             for epoch in range(config["nr_epochs"]):
-                if config.get("train_dyn_for_epochs", 10) <= 0:
+                if epoch >= config.get(
+                    "train_dyn_for_epochs", 10
+                ):  # or epoch % 10 == 0:
                     _ = self.evaluate_model(epoch)
 
                 # train dynamics as long as
@@ -465,17 +467,18 @@ class TrainBase:
                 print(f"\nEpoch {epoch}")
                 self.run_epoch(train=model_to_train)
 
-                self.results_dict["samples_in_d2"].append(
-                    self.count_finetune_data
-                )
+                # self.results_dict["samples_in_d2"].append(
+                #     self.count_finetune_data
+                # )
 
                 if epoch == config["train_dyn_for_epochs"]:
-                    print("Params of dynamics model after training:")
-                    for key, val in self.train_dynamics.state_dict().items():
-                        if len(val) > 10:
-                            print(key, torch.sum(torch.abs(val)).item())
-                            continue
-                        print(key, val)
+                    print("---------- start train con ---------- ")
+                    # print("Params of dynamics model after training:")
+                    # for key, val in self.train_dynamics.state_dict().items():
+                    #     if len(val) > 10:
+                    #         print(key, torch.sum(torch.abs(val)).item())
+                    #         continue
+                    #     print(key, val)
                     self.current_score = 0 if self.suc_up_down == 1 else np.inf
         except KeyboardInterrupt:
             pass

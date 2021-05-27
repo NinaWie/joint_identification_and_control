@@ -14,7 +14,7 @@ from neural_control.controllers.mpc import MPC
 from neural_control.controllers.network_wrapper import (
     CartpoleWrapper, CartpoleImageWrapper, SequenceCartpoleWrapper
 )
-from neural_control.dataset import CartpoleImageDataset
+from neural_control.dataset import CartpoleImageDataset, CartpoleSequenceDataset
 from neural_control.models.simple_model import Net, ImageControllerNet
 from evaluate_base import dyn_comparison_cartpole
 
@@ -285,9 +285,12 @@ def load_model(model_name, epoch, is_seq=False):
             "trained_models", "cartpole", model_name, "model_cartpole" + epoch
         )
     net = torch.load(path_load)
-    some_dataset = CartpoleImageDataset(
-        load_data_path="data/cartpole_img_16.npz"
+    some_dataset = CartpoleSequenceDataset(
+        load_data_path="data/cartpole_seq_1000.npz", use_samples=2
     )
+    # some_dataset = CartpoleImageDataset(
+    #     load_data_path="data/cartpole_img_16.npz"
+    # )
     config["self_play"] = 0
     net.eval()
     if isinstance(net, Net):
@@ -330,10 +333,10 @@ if __name__ == "__main__":
 
     # PARAMs
     dt = 0.05
-    thresh_div = 0.21
+    thresh_div = 0.3
 
     if args.model == "mpc":
-        load_dynamics = None
+        load_dynamics = "trained_models/cartpole/con_seq_200/dynamics_model"
         controller_model = MPC(
             horizon=20,
             dt=dt,
@@ -357,16 +360,19 @@ if __name__ == "__main__":
     eval_env = CartPoleEnv(dynamics, dt, thresh_div=thresh_div)
 
     dyn_trained = None
-    dyn_trained = SequenceCartpoleDynamics(buffer_length=3)
-    dyn_trained.load_state_dict(
-        torch.load(
-            os.path.join(
-                "trained_models/cartpole/dyn_seq_1000_newdata",
-                "dynamics_model"
-            )
-        ),
-        strict=False
-    )
+    try:
+        dyn_trained = SequenceCartpoleDynamics(buffer_length=3)
+        dyn_trained.load_state_dict(
+            torch.load(
+                os.path.join(
+                    "trained_models/cartpole/" + args.model, "dynamics_model"
+                )
+            ),
+            strict=False
+        )
+    except FileNotFoundError:
+        print("no dynamics model found")
+
     evaluator = Evaluator(controller_model, eval_env, eval_dyn=dyn_trained)
     # angles = evaluator.run_for_fixed_length(net, render=True)
 
