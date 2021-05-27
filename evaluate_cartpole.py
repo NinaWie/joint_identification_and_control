@@ -357,15 +357,16 @@ if __name__ == "__main__":
     eval_env = CartPoleEnv(dynamics, dt, thresh_div=thresh_div)
 
     dyn_trained = None
-    # dyn_trained = SequenceCartpoleDynamics(buffer_length=3)
-    # dyn_trained.load_state_dict(
-    #     torch.load(
-    #         os.path.join(
-    #             "trained_models/cartpole/final_dyn_seq", "dynamics_model"
-    #         )
-    #     ),
-    #     strict=False
-    # )
+    dyn_trained = SequenceCartpoleDynamics(buffer_length=3)
+    dyn_trained.load_state_dict(
+        torch.load(
+            os.path.join(
+                "trained_models/cartpole/dyn_seq_1000_newdata",
+                "dynamics_model"
+            )
+        ),
+        strict=False
+    )
     evaluator = Evaluator(controller_model, eval_env, eval_dyn=dyn_trained)
     # angles = evaluator.run_for_fixed_length(net, render=True)
 

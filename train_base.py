@@ -448,7 +448,8 @@ class TrainBase:
     def run_dynamics(self, config):
         try:
             for epoch in range(config["nr_epochs"]):
-                _ = self.evaluate_model(epoch)
+                if config.get("train_dyn_for_epochs", 10) <= 0:
+                    _ = self.evaluate_model(epoch)
 
                 # train dynamics as long as
                 # - lower than train_dyn_for_epochs

@@ -356,18 +356,18 @@ class TrainCartpole(TrainBase):
                 )
                 # Since we have periodic force here, this is not useful
                 # if i == 0:
-                #     print("\nExample dynamics")
-                #     self.eval_dynamics.timestamp = 0.1
-                #     next_state_eval_contact = self.eval_dynamics(
-                #         current_state, actions, self.delta_t
-                #     )
-                #     self.eval_dynamics.timestamp = -0.1
-                #     next_state_eval_noc = self.eval_dynamics(
-                #         current_state, actions, self.delta_t
-                #     )
-                #     print("start at ", current_state[0])
-                #     print("pred", next_state_pred[0].detach())
-                #     print("gt", next_state_d2[0])
+                # print("\nExample dynamics")
+                # self.eval_dynamics.timestamp = 0.1
+                # next_state_eval_contact = self.eval_dynamics(
+                #     current_state, actions, self.delta_t
+                # )
+                # self.eval_dynamics.timestamp = -0.1
+                # next_state_eval_noc = self.eval_dynamics(
+                #     current_state, actions, self.delta_t
+                # )
+                # print("start at ", current_state[0])
+                # print("pred", next_state_pred[0].detach())
+                # print("gt", next_state_d2[0])
                 #     print("next with contact", next_state_eval_contact[0])
                 #     print("next ohne contact", next_state_eval_noc[0])
                 #     print()
@@ -376,6 +376,7 @@ class TrainCartpole(TrainBase):
                 loss.backward()
                 self.optimizer_dynamics.step()
                 self.results_dict["loss_dyn_per_step"].append(loss.item())
+                loss *= 1000
 
             running_loss += loss.item()
         # time_epoch = time.time() - tic
@@ -619,31 +620,32 @@ if __name__ == "__main__":
     # )
 
     # TRAIN DYNAMICS WITH SEQUENCE
-    # base_model = None
+    # base_model = "trained_models/cartpole/final_baseline_nocontact"
     # baseline_dyn = None
-    # config["save_name"] = "dyn_seq_200"
+    # config["save_name"] = "dyn_seq_1000_newdata"
     # config["sample_in"] = "train_env"
     # config["resample_every"] = 1000
     # config["train_dyn_for_epochs"] = 200
-    # config["thresh_div_start"] = 0.2
+    # config["thresh_div_start"] = .21
     # config["train_dyn_every"] = 1
     # config["min_epochs"] = 100
     # config["eval_var_dyn"] = "mean_dyn_trained"
     # config["eval_var_con"] = "mean_vel"
+    # config["learning_rate_dynamics"] = 0.01
 
     # # train environment is learnt
     # train_dyn = SequenceCartpoleDynamics()
     # eval_dyn = CartpoleDynamics({"contact": 1})
     # trainer = TrainCartpole(train_dyn, eval_dyn, config, train_seq_dyn=1)
     # trainer.initialize_model(
-    #     base_model, load_dataset="data/cartpole_seq_200.npz"
+    #     base_model, load_dataset="data/cartpole_seq_1000.npz"
     # )
     # # RUN
     # trainer.run_dynamics(config)
 
     # TRAIN CONTROLLER WITH SEQUENCE
     base_model = "trained_models/cartpole/final_baseline_nocontact"
-    baseline_dyn = "trained_models/cartpole/dyn_seq_wind_random"
+    baseline_dyn = "trained_models/cartpole/dyn_seq_1000_newdata"
     config["save_name"] = "con_seq_1000"
 
     config["sample_in"] = "eval_env"
