@@ -336,7 +336,7 @@ if __name__ == "__main__":
     thresh_div = 0.3
 
     if args.model == "mpc":
-        load_dynamics = "trained_models/cartpole/con_seq_200/dynamics_model"
+        load_dynamics = "trained_models/cartpole/con_seq_400/dynamics_model"
         controller_model = MPC(
             horizon=20,
             dt=dt,
@@ -371,7 +371,7 @@ if __name__ == "__main__":
             strict=False
         )
     except FileNotFoundError:
-        print("no dynamics model found")
+        print("in this saved model no dynamics model is found")
 
     evaluator = Evaluator(controller_model, eval_env, eval_dyn=dyn_trained)
     # angles = evaluator.run_for_fixed_length(net, render=True)

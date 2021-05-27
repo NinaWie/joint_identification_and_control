@@ -30,7 +30,7 @@ class LearntDynamics(torch.nn.Module):
 
     def state_transformer(self, state, action):
         state_action = torch.cat((state, action), dim=1)
-        layer_1 = torch.relu(self.linear_state_1(state_action))
+        layer_1 = torch.tanh(self.linear_state_1(state_action))
         new_state = self.linear_state_2(layer_1)
         return new_state
 
