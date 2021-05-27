@@ -43,6 +43,7 @@ class MPC(object):
         self.modified_dynamics = {}
         if load_dynamics is not None:
             import torch
+            print("loading dynamics in mpc from", load_dynamics)
             modified_params = torch.load(load_dynamics)
             # transform loaded torch parameters into normal
             numpy_modified_params = {}
@@ -159,16 +160,16 @@ class MPC(object):
         self._default_u = [.25, .5, .5, .5]
 
     def _initParamsCartpole(self):
-        self._s_dim = 4
+        self._s_dim = 15
         self._u_dim = 1
         self._w_min_xy = -1
         self._w_max_xy = 1
         self._thrust_min = -1
         self._thrust_max = 1
         self._Q_u = np.diag([0])
-        self._Q_pen = np.diag([0, 3, 10, 1])
+        self._Q_pen = np.diag([0, 3, 10, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
         # initial states
-        self._quad_s0 = np.zeros(4).tolist()
+        self._quad_s0 = np.zeros(15).tolist()
         self._quad_u0 = [0]
         # default u
         self._default_u = [0]
@@ -245,12 +246,9 @@ class MPC(object):
             "P", self._s_dim + (self._s_dim + 3) * self._N + self._s_dim
         )
         X = ca.SX.sym("X", self._s_dim, self._N + 1)
-        X_S = X[:, :self._N]
         U = ca.SX.sym("U", self._u_dim, self._N)
-        H = ca.vertcat(X_S, U, X_S, U, X_S, U, U)
-        print(X.shape, U.shape, X_S.shape, H.shape)
         #
-        X_next = fMap(X_S, U, H)
+        X_next = fMap(X[:, :self._N], U)
 
         # "Lift" initial conditions
         self.nlp_w += [X[:, 0]]
@@ -441,7 +439,7 @@ class MPC(object):
 
         return flattened_ref
 
-    def preprocess_cartpole(self, current_state, history):
+    def preprocess_cartpole(self, current_state):
         # interpolate theta
         inter_theta = np.linspace(current_state[2], 0, self._N + 2)
         inter_theta_dot = np.linspace(current_state[3], 0, self._N + 2)
@@ -457,6 +455,9 @@ class MPC(object):
         goal_state = middle_ref_states[-1]
 
         high_mpc_reference = np.hstack((middle_ref_states[1:-1], self.addon))
+        # print(current_state)
+        # print(high_mpc_reference)
+        # print()
 
         flattened_ref = (
             current_state.tolist() + high_mpc_reference.flatten().tolist() +
@@ -472,8 +473,6 @@ class MPC(object):
                 current_state, ref_states
             )
         elif self.dynamics_model == "cartpole":
-            preprocessed_ref = self.preprocess_cartpole(
-                current_state, ref_states
-            )
+            preprocessed_ref = self.preprocess_cartpole(ref_states[0].numpy())
         action, _ = self.solve(preprocessed_ref)
         return np.array([action[:, 0]])

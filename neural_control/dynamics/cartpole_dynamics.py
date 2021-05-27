@@ -239,7 +239,7 @@ class ImageCartpoleDynamics(torch.nn.Module, CartpoleDynamics):
 
 class CartpoleDynamicsMPC(CartpoleDynamics):
 
-    def __init__(self, modified_params={}, use_residual=True):
+    def __init__(self, modified_params={}, use_residual=False):
         CartpoleDynamics.__init__(self, modified_params=modified_params)
         self.use_residual = use_residual
         if use_residual and "linear_state_1.weight" in modified_params:
@@ -258,12 +258,12 @@ class CartpoleDynamicsMPC(CartpoleDynamics):
             ca.SX.sym("theta_dot")
         )
         action = ca.SX.sym("action")
-        x_state = ca.vertcat(x, x_dot, theta, theta_dot)
+        # x_state = ca.vertcat(x, x_dot, theta, theta_dot)
 
-        x_h0 = ca.SX.sym('h0')
-        x_h1 = ca.SX.sym('h1')
-        x_h2 = ca.SX.sym('h2')
-        x_h3 = ca.SX.sym('h3')
+        # first part is state
+        current_state = ca.vertcat(x, x_dot, theta, theta_dot)
+
+        # rest of history are states and actions beforehand
         x_h4 = ca.SX.sym('h4')
         x_h5 = ca.SX.sym('h5')
         x_h6 = ca.SX.sym('h6')
@@ -275,11 +275,10 @@ class CartpoleDynamicsMPC(CartpoleDynamics):
         x_h12 = ca.SX.sym('h12')
         x_h13 = ca.SX.sym('h13')
         x_h14 = ca.SX.sym('h14')
-        x_h15 = ca.SX.sym('h15')
 
-        history = ca.vertcat(
-            x_h0, x_h1, x_h2, x_h3, x_h4, x_h5, x_h6, x_h7, x_h8, x_h9, x_h10,
-            x_h11, x_h12, x_h13, x_h14, x_h15
+        x_state = ca.vertcat(
+            current_state, x_h4, x_h5, x_h6, x_h7, x_h8, x_h9, x_h10, x_h11,
+            x_h12, x_h13, x_h14
         )
 
         # helper variables
@@ -312,6 +311,7 @@ class CartpoleDynamicsMPC(CartpoleDynamics):
 
         if self.use_residual:
             print("USING res in mpc function")
+            history = ca.vertcat(x_state, action)
             # state_action = ca.vertcat(
             #     x_state, action, x_state, action, x_state, action, action
             # )
@@ -323,11 +323,13 @@ class CartpoleDynamicsMPC(CartpoleDynamics):
         else:
             residual_state = 0
 
-        X = x_state + dt * x_state_dot + residual_state
-
-        F = ca.Function(
-            'F', [x_state, action, history], [X], ['x', 'u', 'h'], ['ode']
+        new_x_state = current_state + dt * x_state_dot + residual_state
+        X = ca.vertcat(
+            new_x_state, action, current_state, x_h4, x_h5, x_h6, x_h7, x_h8,
+            x_h9
         )
+
+        F = ca.Function('F', [x_state, action], [X], ['x', 'u'], ['ode'])
         return F
 
 
