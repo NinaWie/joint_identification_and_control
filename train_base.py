@@ -268,7 +268,8 @@ class TrainBase:
             torch.save(
                 self.net,
                 os.path.join(
-                    self.save_path, self.save_model_name + str(epoch)
+                    self.save_path,
+                    self.save_model_name  #  + str(epoch)
                 )
             )
 
@@ -295,9 +296,10 @@ class TrainBase:
         """
         Save model and plot loss and performance
         """
-        torch.save(
-            self.net, os.path.join(self.save_path, self.save_model_name)
-        )
+        # TODO: commented for major plot
+        # torch.save(
+        #     self.net, os.path.join(self.save_path, self.save_model_name)
+        # )
         # plot performance
         plot_loss_episode_len(
             self.results_dict["mean_success"],
@@ -446,32 +448,35 @@ class TrainBase:
         self.finalize()
 
     def run_dynamics(self, config):
+        model_to_train = "dynamics"
         try:
             for epoch in range(config["nr_epochs"]):
-                if epoch >= config.get(
-                    "train_dyn_for_epochs", 10
-                ):  # or epoch % 10 == 0:
+                self.epoch = epoch
+                if model_to_train == "controller":
+                    print(f"\nEpoch {epoch}")
                     _ = self.evaluate_model(epoch)
 
                 # train dynamics as long as
                 # - lower than train_dyn_for_epochs
                 # - alternating or use all?
-                if (
-                    epoch <= config.get("train_dyn_for_epochs", 10)
-                    and epoch % config.get("train_dyn_every", 1) == 0
-                ):
-                    model_to_train = "dynamics"
-                else:
-                    model_to_train = "controller"
+                # if (
+                #     epoch <= config.get("train_dyn_for_epochs", 10)
+                #     and epoch % config.get("train_dyn_every", 1) == 0
+                # ):
+                #     model_to_train = "dynamics"
+                # else:
+                #     model_to_train = "controller"
 
-                print(f"\nEpoch {epoch}")
                 self.run_epoch(train=model_to_train)
 
                 # self.results_dict["samples_in_d2"].append(
                 #     self.count_finetune_data
                 # )
-
-                if epoch == config["train_dyn_for_epochs"]:
+                if model_to_train == "dynamics" and (
+                    epoch == config["train_dyn_for_epochs"]
+                    or self.results_dict["loss_dynamics"][-1] < 500
+                ):
+                    model_to_train = "controller"
                     print("---------- start train con ---------- ")
                     # print("Params of dynamics model after training:")
                     # for key, val in self.train_dynamics.state_dict().items():

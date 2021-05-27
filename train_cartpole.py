@@ -269,7 +269,8 @@ class TrainCartpole(TrainBase):
 
     def loss_logging(self, epoch_loss, train="controller"):
         self.results_dict["loss_" + train].append(epoch_loss)
-        print(f"Loss ({train}): {round(epoch_loss, 2)}")
+        if train == "controller" or self.epoch % 10 == 0:
+            print(f"Loss ({train}): {round(epoch_loss, 2)}")
         # self.writer.add_scalar("Loss/train", epoch_loss)
 
     def run_sequence_epoch(self, train="controller"):
@@ -645,38 +646,48 @@ if __name__ == "__main__":
     # trainer.run_dynamics(config)
 
     # TRAIN CONTROLLER WITH SEQUENCE
-    num_samples = 500
-    base_model = "trained_models/cartpole/final_baseline_nocontact"
-    baseline_dyn = None  # "trained_models/cartpole/dyn_seq_1000_newdata"
-    config["save_name"] = f"con_seq_{num_samples}"
+    for num_samples in [2000]:  # np.arange(200, 2000, 200):
+        print()
+        print(f"----------- number of samples {num_samples} -----------")
+        # num_samples = 1000
+        trainer = None
+        # reload config:
+        with open("configs/cartpole_config.json", "r") as infile:
+            config = json.load(infile)
 
-    config["sample_in"] = "eval_env"
-    config["resample_every"] = 1000
-    config["train_dyn_for_epochs"] = 50
-    config["thresh_div_start"] = 0.2
-    # no self play possible for contact dynamics!
-    config["self_play"] = 0
-    config["learning_rate_controller"] = 1e-6
-    config["learning_rate_dynamics"] = 0.1
-    config["min_epochs"] = 100
-    config["eval_var_dyn"] = "mean_dyn_trained"
-    config["eval_var_con"] = "mean_vel"
-    config["suc_up_down"] = -1
-    config["use_samples"] = num_samples
+        mode = "_random"
+        base_model = "trained_models/cartpole/final_baseline_nocontact"
+        baseline_dyn = None  # "trained_models/cartpole/dyn_seq_1000_newdata"
+        config["save_name"] = f"con_seq_{num_samples}" + mode
 
-    # train environment is learnt
-    train_dyn = SequenceCartpoleDynamics()
-    if baseline_dyn is not None:
-        train_dyn.load_state_dict(
-            torch.load(os.path.join(baseline_dyn, "dynamics_model"))
+        config["sample_in"] = "eval_env"
+        config["resample_every"] = 1000
+        config["nr_epochs"] = 110
+        config["train_dyn_for_epochs"] = 100
+        config["thresh_div_start"] = 0.2
+        # no self play possible for contact dynamics!
+        config["self_play"] = 0
+        config["learning_rate_controller"] = 1e-7
+        config["learning_rate_dynamics"] = 0.05
+        config["min_epochs"] = 100
+        config["eval_var_dyn"] = "mean_dyn_trained"
+        config["eval_var_con"] = "mean_vel"
+        config["suc_up_down"] = -1
+        config["use_samples"] = int(num_samples)
+
+        # train environment is learnt
+        train_dyn = SequenceCartpoleDynamics()
+        if baseline_dyn is not None:
+            train_dyn.load_state_dict(
+                torch.load(os.path.join(baseline_dyn, "dynamics_model"))
+            )
+        eval_dyn = CartpoleDynamics({"contact": 1})
+        trainer = TrainCartpole(train_dyn, eval_dyn, config, train_seq_dyn=1)
+        trainer.initialize_model(
+            base_model, load_dataset=f"data/cartpole_seq_2000{mode}.npz"
         )
-    eval_dyn = CartpoleDynamics({"contact": 1})
-    trainer = TrainCartpole(train_dyn, eval_dyn, config, train_seq_dyn=1)
-    trainer.initialize_model(
-        base_model, load_dataset="data/cartpole_seq_1000.npz"
-    )
-    # RUN
-    trainer.run_dynamics(config)
+        # RUN
+        trainer.run_dynamics(config)
 
     ## USED TO PRETRAIN CONTROLLER: (set random init in evaluate!)
     # base_model = None

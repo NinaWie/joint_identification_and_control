@@ -8,6 +8,7 @@ backups/
 data_backup/
 outputs/
 *runs*
+rl_quad_*
 
 .ipynb_checkpoints/
 *.csv

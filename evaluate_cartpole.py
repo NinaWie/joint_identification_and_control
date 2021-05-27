@@ -338,7 +338,7 @@ if __name__ == "__main__":
     if args.model == "mpc":
         load_dynamics = "trained_models/cartpole/con_seq_500/dynamics_model"
         controller_model = MPC(
-            horizon=20,
+            horizon=10,
             dt=dt,
             dynamics="cartpole",
             load_dynamics=load_dynamics
@@ -370,7 +370,9 @@ if __name__ == "__main__":
             ),
             strict=False
         )
+        print("Loaded dynamics model from ")
     except FileNotFoundError:
+        dyn_trained = None
         print("in this saved model no dynamics model is found")
 
     evaluator = Evaluator(controller_model, eval_env, eval_dyn=dyn_trained)
@@ -389,7 +391,7 @@ if __name__ == "__main__":
         collect_states = np.array(collect_states)
         print(collect_states.shape, collect_actions.shape, collect_img.shape)
         np.savez(
-            f"data/cartpole_seq_{args.dataset}.npz", collect_img,
+            f"data/cartpole_seq_{args.dataset}_mpc.npz", collect_img,
             collect_actions, collect_states
         )
     elif args.eval > 0:
@@ -401,9 +403,9 @@ if __name__ == "__main__":
             nr_iters=args.eval,
             return_success=True
         )
-        is_contact = "bl" if len(modified_params.keys()) == 0 else "mismatch"
+        # is_contact = "bl" if len(modified_params.keys()) == 0 else "mismatch"
         np.savez(
-            f"../presentations/final_res/cartpole_seq_wind/{args.model}_{is_contact}.npz",
+            f"../presentations/final_res/cartpole_seq_plot/{args.model}.npz",
             np.array(successes), np.array(velocities)
         )
     else:
