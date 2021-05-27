@@ -7,6 +7,7 @@ from neural_control.plotting import plot_success
 from neural_control.dynamics.fixed_wing_dynamics import (
     FixedWingDynamics, SequenceFixedWingDynamics
 )
+from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
 from neural_control.dynamics.quad_dynamics_flightmare import FlightmareDynamics
 from neural_control.dataset import WingSequenceDataset, QuadSequenceDataset
 
@@ -117,6 +118,38 @@ def run_mpc_analysis(
         )
 
 
+def dyn_comparison_cartpole(
+    dyn_trained, np_state, np_action, history, timestamp, dt=0.05
+):
+    action_torch = torch.tensor([np_action.tolist()]).float()
+    state_torch = torch.tensor([np_state.tolist()]).float()
+    # history_torch = torch.from_numpy(np.expand_dims(history, 0)).float()
+    # print(state_torch.size(), action_torch.size(), inp_history.size())
+
+    # DYN EVALUATION
+    dyn_bl = CartpoleDynamics()
+    dyn_mod = CartpoleDynamics({"contact": 1})
+    dyn_mod.timestamp = timestamp
+    # pass through dynamics
+    state_bl = dyn_bl(state_torch, action_torch, dt=dt)
+    state_mod = dyn_mod(state_torch, action_torch, dt=dt)
+    with torch.no_grad():
+        state_trained = dyn_trained(state_torch, history, action_torch, dt=dt)
+    # np.set_printoptions(suppress=1, precision=3)
+    # print("bl")
+    # print(state_bl.numpy())
+    # print("mod")
+    # print(state_mod.numpy())
+    # print("trained")
+    # print(state_trained.numpy())
+    # print()
+    actual_delta = torch.sqrt(torch.sum(((state_mod - state_bl) / dt)**2))
+    trained_delta = torch.sqrt(
+        torch.sum(((state_mod - state_trained) / dt)**2)
+    )
+    return [actual_delta.item(), trained_delta.item()]
+
+
 def dyn_comparison_wing(
     dyn_trained, np_state, np_action, history, timestamp, dt=0.05
 ):
@@ -130,14 +163,6 @@ def dyn_comparison_wing(
 
     # DYN EVALUATION
     dyn_bl = FixedWingDynamics()
-    # dyn_trained = SequenceFixedWingDynamics()
-    # dyn_trained.load_state_dict(
-    #     torch.load(
-    #         os.path.join(
-    #             "trained_models/wing/dyn_seq_wing_2", "dynamics_model"
-    #         )
-    #     )
-    # )
     dyn_mod = FixedWingDynamics({"wind": 2})
     dyn_mod.timestamp = timestamp
     # pass through dynamics

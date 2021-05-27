@@ -97,7 +97,7 @@ class CartpoleDynamics:
                 self.cfg["total_mass"]
             )
         )
-        thetaacc += np.sin(self.timestamp) * self.cfg["contact"]
+        thetaacc += (1 + np.sin(self.timestamp)) * self.cfg["contact"]
         wind_drag = self.cfg["wind"] * torch.cos(theta * 5)
 
         # swapped these two lines

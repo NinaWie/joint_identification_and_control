@@ -16,6 +16,7 @@ from neural_control.controllers.network_wrapper import (
 )
 from neural_control.dataset import CartpoleImageDataset
 from neural_control.models.simple_model import Net, ImageControllerNet
+from evaluate_base import dyn_comparison_cartpole
 
 # mpc like receding horizon
 APPLY_UNTIL = 1
@@ -30,9 +31,12 @@ center_at_x = True
 
 class Evaluator:
 
-    def __init__(self, controller, eval_env, collect_image_dataset=0):
+    def __init__(
+        self, controller, eval_env, eval_dyn=None, collect_image_dataset=0
+    ):
         self.controller = controller
         self.eval_env = eval_env
+        self.eval_dyn = eval_dyn
         self.mpc = isinstance(self.controller, MPC)
         self.image_dataset = collect_image_dataset
         self.init_buffers()
@@ -78,6 +82,7 @@ class Evaluator:
         """
         Measure success --> how long can we balance the pole on top
         """
+        self.dyn_eval_test = []
         if nr_iters == 0:
             return 0, 0, []
         data_collection = []
@@ -161,6 +166,17 @@ class Evaluator:
                             if self.mpc:
                                 action_seq = torch.tensor([action_seq])
 
+                    if i % 10 == 0 and self.eval_dyn is not None:
+                        self.dyn_eval_test.append(
+                            dyn_comparison_cartpole(
+                                self.eval_dyn,
+                                new_state,
+                                action_seq[0, 0],
+                                network_input,
+                                self.eval_env.dynamics.timestamp,
+                                dt=self.eval_env.dt
+                            )
+                        )
                     # ------------- Take step with dynamics ------------------
                     prev_state = new_state.copy()
                     for action_ind in range(APPLY_UNTIL):
@@ -210,6 +226,16 @@ class Evaluator:
                 success[n] = i
                 self.eval_env._reset()
         # print(success)
+        dyn_eval_test = np.array(self.dyn_eval_test)
+        if len(self.dyn_eval_test) > 0:
+            print(
+                "Dynamic gap: %3.2f (%3.2f)" %
+                (np.mean(dyn_eval_test[:, 0]), np.std(dyn_eval_test[:, 0]))
+            )
+            print(
+                "Dynamic trained: %3.2f (%3.2f)" %
+                (np.mean(dyn_eval_test[:, 1]), np.std(dyn_eval_test[:, 1]))
+            )
         mean_err = np.mean(success)
         std_err = np.std(success)
         if not self.image_dataset:
@@ -312,7 +338,7 @@ if __name__ == "__main__":
             is_seq=("seq" in args.model or "contact" in args.model)
         )
 
-    modified_params = {"contact": .75}
+    modified_params = {"contact": 1}
     # {"wind": .5}
     # wind 0.01 works for wind added to x directlt, needs much higher (.5)
     # to affect the acceleration much
@@ -320,7 +346,18 @@ if __name__ == "__main__":
     # define dynamics and environmen
     dynamics = CartpoleDynamics(modified_params=modified_params)
     eval_env = CartPoleEnv(dynamics, dt, thresh_div=thresh_div)
-    evaluator = Evaluator(controller_model, eval_env)
+
+    dyn_trained = None
+    # dyn_trained = SequenceCartpoleDynamics(buffer_length=3)
+    # dyn_trained.load_state_dict(
+    #     torch.load(
+    #         os.path.join(
+    #             "trained_models/cartpole/final_dyn_seq", "dynamics_model"
+    #         )
+    #     ),
+    #     strict=False
+    # )
+    evaluator = Evaluator(controller_model, eval_env, eval_dyn=dyn_trained)
     # angles = evaluator.run_for_fixed_length(net, render=True)
 
     if args.dataset > 0:
