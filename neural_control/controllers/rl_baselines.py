@@ -55,7 +55,7 @@ class EvalCallback(BaseCallback):
         self.res_dict = defaultdict(list)
 
     def _on_step(self) -> bool:
-        if self.n_calls % self.eval_freq == 0:
+        if (self.n_calls - 1) % self.eval_freq == 0:
             # if self.eval_env.thresh_div < 3:
             #     self.eval_env.thresh_div += .05
             #     print("increased thresh div", self.eval_env.thresh_div)
@@ -127,7 +127,7 @@ def train_cartpole(model_path, load_model=None, modified_params={}):
         env,
         evaluate_cartpole,
         load_model=load_model,
-        total_timesteps=1000000,
+        total_timesteps=500000,
         eval_freq=10000
     )
 
@@ -179,7 +179,7 @@ def test_rl_cartpole(save_name, modified_params={}, max_steps=250):
     dyn = CartpoleDynamics(modified_params=modified_params)
     env = CartPoleEnvRL(dyn, dt=cartpole_dt)
     model = PPO.load(save_name)
-    evaluate_cartpole(model, env, max_steps, nr_iters=1, render=1)
+    evaluate_cartpole(model, env, max_steps, nr_iters=20, render=0)
 
 
 def test_ours_cartpole(model_path, modified_params={}, max_steps=500):
@@ -394,10 +394,10 @@ def train_quad(model_path, load_model=None, modified_params={}):
 
 if __name__ == "__main__":
     # ------------------ CartPole -----------------------
-    save_name = "trained_models/cartpole/reinforcement_learning/new_history_bl"
-    # load_name = "trained_models/cartpole/reinforcement_learning/final_history_bl/rl_final"
-    scenario = {}  # {"contact": 1}
-    train_cartpole(save_name, load_model=None, modified_params=scenario)
+    save_name = "trained_models/cartpole/reinforcement_learning/final_finetune_2"
+    load_name = "trained_models/cartpole/reinforcement_learning/final_history_bl/rl_final"
+    scenario = {"contact": 1}
+    train_cartpole(save_name, load_model=load_name, modified_params=scenario)
     # test_rl_cartpole(
     #     os.path.join(save_name, "rl_final"), modified_params=scenario
     # )

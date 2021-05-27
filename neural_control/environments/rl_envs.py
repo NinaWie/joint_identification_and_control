@@ -72,7 +72,7 @@ class CartPoleEnvRL(gym.Env, CartPoleEnv):
         # this reward is positive if theta is smaller 0.1 and else negative
         if not done:
             # training to stay stable with low velocity
-            reward = 2.0 - abs(self.state[1])
+            reward = 1.0 - abs(self.state[1])
         else:
             reward = 0.0
 
