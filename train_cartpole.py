@@ -449,6 +449,8 @@ class TrainCartpole(TrainBase):
         eval_dyn = self.train_dynamics if isinstance(
             self.train_dynamics, SequenceCartpoleDynamics
         ) else None
+
+        self.model_wrapped.self_play = self.config["self_play"]
         evaluator = Evaluator(
             self.model_wrapped, self.eval_env, eval_dyn=eval_dyn
         )
@@ -663,7 +665,7 @@ if __name__ == "__main__":
         config["sample_in"] = "eval_env"
         config["resample_every"] = 1000
         config["nr_epochs"] = 110
-        config["train_dyn_for_epochs"] = 100
+        config["train_dyn_for_epochs"] = 20
         config["thresh_div_start"] = 0.2
         # no self play possible for contact dynamics!
         config["self_play"] = 0

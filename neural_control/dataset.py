@@ -469,7 +469,7 @@ class CartpoleSequenceDataset:
         """
         When running evaluation, we collect data to use in the next epoch
         """
-        if self.eval_counter == 0:
+        if self.eval_counter < 10:
             print("Attention: add data")
         # ATTENTION: next state is not known!!
         state_expand = torch.cat(

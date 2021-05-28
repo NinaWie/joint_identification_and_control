@@ -296,10 +296,10 @@ class TrainBase:
         """
         Save model and plot loss and performance
         """
-        # TODO: commented for major plot
-        # torch.save(
-        #     self.net, os.path.join(self.save_path, self.save_model_name)
-        # )
+        torch.save(
+            self.net,
+            os.path.join(self.save_path, self.save_model_name + "_last")
+        )
         # plot performance
         plot_loss_episode_len(
             self.results_dict["mean_success"],
@@ -448,7 +448,8 @@ class TrainBase:
         self.finalize()
 
     def run_dynamics(self, config):
-        model_to_train = "dynamics"
+        model_to_train = "dynamics" if config["train_dyn_for_epochs"
+                                              ] > 0 else "controller"
         try:
             for epoch in range(config["nr_epochs"]):
                 self.epoch = epoch
@@ -474,8 +475,9 @@ class TrainBase:
                 # )
                 if model_to_train == "dynamics" and (
                     epoch == config["train_dyn_for_epochs"]
-                    or self.results_dict["loss_dynamics"][-1] < 500
+                    # or self.results_dict["loss_dynamics"][-1] < 500
                 ):
+                    # self.config["self_play"] = 1 # to use more data
                     model_to_train = "controller"
                     print("---------- start train con ---------- ")
                     # print("Params of dynamics model after training:")

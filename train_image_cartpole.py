@@ -36,8 +36,8 @@ class TrainImageCartpole(TrainBase):
         param sample_in: one of "train_env", "eval_env"
         """
         self.swingup = swingup
-        part_cfg = config["swingup"] if swingup else config["balance"]
-        self.config = {**config["general"], **part_cfg}
+        # part_cfg = config["swingup"] if swingup else config["balance"]
+        self.config = config  # {**config, **config}
         super().__init__(train_dynamics, eval_dynamics, **self.config)
         if self.sample_in == "eval_env":
             self.eval_env = CartPoleEnv(self.eval_dynamics, self.delta_t)
@@ -112,6 +112,7 @@ class TrainImageCartpole(TrainBase):
         for i, data in enumerate(self.trainloader, 0):
             # get state and action and correspodning image sequence
             initial_state_buffer, actions, image_seq = data
+
             # state buffer has most next state in pos 0
             next_state_d2 = initial_state_buffer[:, 0]
             initial_state = initial_state_buffer[:, 1]
@@ -133,10 +134,10 @@ class TrainImageCartpole(TrainBase):
                 )
 
                 # Finetune the state-to-img network
-                self.state_to_img_optim.zero_grad()
-                inp_img_loss = torch.sum((images - image_seq[:, 1:])**2)
-                inp_img_loss.backward()
-                self.state_to_img_optim.step()
+                # self.state_to_img_optim.zero_grad()
+                # inp_img_loss = torch.sum((images - image_seq[:, 1:])**2)
+                # inp_img_loss.backward()
+                # self.state_to_img_optim.step()
 
                 use_inp_images = images.detach()
 
@@ -145,13 +146,14 @@ class TrainImageCartpole(TrainBase):
                 next_state_pred = self.train_dynamics(
                     current_state,
                     use_inp_images,
-                    torch.unsqueeze(actions, 1),
+                    torch.unsqueeze(actions[:, 0].float(), 1),
                     dt=self.delta_t
                 )
                 if i == 0:
                     print("\nExample dynamics")
                     next_state_eval_dyn = self.eval_dynamics(
-                        current_state, actions, self.delta_t
+                        current_state,
+                        torch.unsqueeze(actions[:, 0].float(), 1), self.delta_t
                     )
                     print("start at ", current_state[0])
                     print("pred", next_state_pred[0].detach())
@@ -162,10 +164,11 @@ class TrainImageCartpole(TrainBase):
                 loss = torch.sum((next_state_pred - next_state_d2)**2)
                 loss.backward()
 
-                for name, param in self.net.named_parameters():
-                    if param.grad is not None:
-                        self.writer.add_histogram(name + ".grad", param.grad)
-                        self.writer.add_histogram(name, param)
+                loss *= 1000
+                # for name, param in self.net.named_parameters():
+                #     if param.grad is not None:
+                #         self.writer.add_histogram(name + ".grad", param.grad)
+                #         self.writer.add_histogram(name, param)
                 self.optimizer_dynamics.step()
                 self.results_dict["loss_dyn_per_step"].append(loss.item())
 
@@ -190,7 +193,7 @@ class TrainImageCartpole(TrainBase):
                     current_state = self.train_dynamics(
                         current_state,
                         images.float(),
-                        action_seq[:, k],
+                        torch.unsqueeze(actions[:, k].float(), 1),
                         dt=self.delta_t
                     )
                     intermediate_states[:, k] = current_state
@@ -222,33 +225,30 @@ class TrainImageCartpole(TrainBase):
             running_loss += loss.item()
 
         epoch_loss = (running_loss / i)
-        self.loss_logging(epoch_loss, train="image " + train)
+        self.loss_logging(epoch_loss, train=train)
         return epoch_loss
 
     def loss_logging(self, epoch_loss, train="controller"):
         self.results_dict["loss_" + train].append(epoch_loss)
         print(f"Loss ({train}): {round(epoch_loss, 2)}")
-        self.writer.add_scalar("Loss/train", epoch_loss)
+        # self.writer.add_scalar("Loss/train", epoch_loss)
 
     def evaluate_model(self, epoch):
 
-        new_data = self.evaluate_balance(epoch)
-
-        print(
-            "self play:", self.state_data.eval_counter,
-            self.state_data.get_eval_index()
-        )
+        _ = self.evaluate_balance(epoch)
 
     def evaluate_balance(self, epoch):
         # EVALUATION:
         # self.eval_env.thresh_div = self.config["thresh_div"]
         evaluator = Evaluator(self.model_wrapped, self.eval_env)
         # Start in upright position and see how long it is balaned
-        success_mean, success_std, data = evaluator.evaluate_in_environment(
-            nr_iters=10, render=1
-        )
+        res_eval = evaluator.evaluate_in_environment(nr_iters=10, render=1)
+        success_mean = res_eval["mean_vel"]
+        success_std = res_eval["std_vel"]
+        for key, val in res_eval.items():
+            self.results_dict[key].append(val)
         self.save_model(epoch, success_mean, success_std)
-        return data
+        return None
 
     def finalize(self):
         torch.save(
@@ -261,9 +261,9 @@ class TrainImageCartpole(TrainBase):
 def train_img_dynamics(
     base_model, config, not_trainable="all", base_image_dyn=None
 ):
-    modified_params = config["general"]["modified_params"]
-    config["general"]["sample_in"] = "eval_env"
-    config["general"]["resample_every"] = 1000
+    modified_params = config["modified_params"]
+    config["sample_in"] = "eval_env"
+    config["resample_every"] = 1000
     config["train_dyn_for_epochs"] = 200
     config["train_dyn_every"] = 1
     # No self play!
@@ -272,7 +272,7 @@ def train_img_dynamics(
     # train environment is learnt
     # train_dyn = CartpoleDynamics(modified_params=modified_params)
     train_dyn = ImageCartpoleDynamics(
-        100, 120, nr_img=config["general"]["nr_img"], state_size=4
+        100, 120, nr_img=config["nr_img"], state_size=4
     )
     # load pretrained dynamics
     if base_image_dyn is not None:
@@ -285,7 +285,7 @@ def train_img_dynamics(
         train_dyn, eval_dyn, config, train_image_dyn=1
     )
     trainer.initialize_model(
-        base_model, load_dataset="data/cartpole_img_23_wind_notcentered.npz"
+        base_model, load_dataset="data/cartpole_img_1000_notcenter.npz"
     )
     trainer.run_dynamics(config)
 
@@ -299,17 +299,19 @@ def train_img_controller(
         base_model (filepath): Model to start training with
         config (dict): config parameters
     """
-    modified_params = config["general"]["modified_params"]
+    modified_params = {"contact": 1}
+    # modified_params = config["modified_params"]
     # Only collect experience in the trained dynamics, not the ground truth
-    config["general"]["sample_in"] = "train_env"
-    config["general"]["resample_every"] = 1000
+    config["sample_in"] = "eval_env"
+    config["resample_every"] = 1000
     config["train_dyn_for_epochs"] = -1
     config["train_dyn_every"] = 1
+    config["suc_up_down"] = -1
 
     # train environment is learnt (next line only for sanity check)
     # train_dyn = CartpoleDynamics(modified_params=modified_params)
     train_dyn = ImageCartpoleDynamics(
-        100, 120, nr_img=config["general"]["nr_img"], state_size=4
+        100, 120, nr_img=config["nr_img"], state_size=4
     )
     # Load finetuned image dynamics
     if base_image_dyn is not None:
@@ -323,7 +325,7 @@ def train_img_controller(
     )
     trainer.initialize_model(
         base_model,
-        load_dataset="data/cartpole_img_24_wind_centered.npz",
+        load_dataset="data/cartpole_img_1000_center.npz",
         load_state_to_img=None
     )
     trainer.run_dynamics(config)
@@ -335,21 +337,21 @@ if __name__ == "__main__":
         config = json.load(infile)
 
     # FINETUNE DYNAMICS (TRAIN RESIDUAL)
-    baseline_model = None
-    baseline_dyn = None
-    config["general"]["save_name"] = "dyn_img_wrenderer_trained"
-    train_img_dynamics(
-        None, config, not_trainable="all", base_image_dyn=baseline_dyn
-    )
+    # baseline_model = None
+    # baseline_dyn = None
+    # config["save_name"] = "dyn_img_contact"
+    # train_img_dynamics(
+    #     None, config, not_trainable="all", base_image_dyn=baseline_dyn
+    # )
 
     # TRAIN CONTROLLER AFTER DYNAMICS ARE FINETUNED
-    # baseline_model = None
-    # baseline_dyn = "trained_models/cartpole/dyn_img_wrenderer_trained"
-    # config["general"]["save_name"] = "con_img_corrected"
+    baseline_model = None
+    baseline_dyn = "trained_models/cartpole/dyn_img_contact"
+    config["save_name"] = "con_img_contact"
 
-    # train_img_controller(
-    #     baseline_model,
-    #     config,
-    #     not_trainable="all",
-    #     base_image_dyn=baseline_dyn
-    # )
+    train_img_controller(
+        baseline_model,
+        config,
+        not_trainable="all",
+        base_image_dyn=baseline_dyn
+    )
