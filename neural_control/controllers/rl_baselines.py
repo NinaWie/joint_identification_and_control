@@ -394,13 +394,13 @@ def train_quad(model_path, load_model=None, modified_params={}):
 
 if __name__ == "__main__":
     # ------------------ CartPole -----------------------
-    save_name = "trained_models/cartpole/reinforcement_learning/final_finetune_2"
-    load_name = "trained_models/cartpole/reinforcement_learning/final_history_bl/rl_final"
+    save_name = "trained_models/cartpole/reinforcement_learning/img_finetune"
+    load_name = "trained_models/cartpole/reinforcement_learning/img_test/rl_150001_steps"
     scenario = {"contact": 1}
-    train_cartpole(save_name, load_model=load_name, modified_params=scenario)
-    # test_rl_cartpole(
-    #     os.path.join(save_name, "rl_final"), modified_params=scenario
-    # )
+    # train_cartpole(save_name, load_model=load_name, modified_params=scenario)
+    test_rl_cartpole(
+        os.path.join(save_name, "rl_170001_steps"), modified_params=scenario
+    )
     # test_ours_cartpole(
     #     "trained_models/cartpole/con_seq_500", modified_params=scenario
     # )
