@@ -163,7 +163,7 @@ def dyn_comparison_wing(
 
     # DYN EVALUATION
     dyn_bl = FixedWingDynamics()
-    dyn_mod = FixedWingDynamics({"wind": 2})
+    dyn_mod = FixedWingDynamics({"wind": .5})
     dyn_mod.timestamp = timestamp
     # pass through dynamics
     state_bl = dyn_bl(state_torch, action_torch, dt=dt)
