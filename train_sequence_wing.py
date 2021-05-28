@@ -279,36 +279,85 @@ if __name__ == "__main__":
     # trainer.run_dynamics(config)
 
     # FINETUNE CONTROLLER
+    # mode = "pretrained"
+    # base_model = "trained_models/wing/final_baseline_seq_wing"
+    # baseline_dyn = None  # "trained_models/wing/iterative_seq_dyn_" + mode
+    # config["save_name"] = "finetune_seq_dyn_" + mode
+
+    # config["sample_in"] = "eval_env"
+    # # config["train_dyn_for_epochs"] = -1
+    # config["learning_rate_controller"] = 0.000005  # was 0.0001
+    # config["learning_rate_dynamics"] = 0.005
+    # config["thresh_div_start"] = 20
+    # config["thresh_stable_start"] = 3
+    # config["epoch_size"] = 200  # for dyn training # 1000
+    # config["self_play"] = 200  # for dyn training # 1000
+    # # config["resample_every"] = 2
+    # config["buffer_len"] = 3
+    # # variables to check whether we have converged
+    # config["eval_var_dyn"] = "mean_trained_delta"
+    # config["eval_var_con"] = "mean_div_linear"
+    # config["self_play_every_x"] = 5
+    # config["min_epochs"] = 8  # for dyn training
+
+    # # train environment is learnt
+    # # train_dyn = FixedWingDynamics(modified_params={"wind": 2})
+    # train_dyn = SequenceFixedWingDynamics()
+    # if baseline_dyn is not None:
+    #     train_dyn.load_state_dict(
+    #         torch.load(os.path.join(baseline_dyn, "dynamics_model"))
+    #     )
+    # eval_dyn = FixedWingDynamics(modified_params={"wind": 2})
+    # trainer = TrainSequenceWing(train_dyn, eval_dyn, config)
+    # trainer.initialize_model(base_model)
+    # # trainer.run_iterative(config, start_with="dynamics")
+    # trainer.run_sequentially(config)  # , start_with="controller")
+
+    # SYSTEMATIC FINETUNING
     mode = "pretrained"
-    base_model = "trained_models/wing/final_baseline_seq_wing"
-    baseline_dyn = None  # "trained_models/wing/iterative_seq_dyn_" + mode
-    config["save_name"] = "finetune_seq_dyn_" + mode
+    for samples in [200]:
+        with open("configs/wing_config.json", "r") as infile:
+            config = json.load(infile)
+        trainer = None
 
-    config["sample_in"] = "eval_env"
-    # config["train_dyn_for_epochs"] = -1
-    config["learning_rate_controller"] = 0.000005  # was 0.0001
-    config["learning_rate_dynamics"] = 0.005
-    config["thresh_div_start"] = 20
-    config["thresh_stable_start"] = 3
-    config["epoch_size"] = 200  # for dyn training # 1000
-    config["self_play"] = 200  # for dyn training # 1000
-    # config["resample_every"] = 2
-    config["buffer_len"] = 3
-    # variables to check whether we have converged
-    config["eval_var_dyn"] = "mean_trained_delta"
-    config["eval_var_con"] = "mean_div_linear"
-    config["self_play_every_x"] = 5
-    config["min_epochs"] = 8  # for dyn training
+        base_model = "trained_models/wing/final_baseline_seq_wing"
+        baseline_dyn = "trained_models/wing/finetune_seq_dyn_" + mode
+        config["save_name"] = "finetune_seq_con_" + mode + "_" + str(samples)
+        print("------------------- ", config["save_name"], "------------")
 
-    # train environment is learnt
-    # train_dyn = FixedWingDynamics(modified_params={"wind": 2})
-    train_dyn = SequenceFixedWingDynamics()
-    if baseline_dyn is not None:
-        train_dyn.load_state_dict(
-            torch.load(os.path.join(baseline_dyn, "dynamics_model"))
-        )
-    eval_dyn = FixedWingDynamics(modified_params={"wind": 2})
-    trainer = TrainSequenceWing(train_dyn, eval_dyn, config)
-    trainer.initialize_model(base_model)
-    # trainer.run_iterative(config, start_with="dynamics")
-    trainer.run_sequentially(config)  # , start_with="controller")
+        config["sample_in"] = "eval_env"
+        # config["train_dyn_for_epochs"] = -1
+        config["learning_rate_controller"] = 0.00001  # was 0.0001
+        config["learning_rate_dynamics"] = 0.005
+        config["thresh_div_start"] = 20
+        config["thresh_stable_start"] = 3
+        config["epoch_size"] = 200  # for dyn training # 1000
+        config["self_play"] = 200  # for dyn training # 1000
+        # config["resample_every"] = 2
+        config["buffer_len"] = 3
+        # variables to check whether we have converged
+        config["eval_var_dyn"] = "mean_trained_delta"
+        config["eval_var_con"] = "mean_div_linear"
+        config["self_play_every_x"] = 5
+        config["min_epochs"] = 3  # for dyn training
+
+        # train environment is learnt
+        # train_dyn = FixedWingDynamics(modified_params={"wind": 2})
+        train_dyn = SequenceFixedWingDynamics()
+        if baseline_dyn is not None:
+            print(
+                "loading dynamics",
+                os.path.join(baseline_dyn, "dynamics_model_" + str(samples))
+            )
+            train_dyn.load_state_dict(
+                torch.load(
+                    os.path.join(
+                        baseline_dyn, "dynamics_model_" + str(samples)
+                    )
+                )
+            )
+        eval_dyn = FixedWingDynamics(modified_params={"wind": 2})
+        trainer = TrainSequenceWing(train_dyn, eval_dyn, config)
+        trainer.initialize_model(base_model)
+        # trainer.run_iterative(config, start_with="dynamics")
+        trainer.run_sequentially(config, start_with="controller")
