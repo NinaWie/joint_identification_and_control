@@ -145,7 +145,7 @@ class Evaluator:
                         )
                     )
                     # ------------- Predict action ------------------
-                    if False:  # self.image_dataset:
+                    if self.image_dataset:
                         action_seq = torch.rand(1, 4) - .5
                     else:
                         if isinstance(
@@ -225,7 +225,6 @@ class Evaluator:
                 avg_angle[n] = np.mean(angles) if len(angles) > 0 else 100
                 success[n] = i
                 self.eval_env._reset()
-        # print(success)
         res = {
             "mean_vel": np.mean(velocities),
             "std_vel": np.std(velocities),
@@ -288,6 +287,7 @@ def load_model(model_name, epoch, is_seq=False):
     some_dataset = CartpoleSequenceDataset(
         load_data_path="data/cartpole_seq_1000.npz", use_samples=2
     )
+    # not necessary for image eval because dataset not used for preprocessing
     # some_dataset = CartpoleImageDataset(
     #     load_data_path="data/cartpole_img_16.npz"
     # )
@@ -371,7 +371,7 @@ if __name__ == "__main__":
             strict=False
         )
         print("Loaded dynamics model from ")
-    except FileNotFoundError:
+    except:
         dyn_trained = None
         print("in this saved model no dynamics model is found")
 
@@ -391,7 +391,7 @@ if __name__ == "__main__":
         collect_states = np.array(collect_states)
         print(collect_states.shape, collect_actions.shape, collect_img.shape)
         np.savez(
-            f"data/cartpole_seq_{args.dataset}_mpc.npz", collect_img,
+            f"data/cartpole_img_{args.dataset}.npz", collect_img,
             collect_actions, collect_states
         )
     elif args.eval > 0:
