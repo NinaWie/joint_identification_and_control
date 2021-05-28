@@ -463,6 +463,8 @@ class TrainBase:
     def run_dynamics(self, config):
         model_to_train = "dynamics" if config["train_dyn_for_epochs"
                                               ] > 0 else "controller"
+
+        self.collect_data()
         try:
             for epoch in range(config["nr_epochs"]):
                 self.epoch = epoch
