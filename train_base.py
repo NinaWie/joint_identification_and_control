@@ -29,7 +29,9 @@ except ImportError:
             pass
 
 
-from neural_control.dynamics.learnt_dynamics import LearntDynamics
+from neural_control.dynamics.learnt_dynamics import (
+    LearntDynamics, LearntDynamicsOriginal
+)
 from neural_control.dynamics.cartpole_dynamics import ImageCartpoleDynamics
 from neural_control.plotting import (
     plot_loss_episode_len, print_state_ref_div
@@ -149,7 +151,7 @@ class TrainBase:
         )
         if isinstance(self.train_dynamics, LearntDynamics) or isinstance(
             self.train_dynamics, ImageCartpoleDynamics
-        ):
+        ) or isinstance(self.train_dynamics, LearntDynamicsOriginal):
             self.log_train_dyn = True
             self.optimizer_dynamics = optim.SGD(
                 self.train_dynamics.parameters(),
@@ -427,10 +429,21 @@ class TrainBase:
                     just_switched = 1
 
                 # If switched to dynamics or beginning: collect new data
-                if just_switched:
+                if epoch == 0 or just_switched:
                     # or self.model_to_train == "controller"
                     allocate_new = not (self.model_to_train == "controller")
                     self.results_dict["samples_in_d2"].append(self.epoch_size)
+                    current_data_size = len(self.state_data)
+                    # save dynamics
+                    if self.model_to_train == "dynamics":
+                        print("saved current dynamics model")
+                        torch.save(
+                            self.train_dynamics.state_dict(),
+                            os.path.join(
+                                self.save_path,
+                                "dynamics_model_" + str(current_data_size)
+                            )
+                        )
                     self.collect_data(allocate=allocate_new)
                 else:
                     self.results_dict["samples_in_d2"].append(0)

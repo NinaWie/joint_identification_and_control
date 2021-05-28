@@ -6,7 +6,9 @@ import os
 import casadi as ca
 from pathlib import Path
 
-from neural_control.dynamics.learnt_dynamics import LearntDynamics
+from neural_control.dynamics.learnt_dynamics import (
+    LearntDynamics, LearntDynamicsOriginal
+)
 
 # lower and upper bounds:
 alpha_bound = float(10 / 180 * np.pi)
@@ -34,8 +36,8 @@ class FixedWingDynamics:
 
         # pi
         self.pi = np.pi
-        self.reset_wind()
-        # self.timestamp = np.random.rand() * np.pi * 2
+        # self.reset_wind()
+        self.timestamp = np.random.rand() * np.pi * 2
 
         # update with modified parameters
         self.cfg.update(modified_params)
@@ -243,17 +245,14 @@ class FixedWingDynamics:
 
         if self.cfg.get("wind", 0) != 0:
             wind_vec_world = torch.zeros(3)
-            wind_vec_world[1] = self.timestamp * self.cfg["wind"]
-            # if np.sin(self.timestamp) > .5:
-            #     wind_vec_world[1] = self.cfg["wind"]
-            # elif np.sin(self.timestamp) < -.5:
-            #     wind_vec_world[1] = -1 * self.cfg["wind"]
+            wind_vec_world[1] = self.cfg["wind"] * np.cos(self.timestamp)
             wind_drag = torch.matmul(body_to_inertia, wind_vec_world)
-            # print(self.timestamp, wind_vec_world, wind_drag)
-            # print(wind_vec_world[1])
-            # self.timestamp += 0.05
+            self.timestamp += 0.05
+            # print(wind_vec_world)
+            # print(wind_drag.size())
         else:
             wind_drag = 0
+
         # # Body fixed accelerations
         # see Small Unmanned Aircraft, Beard et al., 2012, p.36
         uvw_dot = (1 / self.cfg["mass"]) * f_xyz[:, :, 0] - torch.cross(
@@ -363,7 +362,7 @@ class LearntFixedWingDynamics(LearntDynamics, FixedWingDynamics):
         return self.simulate_fixed_wing(state, action, dt)
 
 
-class SequenceFixedWingDynamics(LearntDynamics, FixedWingDynamics):
+class SequenceFixedWingDynamics(LearntDynamicsOriginal, FixedWingDynamics):
 
     def __init__(self, buffer_length=3):
         FixedWingDynamics.__init__(self)

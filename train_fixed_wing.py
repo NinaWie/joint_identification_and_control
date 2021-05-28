@@ -11,7 +11,9 @@ from neural_control.drone_loss import fixed_wing_last_loss, fixed_wing_mpc_loss
 from neural_control.dynamics.fixed_wing_dynamics import (
     FixedWingDynamics, LearntFixedWingDynamics
 )
-from neural_control.dynamics.learnt_dynamics import LearntDynamics
+from neural_control.dynamics.learnt_dynamics import (
+    LearntDynamics, LearntDynamicsOriginal
+)
 from neural_control.environments.wing_env import SimpleWingEnv
 from neural_control.models.hutter_model import Net
 from evaluate_fixed_wing import FixedWingEvaluator
@@ -141,7 +143,7 @@ class TrainFixedWing(TrainBase):
 
         eval_dyn = self.train_dynamics if isinstance(
             self.train_dynamics, LearntDynamics
-        ) else None
+        ) or isinstance(self.train_dynamics, LearntDynamicsOriginal) else None
         evaluator = FixedWingEvaluator(
             controller, self.eval_env, eval_dyn=eval_dyn, **self.config
         )
