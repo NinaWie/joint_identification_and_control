@@ -393,9 +393,9 @@ class TrainBase:
         epoch_counter = 0
         # minimum number of epochs to train each of them
         min_epochs = config.get("min_epochs", 3)
-        if start_with == "controller":
-            for param in self.train_dynamics.parameters():
-                param.requires_grad = False
+        # if start_with == "controller":
+        #     for param in self.train_dynamics.parameters():
+        #         param.requires_grad = False
         # Run training
         try:
             for epoch in range(config["nr_epochs"]):

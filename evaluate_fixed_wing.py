@@ -335,15 +335,15 @@ if __name__ == "__main__":
     # modified_params = {"rho": 1.6}
 
     dyn_trained = None
-    dyn_trained = SequenceFixedWingDynamics()
-    dyn_trained.load_state_dict(
-        torch.load(
-            os.path.join(
-                "trained_models/wing/finetune_seq_dyn_random",
-                "dynamics_model_1800"
-            )
-        )
-    )
+    # dyn_trained = SequenceFixedWingDynamics()
+    # dyn_trained.load_state_dict(
+    #     torch.load(
+    #         os.path.join(
+    #             "trained_models/wing/finetune_seq_dyn_pretrained",
+    #             "dynamics_model_1800"
+    #         )
+    #     )
+    # )
 
     is_seq = "seq" in model_name
     dynamics = FixedWingDynamics(modified_params=modified_params)
@@ -361,7 +361,7 @@ if __name__ == "__main__":
     # only run evaluation without render
     if args.eval > 0:
         # tic = time.time()
-        out_path = "../presentations/final_res/wing_seq_con_comparison_target/"
+        out_path = "../presentations/final_res/wing_seq_con_comparison_new/"
         evaluator.render = 0
         # evaluator.waypoint_metric = False
         dists_from_target = evaluator.run_eval(
