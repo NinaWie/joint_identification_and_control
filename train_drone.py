@@ -210,7 +210,7 @@ class TrainDrone(TrainBase):
         self.results_dict["thresh_div"].append(self.config["thresh_div"])
         return suc_mean, suc_std
 
-    def collect_data(self, allocate=False, random=False):
+    def collect_data(self, allocate=False, random=False, use_mpc=False):
         print("COLLECT DATA")
         self.state_data.num_self_play = self.tmp_num_selfplay
         if allocate and self.current_epoch > 0:
@@ -219,7 +219,13 @@ class TrainDrone(TrainBase):
         controller = NetworkWrapper(self.net, self.state_data, **self.config)
         evaluator = QuadEvaluator(controller, self.eval_env, **self.config)
 
-        evaluator.use_random_actions = random
+        if random:
+            print("USE RANDOM")
+            evaluator.use_random_actions = True
+        if use_mpc:
+            print("USE MPC")
+            from neural_control.controllers.mpc import MPC
+            evaluator.use_mpc = MPC(horizon=10, dt=.1, dynamics="flightmare")
         prev_eval_counter = self.state_data.eval_counter
         with torch.no_grad():
             while self.state_data.eval_counter < self.config[

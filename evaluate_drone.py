@@ -67,6 +67,7 @@ class QuadEvaluator():
         self.speed_factor = speed_factor
         self.state_action_history = np.zeros((buffer_len, 12 + 4))
         self.use_random_actions = False
+        self.use_mpc = None
 
     def help_render(self, sleep=.05):
         """
@@ -164,10 +165,18 @@ class QuadEvaluator():
 
             # possible average with previous actions
             use_action = average_action(action, i, do_avg_act=do_avg_act)
+            # REPLACE BY RANDOM OR MPC
             if self.use_random_actions:
                 if i == 0:
                     print("Attention: use random action")
                 use_action = np.random.rand(4)
+
+            if self.use_mpc:
+                if i == 0:
+                    print("Attention: use MPC action")
+                use_action = self.use_mpc.predict_actions(
+                    current_np_state, trajectory.copy()
+                )[0]
 
             if i % 10 == 0 and self.eval_dyn is not None:
                 self.dyn_eval_test.append(
