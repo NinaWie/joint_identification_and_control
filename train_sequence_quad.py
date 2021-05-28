@@ -272,13 +272,13 @@ if __name__ == "__main__":
     # mod_param = {'translational_drag': np.array([0.3, 0.3, 0.3])}
     mod_param = {"wind": 2}
     config["learning_rate_controller"] = 0.000001
-    config["learning_rate_dynamics"] = 0.001
+    config["learning_rate_dynamics"] = 0.01
     config["thresh_div_start"] = 1
     config["thresh_div_end"] = 1.2
     config["thresh_stable_start"] = 2
     config["sample_in"] = "eval_env"
-    config["epoch_size"] = 500  # 200  # for dyn training
-    config["self_play"] = 500  # 200  # for dyn training
+    config["epoch_size"] = 200  # for dyn training
+    config["self_play"] = 200  # 200  # for dyn training
     config["buffer_len"] = 5
     config["eval_var_dyn"] = "mean_trained_delta"
     config["eval_var_con"] = "mean_div"

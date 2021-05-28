@@ -450,10 +450,11 @@ class TrainBase:
 
                 print(f"\nEpoch {epoch}")
                 self.run_epoch(train=self.model_to_train)
-                epoch_counter += 1
 
                 # evaluate
-                _ = self.evaluate_model(epoch)
+                if epoch > 100:
+                    epoch_counter += 1
+                    _ = self.evaluate_model(epoch)
 
         except KeyboardInterrupt:
             pass
