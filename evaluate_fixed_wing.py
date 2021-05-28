@@ -251,6 +251,7 @@ class FixedWingEvaluator:
             "Average linear error: %3.2f (%3.2f)" %
             (res_eval["mean_div_linear"], res_eval["std_div_linear"])
         )
+        # print("Median linear error", round(np.median(mean_div_linear), 2))
         if return_dists and self.waypoint_metric:
             return np.array(mean_div_target)
         if return_dists and not self.waypoint_metric:
@@ -338,8 +339,8 @@ if __name__ == "__main__":
     # dyn_trained.load_state_dict(
     #     torch.load(
     #         os.path.join(
-    #             "trained_models/wing/sequential_seq_newwind_dyn",
-    #             "dynamics_model"
+    #             "trained_models/wing/finetune_seq_dyn_pretrained",
+    #             "dynamics_model_600"
     #         )
     #     )
     # )
@@ -360,17 +361,13 @@ if __name__ == "__main__":
     # only run evaluation without render
     if args.eval > 0:
         # tic = time.time()
-        out_path = "../presentations/analysis"
+        out_path = "../presentations/final_res/wing_seq_con_comparison/"
         evaluator.render = 0
+        evaluator.waypoint_metric = False
         dists_from_target = evaluator.run_eval(
             nr_test=args.eval, return_dists=True
         )
-        # np.save(
-        #     os.path.join(
-        #         out_path,
-        #         f"{model_name}_{'_'.join(modified_params.keys())}.npy"
-        #     ), dists_from_target
-        # )
+        np.save(os.path.join(out_path, f"{model_name}.npy"), dists_from_target)
         # print("time for 100 trajectories", time.time() - tic)
         # run_mpc_analysis(evaluator)
         exit()
