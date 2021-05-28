@@ -149,7 +149,7 @@ def evaluate_cartpole(model, env, max_steps=250, nr_iters=1, render=0):
                 action, _states = model.predict(obs, deterministic=True)
             actions.append(action)
             obs, rewards, done, info = env.step(action)
-            states.append(obs)
+            states.append(env.state)
             if render:
                 env.render()
             if done:
@@ -179,7 +179,7 @@ def test_rl_cartpole(save_name, modified_params={}, max_steps=250):
     dyn = CartpoleDynamics(modified_params=modified_params)
     env = CartPoleEnvRL(dyn, dt=cartpole_dt)
     model = PPO.load(save_name)
-    evaluate_cartpole(model, env, max_steps, nr_iters=20, render=0)
+    evaluate_cartpole(model, env, max_steps, nr_iters=30, render=0)
 
 
 def test_ours_cartpole(model_path, modified_params={}, max_steps=500):
@@ -394,12 +394,12 @@ def train_quad(model_path, load_model=None, modified_params={}):
 
 if __name__ == "__main__":
     # ------------------ CartPole -----------------------
-    save_name = "trained_models/cartpole/reinforcement_learning/img_finetune"
-    load_name = "trained_models/cartpole/reinforcement_learning/img_test/rl_150001_steps"
+    save_name = "trained_models/cartpole/reinforcement_learning/img_finetune/"
+    # load_name = "trained_models/cartpole/reinforcement_learning/img_bl/rl_150001_steps"
     scenario = {"contact": 1}
     # train_cartpole(save_name, load_model=load_name, modified_params=scenario)
     test_rl_cartpole(
-        os.path.join(save_name, "rl_170001_steps"), modified_params=scenario
+        os.path.join(save_name, "rl_230001_steps"), modified_params=scenario
     )
     # test_ours_cartpole(
     #     "trained_models/cartpole/con_seq_500", modified_params=scenario
