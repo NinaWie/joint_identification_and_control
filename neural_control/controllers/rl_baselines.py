@@ -8,7 +8,9 @@ import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
 from neural_control.environments.cartpole_env import CartPoleEnv
-from neural_control.environments.rl_envs import (CartPoleEnvRL)
+from neural_control.environments.rl_envs import (
+    CartPoleEnvRL, WingEnvRL, QuadEnvRL
+)
 from neural_control.dynamics.quad_dynamics_flightmare import FlightmareDynamics
 from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
 from neural_control.dynamics.fixed_wing_dynamics import FixedWingDynamics
@@ -23,6 +25,7 @@ cartpole_dt = 0.05
 quad_dt = 0.02
 quad_speed = 0.5
 quad_horizon = 3
+curriculum = False
 
 
 class EvalCallback(BaseCallback):
@@ -56,9 +59,9 @@ class EvalCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         if (self.n_calls - 1) % self.eval_freq == 0:
-            # if self.eval_env.thresh_div < 3:
-            #     self.eval_env.thresh_div += .05
-            #     print("increased thresh div", self.eval_env.thresh_div)
+            if curriculum and self.eval_env.thresh_div < 3:
+                self.eval_env.thresh_div += .05
+                print("increased thresh div", self.eval_env.thresh_div)
             # evaluate
             _, res_step = self.eval_func(
                 self.model, self.eval_env, nr_iters=self.nr_iters
