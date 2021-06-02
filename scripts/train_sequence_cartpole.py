@@ -37,9 +37,7 @@ class TrainSequenceCartpole(TrainBase):
         """
         param sample_in: one of "train_env", "eval_env"
         """
-        self.swingup = swingup
-        part_cfg = config["swingup"] if swingup else config["balance"]
-        self.config = {**config["general"], **part_cfg}
+        self.config = config
         super().__init__(train_dynamics, eval_dynamics, **self.config)
         if self.sample_in == "eval_env":
             self.eval_env = CartPoleEnv(self.eval_dynamics, self.delta_t)
@@ -103,7 +101,7 @@ class TrainSequenceCartpole(TrainBase):
     def loss_logging(self, epoch_loss, train="controller"):
         self.results_dict["loss_" + train].append(epoch_loss)
         print(f"Loss ({train}): {round(epoch_loss, 2)}")
-        self.writer.add_scalar("Loss/train", epoch_loss)
+        # self.writer.add_scalar("Loss/train", epoch_loss)
 
     def run_epoch(self, train="controller"):
         self.results_dict["trained"].append(train)
@@ -185,16 +183,17 @@ class TrainSequenceCartpole(TrainBase):
                     actions,
                     dt=self.delta_t
                 )
-                if i == 0:
-                    print("start at ", current_state[0])
-                    print("pred", next_state_pred[0].detach())
-                    print("gt", next_state_d2[0])
-                    print()
+                # if i == 0:
+                #     print("start at ", current_state[0])
+                #     print("pred", next_state_pred[0].detach())
+                #     print("gt", next_state_d2[0])
+                #     print()
 
                 loss = torch.sum((next_state_pred - next_state_d2)**2)
                 loss.backward()
                 self.optimizer_dynamics.step()
                 self.results_dict["loss_dyn_per_step"].append(loss.item())
+                loss += 1000
 
             running_loss += loss.item()
         # time_epoch = time.time() - tic
@@ -213,14 +212,26 @@ class TrainSequenceCartpole(TrainBase):
 
     def evaluate_balance(self, epoch):
         # EVALUATION:
-        # self.eval_env.thresh_div = self.config["thresh_div"]
-        evaluator = Evaluator(self.model_wrapped, self.eval_env)
-        # Start in upright position and see how long it is balaned
-        success_mean, success_std, data = evaluator.evaluate_in_environment(
-            nr_iters=10, render=False
+        eval_dyn = self.train_dynamics if isinstance(
+            self.train_dynamics, SequenceCartpoleDynamics
+        ) else None
+
+        self.model_wrapped.self_play = self.config["self_play"]
+        evaluator = Evaluator(
+            self.model_wrapped, self.eval_env, eval_dyn=eval_dyn
         )
+        # Start in upright position and see how long it is balaned
+        res_eval = evaluator.evaluate_in_environment(nr_iters=10, render=False)
+        success_mean = res_eval["mean_vel"]
+        success_std = res_eval["std_vel"]
+        for key, val in res_eval.items():
+            self.results_dict[key].append(val)
+        self.results_dict["evaluate_at"].append(epoch)
         self.save_model(epoch, success_mean, success_std)
-        return data
+
+        # increase thresholds
+        if epoch % 3 == 0 and self.config["thresh_div"] < self.thresh_div_end:
+            self.config["thresh_div"] += self.config["thresh_div_step"]
 
 
 if __name__ == "__main__":
@@ -229,66 +240,88 @@ if __name__ == "__main__":
         config = json.load(infile)
 
     # TRAIN DYNAMICS WITH SEQUENCE
-    # base_model = None
+    # base_model = "trained_models/cartpole/final_baseline_nocontact"
     # baseline_dyn = None
-    # config["general"]["save_name"] = "dyn_seq_wind_random"
-    # config["general"]["sample_in"] = "train_env"
-    # config["general"]["resample_every"] = 1000
+    # config["save_name"] = "dyn_seq_1000_newdata"
+    # config["sample_in"] = "train_env"
+    # config["resample_every"] = 1000
     # config["train_dyn_for_epochs"] = 200
-    # config["general"]["thresh_div_start"] = 0.2
+    # config["thresh_div_start"] = .21
     # config["train_dyn_every"] = 1
+    # config["min_epochs"] = 100
+    # config["eval_var_dyn"] = "mean_dyn_trained"
+    # config["eval_var_con"] = "mean_vel"
+    # config["learning_rate_dynamics"] = 0.01
 
     # # train environment is learnt
     # train_dyn = SequenceCartpoleDynamics()
-    # eval_dyn = None  # CartpoleDynamics({"contact": .75})
-    # trainer = TrainSequenceCartpole(train_dyn, eval_dyn, config)
+    # eval_dyn = CartpoleDynamics({"contact": 1})
+    # trainer = TrainCartpole(train_dyn, eval_dyn, config, train_seq_dyn=1)
     # trainer.initialize_model(
-    #     base_model, load_dataset="data/cartpole_31_wind_random.npz"
+    #     base_model, load_dataset="data/cartpole_seq_1000.npz"
     # )
     # # RUN
     # trainer.run_dynamics(config)
 
-    # TRAIN CONTROLLER WITH SEQUENCE
-    base_model = "trained_models/cartpole/final_baseline_nocontact"
-    baseline_dyn = "trained_models/cartpole/dyn_seq_wind_random"
-    config["general"]["save_name"] = "con_seq_wind_random"
+    # FINETUNE DYNAMICS AND CONTROLLER TOGETHER
+    # for num_samples in np.arange(200, 2000, 200):
+    #     print()
+    #     print(f"----------- number of samples {num_samples} -----------")
+    #     # num_samples = 1000
+    #     trainer = None
+    #     # reload config:
+    #     with open("configs/cartpole_config.json", "r") as infile:
+    #         config = json.load(infile)
 
-    config["general"]["sample_in"] = "eval_env"
-    config["general"]["resample_every"] = 1000
-    config["train_dyn_for_epochs"] = -1
-    config["general"]["thresh_div_start"] = 0.2
-    # no self play possible for contact dynamics!
-    config["general"]["self_play"] = 100
-    config["balance"]["learning_rate_controller"] = 1e-6
+    #     mode = "_random"
+    #     base_model = "trained_models/cartpole/final_baseline_nocontact"
+    #     baseline_dyn = None  # "trained_models/cartpole/dyn_seq_1000_newdata"
+    #     config["save_name"] = f"con_seq_{num_samples}" + mode
 
-    # train environment is learnt
-    train_dyn = SequenceCartpoleDynamics()
-    train_dyn.load_state_dict(
-        torch.load(os.path.join(baseline_dyn, "dynamics_model"))
-    )
-    eval_dyn = CartpoleDynamics()  # {"contact": .75})
-    trainer = TrainSequenceCartpole(train_dyn, eval_dyn, config)
-    trainer.initialize_model(
-        base_model, load_dataset="data/cartpole_31_wind_random.npz"
-    )
-    # RUN
-    trainer.run_dynamics(config)
+    #     config["sample_in"] = "eval_env"
+    #     config["resample_every"] = 1000
+    #     config["nr_epochs"] = 110
+    #     config["train_dyn_for_epochs"] = 20
+    #     config["thresh_div_start"] = 0.2
+    #     # no self play possible for contact dynamics!
+    #     config["self_play"] = 0
+    #     config["learning_rate_controller"] = 1e-7
+    #     config["learning_rate_dynamics"] = 0.05
+    #     config["min_epochs"] = 100
+    #     config["eval_var_dyn"] = "mean_dyn_trained"
+    #     config["eval_var_con"] = "mean_vel"
+    #     config["suc_up_down"] = -1
+    #     config["use_samples"] = int(num_samples)
+
+    #     # train environment is learnt
+    #     train_dyn = SequenceCartpoleDynamics()
+    #     if baseline_dyn is not None:
+    #         train_dyn.load_state_dict(
+    #             torch.load(os.path.join(baseline_dyn, "dynamics_model"))
+    #         )
+    #     eval_dyn = CartpoleDynamics({"contact": 1})
+    #     trainer = TrainCartpole(train_dyn, eval_dyn, config, train_seq_dyn=1)
+    #     trainer.initialize_model(
+    #         base_model, load_dataset=f"data/cartpole_seq_2000{mode}.npz"
+    #     )
+    #     # RUN
+    #     trainer.run_dynamics(config)
 
     # # USED TO PRETRAIN CONTROLLER: (set random init in evaluate!)
-    # base_model = None
-    # baseline_dyn = None
-    # config["general"]["save_name"] = "test_baseline_nocontact"
-    # config["general"]["sample_in"] = "train_env"
-    # config["general"]["resample_every"] = 1000
-    # config["train_dyn_for_epochs"] = -1
-    # config["general"]["thresh_div_start"] = 0.2
-    # config["balance"]["learning_rate_controller"] = 1e-6
+    base_model = None
+    baseline_dyn = None
+    config["save_name"] = "test_cartpole"
+    config["sample_in"] = "train_env"
+    config["resample_every"] = 1000
+    config["train_dyn_for_epochs"] = -1
+    config["thresh_div_start"] = 0.2
+    config["learning_rate_controller"] = 1e-6
 
-    # # train environment is learnt
-    # train_dyn = CartpoleDynamics()
-    # eval_dyn = CartpoleDynamics()
-    # trainer = TrainSequenceCartpole(train_dyn, eval_dyn, config)
-    # trainer.initialize_model(
-    #     base_model, load_dataset="data/cartpole_img_28_nocontact.npz"
-    # )
-    # trainer.run_dynamics(config)
+    # train environment is learnt
+    train_dyn = CartpoleDynamics()
+    eval_dyn = CartpoleDynamics()
+    trainer = TrainSequenceCartpole(train_dyn, eval_dyn, config)
+    trainer.initialize_model(
+        base_model, load_dataset="data/cartpole_img_28_nocontact.npz"
+    )
+    trainer.run_dynamics(config)

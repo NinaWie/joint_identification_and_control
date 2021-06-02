@@ -319,13 +319,13 @@ if __name__ == "__main__":
 
     # SYSTEMATIC FINETUNING
     mode = "pretrained"
-    for samples in [200, 1800]:
+    for samples in np.arange(200, 2000, 200):
         with open("configs/wing_config.json", "r") as infile:
             config = json.load(infile)
         trainer = None
 
         base_model = "trained_models/wing/final_baseline_seq_wing"
-        baseline_dyn = "trained_models/wing/finetune_lateral_wind_seq_dyn_" + mode
+        baseline_dyn = "trained_models/wing/finetune_wind_seq_dyn_" + mode
         config["save_name"
                ] = "finetune_seq_lateral_wind_con" + mode + "_" + str(samples)
         print("------------------- ", config["save_name"], "------------")

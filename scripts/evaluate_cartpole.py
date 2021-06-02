@@ -299,7 +299,7 @@ def load_model(model_name, epoch, is_seq=False):
                 net, some_dataset, **config
             )
         else:
-            controller_model = CartpoleWrapper(net, **config)
+            controller_model = CartpoleWrapper(net, some_dataset, **config)
     else:
         controller_model = CartpoleImageWrapper(net, some_dataset, **config)
     return controller_model
@@ -336,7 +336,7 @@ if __name__ == "__main__":
     thresh_div = 0.3
 
     if args.model == "mpc":
-        load_dynamics = "trained_models/cartpole/con_seq_500/dynamics_model"
+        load_dynamics = "trained_models/cartpole/pretrained_sampling_for_rl_comp_plot/con_seq_500/dynamics_model"
         controller_model = MPC(
             horizon=10,
             dt=dt,
@@ -350,7 +350,7 @@ if __name__ == "__main__":
             is_seq=("seq" in args.model or "contact" in args.model)
         )
 
-    modified_params = {"contact": 1}
+    modified_params = {}  # {"contact": 1}
     # {"wind": .5}
     # wind 0.01 works for wind added to x directlt, needs much higher (.5)
     # to affect the acceleration much

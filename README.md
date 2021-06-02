@@ -13,6 +13,22 @@ cd weakly_supervised_flight
 pip install -e .
 ```
 
+In the following it is described how to train models for the three considered robotics systems Quadrotor, Fixed-wing drone and CartPole. If not noted otherwise, all commands are executed from the main directory.
+
+## Quadrotor - Learning control and adaptation
+
+#### Pre-train a controller with BPTT
+```
+python sca
+```
+
+### Adapt to changed translational drag
+The scenario considered in our paper is a velocity drag factor of 0.3. This is hard-coded and can only be changed in [here](scripts/train_drone.py). To adapt the dynamics for 10 epochs (configure in `configs/quad_config.json`), and then finetune the controller, run
+```
+python scripts/train_drone.py -t "adapt" -s "test_save_path"
+```
+The model will be saved at `trained_models/quad/test_save_path`. 
+
 ### Train a controller unsupervised
 
 On the bottom of the script `train_drone.py`, `train_cartpole.py` or `train_fixed_wing.py`, you can use the `run_control` function to train a model from scratch. Make sure that `baseline_model=None` to start from scratch.

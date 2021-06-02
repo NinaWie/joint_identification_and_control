@@ -4,6 +4,7 @@ import time
 import numpy as np
 import torch
 import torch.nn.functional as F
+import argparse
 
 from neural_control.dataset import QuadDataset
 from train_base import TrainBase
@@ -336,28 +337,60 @@ if __name__ == "__main__":
     with open("configs/quad_config.json", "r") as infile:
         config = json.load(infile)
 
-    ##### For finetune dynamics
-    mod_params = {'translational_drag': np.array([0.3, 0.3, 0.3])}
-    config["modified_params"] = mod_params
-    # define whether the parameters are trainable
-    trainable_params = 0
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-t",
+        "--todo",
+        type=str,
+        default="pretrain",
+        help="what to do - pretrain, adapt or finetune"
+    )
+    parser.add_argument(
+        "-m",
+        "--model_load",
+        type=str,
+        default="trained_models/quad/current_model",
+        help="Model to start with (default: None - from scratch)"
+    )
+    parser.add_argument(
+        "-s",
+        "--save_name",
+        type=str,
+        default="trained_models/quad/test",
+        help="Name under which the trained model shall be saved"
+    )
+    parser.add_argument(
+        "-p",
+        "--params_trainable",
+        type=str,
+        default="trained_models/quad/test",
+        help="Train the parameters of \hat{f} (1) or only residual (0)"
+    )
+    args = parser.parse_args()
 
-    baseline_model = "trained_models/quad/current_model"
-    # config["thresh_div_start"] = 1
-    # config["thresh_stable_start"] = 1.5
+    baseline_model = args.model_load
+    trainable_params = args.params_trainable
+    todo = args.todo
+    config["save_name"] = args.save_name
 
-    config["save_name"] = "final_dyn_woparams"
-
-    config["nr_epochs"] = 400
-
-    # TRAIN
-    # train_control(baseline_model, config)
-    train_dynamics(baseline_model, config, trainable_params)
-    # train_sampling_finetune(baseline_model, config)
-    # FINE TUNING parameters:
-    # self.thresh_div_start = 1
-    # self.self_play = 1.5
-    # self.epoch_size = 500
-    # self.max_steps = 1000
-    # self.self_play_every_x = 5
-    # self.learning_rate = 0.0001
+    if todo == "pretrain":
+        # No baseline model used
+        baseline_model = None
+        train_control(baseline_model, config)
+    elif todo == "adapt":
+        # For finetune dynamics
+        mod_params = {'translational_drag': np.array([0.3, 0.3, 0.3])}
+        config["modified_params"] = mod_params
+        # Define whether the parameters are trainable
+        trainable_params = 0
+        print(
+            f"start from pretrained model {args.model_load}, consider scenario\
+                {mod_params}, train also parameters - {trainable_params}\
+                save adapted dynamics and controller at {args.save_name}"
+        )
+        # Run
+        train_dynamics(baseline_model, config, trainable_params)
+    elif todo == "finetune":
+        config["thresh_div_start"] = 1
+        config["thresh_stable_start"] = 1.5
+        train_control(baseline_model, config)

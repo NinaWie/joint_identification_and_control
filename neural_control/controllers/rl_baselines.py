@@ -285,7 +285,7 @@ def test_rl_wing(save_name, modified_params={}, max_steps=1000):
     dyn = FixedWingDynamics(modified_params=modified_params)
     env = WingEnvRL(dyn, fixed_wing_dt)
     model = PPO.load(save_name)
-    trajectory, _ = evaluate_wing(model, env, max_steps, nr_iters=40, render=0)
+    trajectory, _ = evaluate_wing(model, env, max_steps, nr_iters=30, render=0)
     # plot
     plot_wing_pos_3d(
         trajectory, [env.target_point], save_path=save_name + "_plot.png"
@@ -397,23 +397,23 @@ def train_quad(model_path, load_model=None, modified_params={}):
 
 if __name__ == "__main__":
     # ------------------ CartPole -----------------------
-    save_name = "trained_models/cartpole/reinforcement_learning/img_finetune/"
+    # save_name = "trained_models/cartpole/reinforcement_learning/img_finetune/"
     # load_name = "trained_models/cartpole/reinforcement_learning/img_bl/rl_150001_steps"
-    scenario = {"contact": 1}
+    # scenario = {"contact": 1}
     # train_cartpole(save_name, load_model=load_name, modified_params=scenario)
-    test_rl_cartpole(
-        os.path.join(save_name, "rl_230001_steps"), modified_params=scenario
-    )
+    # test_rl_cartpole(
+    #     os.path.join(save_name, "rl_230001_steps"), modified_params=scenario
+    # )
     # test_ours_cartpole(
     #     "trained_models/cartpole/con_seq_500", modified_params=scenario
     # )
 
     # ------------------ Fixed wing drone -----------------------
-    # load_name = "trained_models/wing/reinforcement_final/rl_350000_steps"
+    load_name = "trained_models/wing/reinforcement_bl_new/rl_final"
     # # "trained_models/wing/reinforcement_learning/final/ppo_50"
-    # save_name = "trained_models/wing/reinforcement_veldrag/rl_12000_steps"
-    # scenario = {"vel_drag_factor": .3}
-    # # train_wing(save_name, load_model=load_name, modified_params=scenario)
+    save_name = "trained_models/wing/reinforcement_veldrag_bl_new"
+    scenario = {"vel_drag_factor": .3}
+    train_wing(save_name, load_model=load_name, modified_params=scenario)
     # # test_ours_wing(
     # #     "trained_models/wing/current_model", modified_params=scenario
     # # )
