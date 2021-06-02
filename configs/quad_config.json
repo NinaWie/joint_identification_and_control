@@ -1,5 +1,5 @@
 {
-    "nr_epochs": 200,
+    "nr_epochs": 400,
     "delta_t": 0.1,
     "delta_t_train": 0.1,
     "epoch_size": 1000,

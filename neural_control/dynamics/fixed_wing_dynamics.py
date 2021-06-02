@@ -7,7 +7,7 @@ import casadi as ca
 from pathlib import Path
 
 from neural_control.dynamics.learnt_dynamics import (
-    LearntDynamics, LearntDynamicsOriginal
+    LearntDynamics, LearntDynamicsMPC
 )
 
 # lower and upper bounds:
@@ -362,7 +362,7 @@ class LearntFixedWingDynamics(LearntDynamics, FixedWingDynamics):
         return self.simulate_fixed_wing(state, action, dt)
 
 
-class SequenceFixedWingDynamics(LearntDynamicsOriginal, FixedWingDynamics):
+class SequenceFixedWingDynamics(LearntDynamics, FixedWingDynamics):
 
     def __init__(self, buffer_length=3):
         FixedWingDynamics.__init__(self)

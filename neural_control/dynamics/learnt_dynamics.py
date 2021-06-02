@@ -2,7 +2,11 @@ import torch
 import torch.nn as nn
 
 
-class LearntDynamics(torch.nn.Module):
+class LearntDynamicsMPC(torch.nn.Module):
+    """
+    For using the dynamics model in MPC, we need to have tanh activation!
+    Therefore this separate class
+    """
 
     def __init__(
         self,
@@ -12,7 +16,7 @@ class LearntDynamics(torch.nn.Module):
         transform_action=False,
         std=0.0001
     ):
-        super(LearntDynamics, self).__init__()
+        super(LearntDynamicsMPC, self).__init__()
         self.transform_action = transform_action
         if self.transform_action:
             self.linear_at = nn.Parameter(
@@ -51,7 +55,7 @@ class LearntDynamics(torch.nn.Module):
         return new_state + added_new_state
 
 
-class LearntDynamicsOriginal(torch.nn.Module):
+class LearntDynamics(torch.nn.Module):
 
     def __init__(
         self,
@@ -61,7 +65,7 @@ class LearntDynamicsOriginal(torch.nn.Module):
         transform_action=False,
         std=0.0001
     ):
-        super(LearntDynamicsOriginal, self).__init__()
+        super(LearntDynamics, self).__init__()
         self.transform_action = transform_action
         if self.transform_action:
             self.linear_at = nn.Parameter(

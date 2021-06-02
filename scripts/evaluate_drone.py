@@ -521,9 +521,13 @@ if __name__ == "__main__":
     if args.eval > 0:
         evaluator.render = 0
         # run_mpc_analysis(evaluator, system="quad")
-        evaluator.run_eval(
+        res_dict = evaluator.run_eval(
             args.ref, nr_test=args.eval, max_steps=500, **traj_args
         )
+        # with open(
+        #     f"../presentations/final_res/quad_seq_plot/{args.model}.json", "w"
+        # ) as outfile:
+        #     json.dump(res_dict, outfile)
         exit()
 
     # evaluator.run_mpc_ref(args.ref)

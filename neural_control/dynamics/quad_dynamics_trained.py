@@ -5,7 +5,9 @@ import numpy as np
 from neural_control.dynamics.quad_dynamics_flightmare import (
     FlightmareDynamics
 )
-from neural_control.dynamics.learnt_dynamics import LearntDynamics
+from neural_control.dynamics.learnt_dynamics import (
+    LearntDynamicsMPC, LearntDynamics
+)
 
 
 class LearntQuadDynamics(LearntDynamics, FlightmareDynamics):
@@ -41,7 +43,7 @@ class LearntQuadDynamics(LearntDynamics, FlightmareDynamics):
         return self.simulate_quadrotor(action, state, dt)
 
 
-class SequenceQuadDynamics(LearntDynamics, FlightmareDynamics):
+class SequenceQuadDynamics(LearntDynamicsMPC, FlightmareDynamics):
 
     def __init__(self, buffer_length=3):
         FlightmareDynamics.__init__(self)

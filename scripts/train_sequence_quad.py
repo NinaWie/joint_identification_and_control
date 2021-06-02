@@ -263,38 +263,49 @@ if __name__ == "__main__":
     # trainer.initialize_model(base_model)
     # trainer.run_control(config, curriculum=1)  # finetune 0
 
-    # # FINETUNE DYNAMICS ITERATIVELY
-    mode = "pretrained"
-    base_model = "trained_models/quad/final_baseline_con_seq"
-    baseline_dyn = None  # "trained_models/quad/iterative_seq_newwind_dyn"
-    config["save_name"] = "iterative_seq_dyn_" + mode
+    # FINETUNE CONTROLLER - EXPERIMENT
+    for samples in [600]:  # [200, 400, 600, 800, 1000]:
+        for mode in ["random"]:  # ["pretrained", "mpc", "random"]:
+            trainer = None
+            with open("configs/quad_config.json", "r") as infile:
+                config = json.load(infile)
 
-    # mod_param = {'translational_drag': np.array([0.3, 0.3, 0.3])}
-    mod_param = {"wind": 2}
-    config["learning_rate_controller"] = 0.000001
-    config["learning_rate_dynamics"] = 0.01
-    config["thresh_div_start"] = 1
-    config["thresh_div_end"] = 1.2
-    config["thresh_stable_start"] = 2
-    config["sample_in"] = "eval_env"
-    config["epoch_size"] = 200  # for dyn training
-    config["self_play"] = 200  # 200  # for dyn training
-    config["buffer_len"] = 5
-    config["eval_var_dyn"] = "mean_trained_delta"
-    config["eval_var_con"] = "mean_div"
-    config["min_epochs"] = 8  # for dyn training # 5 for con training
-    config["suc_up_down"] = -1
-    config["self_play_every_x"] = 5
-    config["return_div"] = 1
+            base_model = "trained_models/quad/final_baseline_con_seq"
+            baseline_dyn = "trained_models/quad/iterative_seq_dyn_" + mode
+            config["save_name"] = "seq_con_" + mode + "_" + str(samples)
+            print("------------ ", config["save_name"], "------------")
 
-    # train_dyn = FlightmareDynamics(modified_params=mod_param)
-    train_dyn = SequenceQuadDynamics(buffer_length=3)
-    # if baseline_dyn is not None:
-    #     train_dyn.load_state_dict(
-    #         torch.load(os.path.join(baseline_dyn, "dynamics_model"))
-    #     )
-    eval_dyn = FlightmareDynamics(modified_params=mod_param)
-    trainer = TrainSequenceQuad(train_dyn, eval_dyn, config)
-    trainer.initialize_model(base_model)
-    # trainer.run_iterative(config, start_with="controller")
-    trainer.run_sequentially(config)  # , start_with="controller")
+            # mod_param = {'translational_drag': np.array([0.3, 0.3, 0.3])}
+            mod_param = {"wind": 2}
+            config["learning_rate_controller"] = 0.000001
+            config["learning_rate_dynamics"] = 0.01
+            config["thresh_div_start"] = 1
+            config["thresh_div_end"] = 1.2
+            config["thresh_stable_start"] = 2
+            config["sample_in"] = "eval_env"
+            config["epoch_size"] = 200  # for dyn training
+            config["self_play"] = 200  # 200  # for dyn training
+            config["buffer_len"] = 5
+            config["eval_var_dyn"] = "mean_trained_delta"
+            config["eval_var_con"] = "mean_div"
+            config["min_epochs"] = 8  # for dyn training # 5 for con training
+            config["suc_up_down"] = -1
+            config["self_play_every_x"] = 5
+            config["return_div"] = 1
+            config["nr_epochs"] = 40
+
+            # train_dyn = FlightmareDynamics(modified_params=mod_param)
+            train_dyn = SequenceQuadDynamics(buffer_length=3)
+            if baseline_dyn is not None:
+                train_dyn.load_state_dict(
+                    torch.load(
+                        os.path.join(
+                            baseline_dyn, "dynamics_model_" + str(samples)
+                        )
+                    )
+                )
+            eval_dyn = FlightmareDynamics(modified_params=mod_param)
+            trainer = TrainSequenceQuad(train_dyn, eval_dyn, config)
+            trainer.initialize_model(base_model)
+            # trainer.run_iterative(config, start_with="controller")
+            trainer.run_sequentially(config, start_with="controller")

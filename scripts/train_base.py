@@ -30,7 +30,7 @@ except ImportError:
 
 
 from neural_control.dynamics.learnt_dynamics import (
-    LearntDynamics, LearntDynamicsOriginal
+    LearntDynamics, LearntDynamicsMPC
 )
 from neural_control.dynamics.cartpole_dynamics import ImageCartpoleDynamics
 from neural_control.plotting import (
@@ -151,7 +151,7 @@ class TrainBase:
         )
         if isinstance(self.train_dynamics, LearntDynamics) or isinstance(
             self.train_dynamics, ImageCartpoleDynamics
-        ) or isinstance(self.train_dynamics, LearntDynamicsOriginal):
+        ) or isinstance(self.train_dynamics, LearntDynamicsMPC):
             self.log_train_dyn = True
             self.optimizer_dynamics = optim.SGD(
                 self.train_dynamics.parameters(),
@@ -428,7 +428,9 @@ class TrainBase:
         # Save model
         self.finalize()
 
-    def run_sequentially(self, config, start_with="dynamics"):
+    def run_sequentially(
+        self, config, start_with="dynamics", start_evaluate=0
+    ):
         # usually the controller is pretrained, so we start with the dynamics
         self.model_to_train = start_with
         epoch_counter = 0
@@ -493,7 +495,7 @@ class TrainBase:
                 self.run_epoch(train=self.model_to_train)
 
                 # evaluate
-                if epoch > 100:
+                if epoch >= start_evaluate:
                     epoch_counter += 1
                     _ = self.evaluate_model(epoch)
 

@@ -96,7 +96,7 @@ class PolyObject():
         self.points = np.array(
             [
                 reference_arr[i] for i in range(len(reference_arr))
-                if i % 20 == 0
+                if i % 5 == 0
             ]
         )
         if shift_one:
