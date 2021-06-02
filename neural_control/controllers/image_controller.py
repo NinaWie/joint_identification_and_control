@@ -17,7 +17,7 @@ from neural_control.controllers.utils_image import (
 )
 
 # testing:
-dynamics_path = "neural_control/dynamics/img_knight_cmd"
+dynamics_path = "trained_models/img/img_dyn_model"
 nr_actions = 1
 learning_rate = 0.0001
 nr_epochs = 5000
