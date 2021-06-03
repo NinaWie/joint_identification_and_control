@@ -71,12 +71,61 @@ def round_diff(x, slope=10):
 def add_grid(ax):
     ax.set_xticks(np.arange(-.5, img_width, 1 + 2 * radius))
     ax.set_yticks(np.arange(-.5, img_height, 1 + 2 * radius))
-    ax.grid(color='w', linestyle='-', linewidth=1)
+    ax.grid(color='black', linestyle='-', linewidth=1)
     plt.grid(True)
     ax.xaxis.set_ticklabels([])
     ax.yaxis.set_ticklabels([])
     ax.xaxis.set_ticks_position('none')
     ax.yaxis.set_ticks_position('none')
+
+
+def plot_chess(center, center_king):
+    img = np.zeros((img_width, img_height))
+    # img[center[0]-radius:center[0]+radius+1, center[1]-radius:center[1]+radius+1] = 1
+    fig, ax = plt.subplots(figsize=(5, 5))
+    ax.imshow(img)
+    bbox = fig.axes[0].get_position().bounds
+    print(bbox)
+    each_cell_x, each_cell_y = bbox[2] / img_width, bbox[3] / img_height
+
+    pos_horse_x = bbox[0] + each_cell_x * (center[1] - radius)
+    pos_horse_y = bbox[1] + each_cell_y * (img_width - center[0] - radius - 1)
+
+    newax = fig.add_axes(
+        [
+            pos_horse_x, pos_horse_y, each_cell_x *
+            (1 + 2 * radius), each_cell_y * (1 + 2 * radius)
+        ],
+        zorder=1
+    )
+    newax.imshow(horse)
+    newax.axis('off')
+
+    pos_king_x = bbox[0] + each_cell_x * (center_king[1] - radius)
+    pos_king_y = bbox[
+        1] + each_cell_y * (img_width - center_king[0] - radius - 1)
+
+    newax = fig.add_axes(
+        [
+            pos_king_x, pos_king_y, each_cell_x *
+            (1 + 2 * radius), each_cell_y * (1 + 2 * radius)
+        ],
+        zorder=1
+    )
+    newax.imshow(king)
+    newax.axis('off')
+
+    # Gridlines based on minor ticks
+    ax.set_xticks(np.arange(-.5, 8, 1 + 2 * radius), minor=True)
+    ax.set_yticks(np.arange(-.5, 8, 1 + 2 * radius), minor=True)
+    ax.grid(which='minor', color='w', linestyle='-', linewidth=2)
+    # ax.axis("off")
+    plt.grid(True)
+    ax.xaxis.set_ticklabels([])
+    ax.yaxis.set_ticklabels([])
+    ax.xaxis.set_ticks_position('none')
+    ax.yaxis.set_ticks_position('none')
+    plt.show()
 
 
 def test_qualitatively(model_save_path, dynamics_path, nr_actions):
@@ -128,9 +177,11 @@ def test_qualitatively(model_save_path, dynamics_path, nr_actions):
         pred_cmd = con(current_state, test_img_out)
         current_state_before = current_state.clone()
 
-        np_cmd = one_hot_to_cmd_knight(pred_cmd[0, 0].detach().numpy())
+        # np_cmd = one_hot_to_cmd_knight(pred_cmd[0, 0].detach().numpy())
+        raw_cmd = pred_cmd[0, 0].detach().numpy()
+        np_cmd = [round(raw_cmd[0]), round(raw_cmd[1])]
         np.set_printoptions(suppress=1, precision=3)
-        print("raw command", pred_cmd[0, 0].detach().numpy())
+        print("raw command", raw_cmd)
         print("predicted command", np_cmd)
 
         transform_cmd = pred_cmd[:, 0]
@@ -141,16 +192,19 @@ def test_qualitatively(model_save_path, dynamics_path, nr_actions):
         current_state = dyn(current_state, transform_cmd)
 
         ax1 = plt.subplot(nr_actions, 3, 1 + i * 3)
-        ax1.imshow(current_state_before[0].detach().numpy())
+        ax1.imshow(current_state_before[0].detach().numpy(), cmap="Greys")
         add_grid(ax1)
-        ax1.set_title("Input img\n" + str((input_center_x, input_center_y)))
+        ax1.set_title(
+            "Input 1:\nCurrent state " + str((input_center_x, input_center_y))
+        )
         ax2 = plt.subplot(nr_actions, 3, 2 + i * 3)
-        ax2.imshow(test_img_out[0].detach().numpy())
+        ax2.imshow(test_img_out[0].detach().numpy(), cmap="Greys")
         add_grid(ax2)
-        ax2.set_title("Target img\n" + str(target))
+        ax2.set_title("Input 2:\nTarget state " + str(target))
         ax3 = plt.subplot(nr_actions, 3, 3 + i * 3)
-        ax3.imshow(current_state[0].detach().numpy())
+        ax3.imshow(current_state[0].detach().numpy(), cmap="Greys")
         add_grid(ax3)
-        ax3.set_title("Applying learnt\n command " + str(np_cmd))
+        ax3.set_title("Applying predicted\n command " + str(np_cmd))
     plt.tight_layout()
+    plt.savefig("../neurips/figures/horse_chess_secondpart.pdf")
     plt.show()
