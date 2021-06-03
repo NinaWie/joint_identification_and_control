@@ -2,6 +2,7 @@ import os
 import json
 import time
 import numpy as np
+import argparse
 import torch.optim as optim
 import torch
 import torch.nn.functional as F
@@ -335,22 +336,63 @@ if __name__ == "__main__":
     with open("configs/wing_config.json", "r") as infile:
         config = json.load(infile)
 
-    baseline_model = "trained_models/wing/current_model"
-    config["save_name"] = "final_dyn_veldrag_wparams"
-
-    # set high thresholds because not training from scratch
-    # config["thresh_div_start"] = 20
-    # config["thresh_stable_start"] = 1.5
-
-    mod_params = {"vel_drag_factor": 0.3}
-    config["modified_params"] = mod_params
-
-    # TRAIN
-    config["nr_epochs"] = 50
-    # train_control(baseline_model, config)
-
-    train_dynamics(
-        baseline_model,
-        config,
-        not_trainable=never_trainable + ["vel_drag_factor"]  # "all"
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-t",
+        "--todo",
+        type=str,
+        default="pretrain",
+        help="what to do - pretrain, adapt or finetune"
     )
+    parser.add_argument(
+        "-m",
+        "--model_load",
+        type=str,
+        default="trained_models/wing/current_model",
+        help="Model to start with (default: None - from scratch)"
+    )
+    parser.add_argument(
+        "-s",
+        "--save_name",
+        type=str,
+        default="trained_models/wing/test",
+        help="Name under which the trained model shall be saved"
+    )
+    parser.add_argument(
+        "-p",
+        "--params_trainable",
+        type=bool,
+        default=False,
+        help="Train the parameters of \hat{f} (1) or only residual (0)"
+    )
+    args = parser.parse_args()
+
+    baseline_model = args.model_load
+    trainable_params = args.params_trainable
+    todo = args.todo
+    config["save_name"] = args.save_name
+
+    if todo == "pretrain":
+        # No baseline model used
+        train_control(None, config)
+    elif todo == "adapt":
+        # For finetune dynamics
+        # set high thresholds because not training from scratch
+        # config["thresh_div_start"] = 20
+        # config["thresh_stable_start"] = 1.5
+        mod_params = {"vel_drag_factor": 0.3}
+        config["modified_params"] = mod_params
+        trainable_params = never_trainable + [
+            "vel_drag_factor"
+        ] if args.params_trainable else "all"
+        print(
+            f"start from pretrained model {args.model_load}, consider scenario\
+                {mod_params}, train also parameters - {trainable_params}\
+                save adapted dynamics and controller at {args.save_name}"
+        )
+        # Run
+        train_dynamics(baseline_model, config, not_trainable=trainable_params)
+    elif todo == "finetune":
+        config["thresh_div_start"] = 20
+        config["thresh_stable_start"] = 1.5
+        train_control(baseline_model, config)

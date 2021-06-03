@@ -19,7 +19,7 @@ In the following it is described how to train models for the three considered ro
 
 #### Pre-train a controller with BPTT
 ```
-python sca
+python scripts/train_drone.py -t pretrain
 ```
 
 ### Adapt to changed translational drag

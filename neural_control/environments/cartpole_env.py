@@ -7,11 +7,16 @@ import logging
 import math
 import numpy as np
 import torch
+
 import time
 logger = logging.getLogger(__name__)
 from neural_control.dynamics.cartpole_dynamics import (
     CartpoleDynamics, ImageCartpoleDynamics, SequenceCartpoleDynamics
 )
+try:
+    import cv2
+except ImportError:
+    print("Warning: cv2 not installed, install for cartpole image experiments")
 try:
     import neural_control.environments.cartpole_rendering as rendering
 except:
@@ -218,9 +223,6 @@ def construct_states(
     # if save_path is not None:
     #     np.save(save_path, data)
     return data[:num_data]
-
-
-import cv2
 
 
 def preprocess_img(image, img_height, img_width):

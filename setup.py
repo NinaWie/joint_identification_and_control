@@ -5,7 +5,7 @@ setup(
     version='0.0.1',
     install_requires=[
         'torch', 'numpy', 'matplotlib', 'scipy', 'pyglet', 'pyquaternion',
-        'gym', 'stable-baselines3'
+        'gym', 'stable-baselines3', 'casadi', 'sklearn'
     ],
     packages=find_packages()
 )

@@ -362,8 +362,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "-p",
         "--params_trainable",
-        type=str,
-        default="trained_models/quad/test",
+        type=bool,
+        default=False,
         help="Train the parameters of \hat{f} (1) or only residual (0)"
     )
     args = parser.parse_args()
@@ -382,7 +382,7 @@ if __name__ == "__main__":
         mod_params = {'translational_drag': np.array([0.3, 0.3, 0.3])}
         config["modified_params"] = mod_params
         # Define whether the parameters are trainable
-        trainable_params = 0
+        trainable_params = args.params_trainable
         print(
             f"start from pretrained model {args.model_load}, consider scenario\
                 {mod_params}, train also parameters - {trainable_params}\

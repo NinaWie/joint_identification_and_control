@@ -321,7 +321,8 @@ if __name__ == "__main__":
             load_dynamics=load_dynamics
         )
 
-    modified_params = {"wind": 0.5}
+    modified_params = {}
+    # {"wind": 0.5}
     # {"residual_factor": 0.0001}
     # {"vel_drag_factor": 0.3}
     # {

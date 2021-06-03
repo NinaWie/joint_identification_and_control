@@ -4,7 +4,12 @@ import argparse
 import json
 import numpy as np
 import torch
-import cv2
+try:
+    import cv2
+except ImportError:
+    print(
+        "Warning: cv2 not installed, must be installed for cartpole image experiments"
+    )
 
 from neural_control.environments.cartpole_env import CartPoleEnv
 from neural_control.dynamics.cartpole_dynamics import (
@@ -285,7 +290,7 @@ def load_model(model_name, epoch, is_seq=False):
         )
     net = torch.load(path_load)
     some_dataset = CartpoleSequenceDataset(
-        load_data_path="data/cartpole_seq_1000.npz", use_samples=2
+        load_data_path="data/cartpole_seq_200.npz", use_samples=2
     )
     # not necessary for image eval because dataset not used for preprocessing
     # some_dataset = CartpoleImageDataset(
@@ -299,7 +304,7 @@ def load_model(model_name, epoch, is_seq=False):
                 net, some_dataset, **config
             )
         else:
-            controller_model = CartpoleWrapper(net, some_dataset, **config)
+            controller_model = CartpoleWrapper(net, **config)
     else:
         controller_model = CartpoleImageWrapper(net, some_dataset, **config)
     return controller_model
