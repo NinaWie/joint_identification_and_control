@@ -315,5 +315,5 @@ if __name__ == "__main__":
         plt.plot(losses)
         plt.show()
     else:
-        test_controller(model_path + "_min")
-    test_qualitatively(model_path + "_min", dynamics_path, nr_actions)
+        test_controller(model_path)
+    test_qualitatively(model_path, dynamics_path, nr_actions)
