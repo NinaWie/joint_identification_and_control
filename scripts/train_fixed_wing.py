@@ -142,9 +142,10 @@ class TrainFixedWing(TrainBase):
             self.net, self.state_data, **self.config
         )
 
-        eval_dyn = self.train_dynamics if isinstance(
-            self.train_dynamics, LearntDynamics
-        ) or isinstance(self.train_dynamics, LearntDynamicsMPC) else None
+        eval_dyn = self.train_dynamics if (
+            isinstance(self.train_dynamics, LearntDynamics)
+            or isinstance(self.train_dynamics, LearntDynamicsMPC)
+        ) else None  # and self.config.get("is_seq", 0)  TODO
         evaluator = FixedWingEvaluator(
             controller, self.eval_env, eval_dyn=eval_dyn, **self.config
         )
@@ -247,7 +248,8 @@ class TrainFixedWing(TrainBase):
         prev_eval_counter = self.state_data.eval_counter
         while self.state_data.eval_counter < self.config["self_play"
                                                          ] + prev_eval_counter:
-            _ = evaluator.run_eval(nr_test=5)
+            with torch.no_grad():
+                _ = evaluator.run_eval(nr_test=5)
         print(
             len(self.state_data.states), self.state_data.get_eval_index(),
             self.state_data.eval_counter, self.state_data.num_sampled_states
@@ -355,7 +357,7 @@ if __name__ == "__main__":
         "-s",
         "--save_name",
         type=str,
-        default="trained_models/wing/test",
+        default="test",
         help="Name under which the trained model shall be saved"
     )
     parser.add_argument(

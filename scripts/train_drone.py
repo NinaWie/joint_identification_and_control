@@ -356,7 +356,7 @@ if __name__ == "__main__":
         "-s",
         "--save_name",
         type=str,
-        default="trained_models/quad/test",
+        default="test",
         help="Name under which the trained model shall be saved"
     )
     parser.add_argument(

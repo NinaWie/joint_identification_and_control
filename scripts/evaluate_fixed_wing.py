@@ -241,10 +241,10 @@ class FixedWingEvaluator:
             )
 
         print("--- controller eval")
-        # print(
-        #     "Average target error: %3.2f (%3.2f)" %
-        #     (res_eval["mean_div_target"], res_eval["std_div_target"])
-        # )
+        print(
+            "Average target error: %3.2f (%3.2f)" %
+            (res_eval["mean_div_target"], res_eval["std_div_target"])
+        )
         # print("Median target error: %3.2f" % (res_eval["median_div_target"]))
         print(
             "Average linear error: %3.2f (%3.2f)" %

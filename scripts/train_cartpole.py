@@ -189,6 +189,12 @@ class TrainCartpole(TrainBase):
             self.config["thresh_div"] += self.config["thresh_div_step"]
             print("Increased thresh div to", self.config["thresh_div"])
 
+        if (epoch + 1) % self.config["resample_every"] == 0:
+            print("resample data...")
+            self.state_data.resample_data(
+                self.config["sample_data"], self.config["thresh_div"]
+            )
+
     def finalize(self):
         torch.save(
             self.state_to_img_net.state_dict(),

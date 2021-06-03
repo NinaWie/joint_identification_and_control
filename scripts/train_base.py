@@ -196,7 +196,7 @@ class TrainBase:
         self.optimizer_dynamics.step()
 
         self.results_dict["loss_dyn_per_step"].append(loss.item())
-        return loss
+        return torch.sqrt(loss)
 
     def test_dynamics(self):
         test_loss = []
