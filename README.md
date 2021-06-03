@@ -11,7 +11,6 @@ Install all requirements in a virtual environment with
 ```
 python -m venv env
 source env/bin/activate
-cd weakly_supervised_flight
 pip install -e .
 ```
 
@@ -70,22 +69,7 @@ Adapt to simple changed dynamics, namely translational drag:
 python scripts/train_fixed_wing.py -t adapt
 ```
 
-### Adapt to changed translational drag
-
-```
-python scripts/train_drone.py -t "adapt" -s "test_save_path"
-```
-The model will be saved at `trained_models/quad/test_save_path`. 
-
-### Train a controller unsupervised
-
-On the bottom of the script `train_drone.py`, `train_cartpole.py` or `train_fixed_wing.py`, you can use the `run_control` function to train a model from scratch. Make sure that `baseline_model=None` to start from scratch.
-
-### Reproduce basic dynamic mismatch experiments:
-
-On the bottom of the script `train_drone.py`, `train_cartpole.py` or `train_fixed_wing.py` you can specify a dictionary with all modified parameters. Then, specify in a list all parameters that should not be trainable. If `not_trainable="all"` then only the residual network is trained to account for the mismatch. 
-Then, make sure the script executes the `train_dynamics(baseline_model, config, trainable_params)` with a given controller (aka baseline model) and the list of trainable parameters.
-
+## Further experiments
 
 ### Train cartpole image model
 
@@ -119,7 +103,7 @@ This part is more complicated and requires several steps:
     * Generate dataset with no contact dynamics
     * Using self play and the dataset to train a controller --> Basically this is a normal cartpole controller, just that it does not only see the last state, but instead the last x states
 * Finetune dynamics:
-    * Other bottom part in `train_cartpole.py` --> use the dataset with contact dynamics as generated above, ensure no self play
+    * Other bottom part in `scripts/train_cartpole.py` --> use the dataset with contact dynamics as generated above, ensure no self play
     * Train for 100 epochs is sufficient
 * Finetune controller with the residual network:
-    * Bottom part in `train_cartpole.py` --> Starting from the pretrained controller, but backpropagating through the trained dynamics model
+    * Bottom part in `scripts/train_cartpole.py` --> Starting from the pretrained controller, but backpropagating through the trained dynamics model
