@@ -6,7 +6,9 @@ import numpy as np
 import torch
 try:
     import cv2
+    INSTALLED_CV2 = True
 except ImportError:
+    INSTALLED_CV2 = False
     print(
         "Warning: cv2 not installed, must be installed for cartpole image experiments"
     )
@@ -114,7 +116,7 @@ class Evaluator:
                     self.eval_env.state[3] = 0
 
                 new_state = self.eval_env.state
-                if render:
+                if render and INSTALLED_CV2:
                     start_img = self._preprocess_img(
                         self.eval_env._render(mode="rgb_array")
                     )
@@ -202,7 +204,7 @@ class Evaluator:
                             # time.sleep(.1)
 
                     # update image buffer with new image
-                    if render:
+                    if render and INSTALLED_CV2:
                         self.image_buffer = np.roll(
                             self.image_buffer, 1, axis=0
                         )
@@ -290,7 +292,7 @@ def load_model(model_name, epoch, is_seq=False):
         )
     net = torch.load(path_load)
     some_dataset = CartpoleSequenceDataset(
-        load_data_path="data/cartpole_seq_200.npz", use_samples=2
+        load_data_path="data/cartpole_img_5.npz", use_samples=2
     )
     # not necessary for image eval because dataset not used for preprocessing
     # some_dataset = CartpoleImageDataset(
@@ -341,7 +343,8 @@ if __name__ == "__main__":
     thresh_div = 0.3
 
     if args.model == "mpc":
-        load_dynamics = "trained_models/cartpole/pretrained_sampling_for_rl_comp_plot/con_seq_500/dynamics_model"
+        load_dynamics = None
+        # "trained_models/cartpole/pretrained_sampling_for_rl_comp_plot/con_seq_500/dynamics_model"
         controller_model = MPC(
             horizon=10,
             dt=dt,

@@ -4,6 +4,8 @@ In this project we train a autonomous UAV in semi-supervised fashion, only using
 
 ![Learning paradigm](assets/paradigm.png)
 
+## Installation
+
 Install all requirements in a virtual environment with 
 
 ```
@@ -15,11 +17,57 @@ pip install -e .
 
 In the following it is described how to train models for the three considered robotics systems Quadrotor, Fixed-wing drone and CartPole. If not noted otherwise, all commands are executed from the main directory.
 
+## Testing:
+
+Evaluation scripts for the best systems can be found in the folder `scripts`. Simply execute 
+
+```
+python scripts/evaluate_cartpole.py
+```
+to run our best model to balance the pole on the cart
+
+```
+python scripts/evaluate_drone.py
+```
+for executing a trajectory tracking with a quadrotor 
+
+and 
+```
+python scripts/evaluate_fixed_wing.py
+```
+for the fixed-wing passing through a target point
+
+**Evaluate over multiple runs**
+Use the flag `-a 10` for executing 10 runs (without rendering) and to see the average performance (for all three systems).
+
+**Online optimization baseline (MPC)**
+Use the flag `-m` to specify the model directory. If you want to use the online optimization MPC, simply use `-m mpc`.
+
+**PPO baselines**
+Functions to evaluate our model-free RL baseline, PPO, can be found in [this file](neural_control/controllers/rl_baselines.py).
+
 ## Quadrotor - Learning control and adaptation
 
-#### Pre-train a controller with BPTT
+Pre-train a controller with BPTT:
 ```
-python scripts/train_drone.py -t pretrain
+python scripts/train_drone.py -t pretrain -s model_name_to_save
+```
+
+Adapt to simple changed dynamics, namely translational drag:
+```
+python scripts/train_drone.py -t adapt
+```
+
+## Fixed-wing drone - Learning control and adaptation
+
+Pre-train a controller with BPTT:
+```
+python scripts/train_fixed_wing.py -t pretrain -s model_name_to_save
+```
+
+Adapt to simple changed dynamics, namely translational drag:
+```
+python scripts/train_fixed_wing.py -t adapt
 ```
 
 ### Adapt to changed translational drag
