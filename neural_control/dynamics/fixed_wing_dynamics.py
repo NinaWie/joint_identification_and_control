@@ -52,16 +52,6 @@ class FixedWingDynamics:
             ]
         )
 
-    def reset_wind(self):
-        wind_rand = np.random.rand()
-        if wind_rand > .6:
-            self.timestamp = 0
-        elif wind_rand < .3:
-            self.timestamp = -1
-        else:
-            self.timestamp = 1
-        # self.wind_direction = -1 if wind_rand < .5 else 1
-
     def normalize_action(self, thrust, ome_x, ome_y, ome_z):
         T = thrust * 7
         del_e = self.pi * (ome_x * 40 - 20) / 180

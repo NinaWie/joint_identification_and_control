@@ -188,7 +188,6 @@ class FixedWingEvaluator:
         self.dyn_eval_test = []
         mean_div_target, mean_div_linear = [], []
         for i in range(nr_test):
-            self.eval_env.dynamics.reset_wind()
             # important! reset after every run
             if isinstance(self.controller, MPC):
                 self.controller._initDynamics()

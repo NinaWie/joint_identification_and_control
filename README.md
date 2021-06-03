@@ -53,7 +53,7 @@ Pre-train a controller with BPTT:
 python scripts/train_drone.py -t pretrain -s model_name_to_save
 ```
 
-Adapt to simple changed dynamics, namely translational drag:
+The adaptation scenario considered in our paper is a velocity drag factor of 0.3. This is hard-coded and can only be changed in [here](scripts/train_drone.py). To adapt the dynamics for 10 epochs (configure in `configs/quad_config.json`), and then finetune the controller, run
 ```
 python scripts/train_drone.py -t adapt
 ```
@@ -71,7 +71,7 @@ python scripts/train_fixed_wing.py -t adapt
 ```
 
 ### Adapt to changed translational drag
-The scenario considered in our paper is a velocity drag factor of 0.3. This is hard-coded and can only be changed in [here](scripts/train_drone.py). To adapt the dynamics for 10 epochs (configure in `configs/quad_config.json`), and then finetune the controller, run
+
 ```
 python scripts/train_drone.py -t "adapt" -s "test_save_path"
 ```
@@ -89,7 +89,6 @@ Then, make sure the script executes the `train_dynamics(baseline_model, config, 
 
 ### Train cartpole image model
 
-BRANCH: cartpole
 
 This part is more complicated and requires several steps:
 * Collect a dataset in the target dynamics (for learning the new dynamics in few shot):
@@ -98,7 +97,7 @@ This part is more complicated and requires several steps:
     * Set a filepath location where to save the dataset
     * run `python evaluate_cartpole.py -dataset` to generate the data
 * Finetune the dynamics:
-    * In `train_cartpole.py` specify the dataste you want to use in the `train_img_dynamics` function.
+    * In `scripts/train_image_cartpole.py` specify the dataste you want to use in the `train_img_dynamics` function.
     * Execute the script with `train_img_dynamics(None, config, not_trainable="all", base_image_dyn=baseline_dyn)` in the bottom
     * This will train the residual to learn the change in dynamics from the images (Note: No need to specify the modified parameters here, this is included in the dataset)
     * Note: the controller can be really bad in this step
@@ -107,18 +106,16 @@ This part is more complicated and requires several steps:
     * Change the save path for this new dataset
     * Use a lower dataset size - This is just for starting, actually the data will be collected during evaluation
 * Train the controller
-    * In `train_cartpole.py` specify the dataste you want to use in the `train_img_controller` function.
+    * In `scripts/train_image_cartpole.py` specify the dataste you want to use in the `train_img_controller` function.
     * Execute the script with `train_img_controller(None, config, not_trainable="all", base_image_dyn=baseline_dyn)` in the bottom, where `baseline_dyn` is now the path to the dynamics model trained above
 
 
-### Train cartpole contact dynamics
-
-BRANCH: contact_dyn
+### Train cartpole with state action history
 
 * Collect dataset with target dynamics:
-    * Run `python evaluate_cartpole.py -d 3000` This collects 3000 samples with half of them with the contact force and half of them without
+    * Run `python scripts/evaluate_cartpole.py -d 3000` This collects 3000 samples with half of them with the contact force and half of them without
 * pre-train controller on state-action history without modified dynamics
-    * Use bottom part in `train_cartpole.py` for that
+    * Use bottom part in `scripts/train_cartpole.py` for that
     * Generate dataset with no contact dynamics
     * Using self play and the dataset to train a controller --> Basically this is a normal cartpole controller, just that it does not only see the last state, but instead the last x states
 * Finetune dynamics:
