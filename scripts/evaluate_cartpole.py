@@ -195,7 +195,7 @@ class Evaluator:
                             is_torch=True
                         )
                         data_collection.append(new_state)
-                        velocities.append(np.absolute(new_state[1]))
+                        velocities.append(float(np.absolute(new_state[1])))
                         if i > burn_in_steps:
                             angles.append(np.absolute(new_state[2]))
                         if render:
@@ -405,17 +405,21 @@ if __name__ == "__main__":
     elif args.eval > 0:
         # set to random initial state
         evaluator.initialize_straight = False
-        successes, velocities = evaluator.evaluate_in_environment(
+        res_eval = evaluator.evaluate_in_environment(
             render=False,
             max_steps=250,
             nr_iters=args.eval,
-            return_success=True
+            return_success=False
         )
-        # is_contact = "bl" if len(modified_params.keys()) == 0 else "mismatch"
-        np.savez(
-            f"../presentations/final_res/cartpole_seq_plot/{args.model}.npz",
-            np.array(successes), np.array(velocities)
-        )
+        with open(
+            f"../presentations/final_res/cartpole_seq_plot/{args.model}.json",
+            "w"
+        ) as outfile:
+            json.dump(res_eval, outfile)
+        # np.savez(
+        #     f"../presentations/final_res/cartpole_seq_plot/{args.model}.npz",
+        #     np.array(successes), np.array(velocities)
+        # )
     else:
         evaluator.initialize_straight = False
         _ = evaluator.evaluate_in_environment(

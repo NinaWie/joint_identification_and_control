@@ -1,4 +1,5 @@
 import os
+import argparse
 import numpy as np
 import json
 import torch
@@ -107,8 +108,8 @@ class TrainCartpole(TrainBase):
 
     def loss_logging(self, epoch_loss, train="controller"):
         self.results_dict["loss_" + train].append(epoch_loss)
-        if train == "controller" or self.epoch % 10 == 0:
-            print(f"Loss ({train}): {round(epoch_loss, 2)}")
+        # if train == "controller" or self.epoch % 10 == 0:
+        print(f"Loss ({train}): {round(epoch_loss, 2)}")
         # self.writer.add_scalar("Loss/train", epoch_loss)
 
     def run_epoch(self, train="controller"):
@@ -202,11 +203,18 @@ class TrainCartpole(TrainBase):
         )
         super().finalize(plot_loss="loss_dynamics")
 
+    def collect_data(self):
+        self.state_data.resample_data(
+            self.config["sample_data"], self.config["thresh_div"]
+        )
+
 
 def train_control(base_model, config, swingup=0):
     """
     Train a controller from scratch or with an initial model
     """
+    config["learning_rate_controller"] = 1e-5
+    # modified params (usually empty dict)
     modified_params = config["modified_params"]
     train_dynamics = CartpoleDynamics(modified_params)
     eval_dynamics = CartpoleDynamics(modified_params, test_time=1)
@@ -235,7 +243,6 @@ def train_norm_dynamics(base_model, config, not_trainable="all"):
     """
     modified_params = config["modified_params"]
     config["sample_in"] = "train_env"
-    config["train_dyn_for_epochs"] = 2
     config["thresh_div_start"] = 0.2
     config["train_dyn_every"] = 1
 
@@ -253,31 +260,55 @@ if __name__ == "__main__":
     with open("configs/cartpole_config.json", "r") as infile:
         config = json.load(infile)
 
-    # # NORMAL TRAINING OF CONTROLLER FROM SCRATCH AND WITH FINETUNING
-    baseline_model = None  #  "trained_models/cartpole/current_model"
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-t",
+        "--todo",
+        type=str,
+        default="pretrain",
+        help="what to do - pretrain, adapt or finetune"
+    )
+    parser.add_argument(
+        "-m",
+        "--model_load",
+        type=str,
+        default="trained_models/cartpole/current_model",
+        help="Model to start with (default: None - from scratch)"
+    )
+    parser.add_argument(
+        "-s",
+        "--save_name",
+        type=str,
+        default="test",
+        help="Name under which the trained model shall be saved"
+    )
+    parser.add_argument(
+        "-p",
+        "--params_trainable",
+        type=bool,
+        default=False,
+        help="Train the parameters of \hat{f} (1) or only residual (0)"
+    )
+    args = parser.parse_args()
+
+    baseline_model = args.model_load
     baseline_dyn = None
-    config["save_name"] = "cartpole_test"
-    # mod_params = {"wind": .5}
-    # config["modified_params"] = mod_params
-    train_control(baseline_model, config)
-    # train_norm_dynamics(baseline_model, config, not_trainable="all")
+    trainable_params = args.params_trainable
+    config["save_name"] = args.save_name
 
-    # # FINETUNE DYNAMICS (TRAIN RESIDUAL)
-    # baseline_model = None
-    # baseline_dyn = None
-    # config["save_name"] = "dyn_img_wrenderer_trained"
-    # train_img_dynamics(
-    #     None, config, not_trainable="all", base_image_dyn=baseline_dyn
-    # )
-
-    # TRAIN CONTROLLER AFTER DYNAMICS ARE FINETUNED
-    # baseline_model = None
-    # baseline_dyn = "trained_models/cartpole/dyn_img_wrenderer_trained"
-    # config["save_name"] = "con_img_corrected"
-
-    # train_img_controller(
-    #     baseline_model,
-    #     config,
-    #     not_trainable="all",
-    #     base_image_dyn=baseline_dyn
-    # )
+    if args.todo == "pretrain":
+        # No baseline model used
+        train_control(None, config)
+    elif args.todo == "adapt":
+        mod_params = {"wind": 0.5}
+        config["modified_params"] = mod_params
+        trainable_params = [] if args.params_trainable else "all"
+        print(
+            f"start from pretrained model {args.model_load}, consider scenario\
+                {mod_params}, train also parameters - {trainable_params}\
+                save adapted dynamics and controller at {args.save_name}"
+        )
+        # Run
+        train_norm_dynamics(
+            baseline_model, config, not_trainable=trainable_params
+        )

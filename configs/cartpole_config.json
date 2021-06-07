@@ -21,6 +21,7 @@
     "learning_rate_dynamics": 0.01,
     "sample_data": 1000,
     "action_dim": 1,
-    "suc_up_down": 1,
-    "use_new_data": 500
+    "suc_up_down": -1,
+    "use_new_data": 500,
+    "train_dyn_for_epochs": 10
 }

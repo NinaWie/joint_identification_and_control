@@ -69,7 +69,9 @@ class CartPoleEnv():
                 torch_state, state_action_buffer, action, dt=self.dt
             )
         else:
-            next_torch_state = self.dynamics(torch_state, action, dt=self.dt)
+            next_torch_state = self.dynamics(
+                torch_state.float(), action, dt=self.dt
+            )
         self.state = next_torch_state[0].numpy()
         # stay in bounds with theta
         theta = self.state[2]

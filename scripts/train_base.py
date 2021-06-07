@@ -516,22 +516,8 @@ class TrainBase:
                     print(f"\nEpoch {epoch}")
                     _ = self.evaluate_model(epoch)
 
-                # train dynamics as long as
-                # - lower than train_dyn_for_epochs
-                # - alternating or use all?
-                # if (
-                #     epoch <= config.get("train_dyn_for_epochs", 10)
-                #     and epoch % config.get("train_dyn_every", 1) == 0
-                # ):
-                #     model_to_train = "dynamics"
-                # else:
-                #     model_to_train = "controller"
-
                 self.run_epoch(train=model_to_train)
 
-                # self.results_dict["samples_in_d2"].append(
-                #     self.count_finetune_data
-                # )
                 if model_to_train == "dynamics" and (
                     epoch == config["train_dyn_for_epochs"]
                     # or self.results_dict["loss_dynamics"][-1] < 500
