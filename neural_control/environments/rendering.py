@@ -219,6 +219,7 @@ class FixedWingDrone(RenderedObject):
 
     def set_target(self, target):
         self.targets = np.array(target)
+        # use 13 to properly display the waypoints for the fixed wing
         self.x_normalize = 14 / np.max(self.targets[:, 0])
 
     def draw(self, renderer):

@@ -2,6 +2,7 @@ import os
 import json
 import time
 import numpy as np
+import argparse
 import torch.optim as optim
 import torch
 import torch.nn.functional as F
@@ -10,6 +11,9 @@ from neural_control.dataset import WingDataset
 from neural_control.drone_loss import fixed_wing_last_loss, fixed_wing_mpc_loss
 from neural_control.dynamics.fixed_wing_dynamics import (
     FixedWingDynamics, LearntFixedWingDynamics
+)
+from neural_control.dynamics.learnt_dynamics import (
+    LearntDynamics, LearntDynamicsMPC
 )
 from neural_control.environments.wing_env import SimpleWingEnv
 from neural_control.models.hutter_model import Net
@@ -102,9 +106,9 @@ class TrainFixedWing(TrainBase):
 
         # Backprop
         loss.backward()
-        for name, param in self.net.named_parameters():
-            if param.grad is not None:
-                self.writer.add_histogram(name + ".grad", param.grad)
+        # for name, param in self.net.named_parameters():
+        #     if param.grad is not None:
+        #         self.writer.add_histogram(name + ".grad", param.grad)
         self.optimizer_controller.step()
         return loss
 
@@ -138,60 +142,118 @@ class TrainFixedWing(TrainBase):
             self.net, self.state_data, **self.config
         )
 
+        eval_dyn = self.train_dynamics if (
+            isinstance(self.train_dynamics, LearntDynamics)
+            or isinstance(self.train_dynamics, LearntDynamicsMPC)
+        ) else None  # and self.config.get("is_seq", 0)  TODO
         evaluator = FixedWingEvaluator(
-            controller, self.eval_env, **self.config
+            controller, self.eval_env, eval_dyn=eval_dyn, **self.config
         )
-        # run with mpc to collect data
-        # eval_env.run_mpc_ref("rand", nr_test=5, max_steps=500)
+
+        # previous version with resampling
+        # if epoch % self.config["resample_every"] == 0:
+        #     print("START COLLECT DATA")
+        #     self.state_data.num_self_play = self.tmp_num_selfplay
+        # if epoch == 0 or self.results_dict["train_dyn_con"][epoch
+        #                                                     ] == "controller":
+        #     self.state_data.num_self_play = self.tmp_num_selfplay
+        #     self.results_dict["collected_data"].append(
+        #         self.state_data.num_self_play
+        #     )
+        # else:
+        #     self.results_dict["collected_data"].append(0)
+
+        # switch off self play
+        self.state_data.num_self_play = 0
+
         # run without mpc for evaluation
-        print("--------- eval in simulator (D1) -------------")
+        # print("--------- eval in simulator (D1) -------------")
+        # print(
+        #     "check: self play?", self.state_data.num_self_play, "eval counter",
+        #     self.state_data.eval_counter
+        # )
+        # run eval
         with torch.no_grad():
-            if epoch == 0 and self.config["self_play"] > 0:
-                # sample to fill all required self play data
-                while self.state_data.eval_counter < self.config["self_play"]:
-                    suc_mean, suc_std = evaluator.run_eval(nr_test=5)
-            else:
-                suc_mean, suc_std = evaluator.run_eval(nr_test=10)
+            res_eval = evaluator.run_eval(nr_test=20)
+        for key, val in res_eval.items():
+            self.results_dict[key].append(val)
+        suc_mean = res_eval["mean_div_linear"]
+        suc_std = res_eval["std_div_linear"]
 
         # FOR DYN TRAINING
-        if epoch == 0 and self.config["train_dyn_for_epochs"] >= 0:
-            self.tmp_num_selfplay = self.state_data.num_self_play
-            self.state_data.num_self_play = 0
-            print("stop self play")
-        if epoch == self.config["train_dyn_for_epochs"]:
-            self.state_data.num_self_play = self.tmp_num_selfplay
-            print("start self play to", self.tmp_num_selfplay)
+        # if epoch == 0 and self.config["train_dyn_for_epochs"] >= 0:
+        #     self.tmp_num_selfplay = self.state_data.num_self_play
+        #     self.state_data.num_self_play = 0
+        #     print("stop self play")
+        # if epoch == self.config["train_dyn_for_epochs"]:
+        #     self.state_data.num_self_play = self.tmp_num_selfplay
+        #     print("start self play to", self.tmp_num_selfplay)
 
         # if training dynamics: evaluate in target dynamics
-        if self.config["train_dyn_for_epochs"] >= 0:
-            tmp_self_play = self.state_data.num_self_play
-            self.state_data.num_self_play = 0
-            print("--------- eval in real (D2) -------------")
-            d2_env = SimpleWingEnv(self.eval_dynamics, self.delta_t)
-            evaluator = FixedWingEvaluator(controller, d2_env, **self.config)
-            with torch.no_grad():
-                suc_mean, suc_std = evaluator.run_eval(nr_test=10)
-            self.results_dict["eval_in_d2_mean"].append(suc_mean)
-            self.results_dict["eval_in_d2_std"].append(suc_std)
-            self.state_data.num_self_play = tmp_self_play
-            print("eval samples counter", self.state_data.eval_counter)
+        # if self.config["train_dyn_for_epochs"] >= 0:
+        #     tmp_self_play = self.state_data.num_self_play
+        #     self.state_data.num_self_play = 0
+        #     print("--------- eval in real (D2) -------------")
+        #     d2_env = SimpleWingEnv(self.eval_dynamics, self.delta_t)
+        #     evaluator = FixedWingEvaluator(controller, d2_env, **self.config)
+        #     with torch.no_grad():
+        #         suc_mean, suc_std = evaluator.run_eval(nr_test=10)
+        #     self.results_dict["eval_in_d2_mean"].append(suc_mean)
+        #     self.results_dict["eval_in_d2_std"].append(suc_std)
+        #     self.state_data.num_self_play = tmp_self_play
+        #     print("eval samples counter", self.state_data.eval_counter)
 
-        self.sample_new_data(epoch)
+        # self.sample_new_data(epoch)
 
         # increase thresholds
-        if epoch % 5 == 0 and self.config["thresh_div"] < self.thresh_div_end:
-            self.config["thresh_div"] += .2
-            print("increased thresh div", self.config["thresh_div"])
+        # if self.config["thresh_div"] < self.thresh_div_end:
+        #     self.config["thresh_div"] += .5
+        #     print("increased thresh div", self.config["thresh_div"])
 
-        if epoch % 5 == 0 and self.config["thresh_stable"
-                                          ] < self.thresh_stable_end:
-            self.config["thresh_stable"] += .05
+        # if self.config["thresh_stable"] < self.thresh_stable_end:
+        #     self.config["thresh_stable"] += .05
+        #     print("increased thresh stable", self.config["thresh_stable"])
 
         # save best model
         self.save_model(epoch, suc_mean, suc_std)
 
         self.results_dict["thresh_div"].append(self.config["thresh_div"])
         return suc_mean, suc_std
+
+    def collect_data(self, random=False, allocate=False, mpc=False):
+        print("COLLECT DATA")
+        # switch on self play
+        self.state_data.num_self_play = self.tmp_num_selfplay
+
+        if allocate and self.current_epoch > 0:
+            self.state_data.allocate_self_play(self.tmp_num_selfplay)
+        else:
+            self.state_data.num_sampled_states = 0
+
+        controller = FixedWingNetWrapper(
+            self.net, self.state_data, **self.config
+        )
+        evaluator = FixedWingEvaluator(
+            controller, self.eval_env, **self.config
+        )
+        if random:
+            print("USE RANDOM")
+            evaluator.use_random_actions = True
+        if mpc:
+            print("USE MPC")
+            from neural_control.controllers.mpc import MPC
+            evaluator.use_mpc = MPC(
+                horizon=20, dt=0.1, dynamics="fixed_wing_3D"
+            )
+        prev_eval_counter = self.state_data.eval_counter
+        while self.state_data.eval_counter < self.config["self_play"
+                                                         ] + prev_eval_counter:
+            with torch.no_grad():
+                _ = evaluator.run_eval(nr_test=5)
+        print(
+            len(self.state_data.states), self.state_data.get_eval_index(),
+            self.state_data.eval_counter, self.state_data.num_sampled_states
+        )
 
 
 def train_control(base_model, config):
@@ -276,22 +338,63 @@ if __name__ == "__main__":
     with open("configs/wing_config.json", "r") as infile:
         config = json.load(infile)
 
-    baseline_model = "trained_models/wing/current_model"
-    config["save_name"] = "final_dyn_veldrag_wparams"
-
-    # set high thresholds because not training from scratch
-    # config["thresh_div_start"] = 20
-    # config["thresh_stable_start"] = 1.5
-
-    mod_params = {"vel_drag_factor": 0.3}
-    config["modified_params"] = mod_params
-
-    # TRAIN
-    config["nr_epochs"] = 50
-    # train_control(baseline_model, config)
-
-    train_dynamics(
-        baseline_model,
-        config,
-        not_trainable=never_trainable + ["vel_drag_factor"]  # "all"
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-t",
+        "--todo",
+        type=str,
+        default="pretrain",
+        help="what to do - pretrain, adapt or finetune"
     )
+    parser.add_argument(
+        "-m",
+        "--model_load",
+        type=str,
+        default="trained_models/wing/current_model",
+        help="Model to start with (default: None - from scratch)"
+    )
+    parser.add_argument(
+        "-s",
+        "--save_name",
+        type=str,
+        default="test",
+        help="Name under which the trained model shall be saved"
+    )
+    parser.add_argument(
+        "-p",
+        "--params_trainable",
+        type=bool,
+        default=False,
+        help="Train the parameters of \hat{f} (1) or only residual (0)"
+    )
+    args = parser.parse_args()
+
+    baseline_model = args.model_load
+    trainable_params = args.params_trainable
+    todo = args.todo
+    config["save_name"] = args.save_name
+
+    if todo == "pretrain":
+        # No baseline model used
+        train_control(None, config)
+    elif todo == "adapt":
+        # For finetune dynamics
+        # set high thresholds because not training from scratch
+        # config["thresh_div_start"] = 20
+        # config["thresh_stable_start"] = 1.5
+        mod_params = {"vel_drag_factor": 0.3}
+        config["modified_params"] = mod_params
+        trainable_params = never_trainable + [
+            "vel_drag_factor"
+        ] if args.params_trainable else "all"
+        print(
+            f"start from pretrained model {args.model_load}, consider scenario\
+                {mod_params}, train also parameters - {trainable_params}\
+                save adapted dynamics and controller at {args.save_name}"
+        )
+        # Run
+        train_dynamics(baseline_model, config, not_trainable=trainable_params)
+    elif todo == "finetune":
+        config["thresh_div_start"] = 20
+        config["thresh_stable_start"] = 1.5
+        train_control(baseline_model, config)

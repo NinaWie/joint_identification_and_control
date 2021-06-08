@@ -15,6 +15,7 @@ from neural_control.dynamics.quad_dynamics_flightmare import FlightmareDynamics
 from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
 from neural_control.dynamics.fixed_wing_dynamics import FixedWingDynamics
 from neural_control.models.hutter_model import Net
+from neural_control.models.simple_model import Net as NetPole
 from neural_control.plotting import plot_wing_pos_3d
 from neural_control.trajectory.q_funcs import project_to_line
 
@@ -23,7 +24,8 @@ fixed_wing_dt = 0.05
 cartpole_dt = 0.05
 quad_dt = 0.1
 quad_speed = 0.2
-quad_horizon = 10
+quad_horizon = 3
+curriculum = False
 
 
 class EvalCallback(BaseCallback):
@@ -57,7 +59,7 @@ class EvalCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         if (self.n_calls - 1) % self.eval_freq == 0:
-            if self.eval_env.thresh_div < 3:
+            if curriculum and self.eval_env.thresh_div < 3:
                 self.eval_env.thresh_div += .05
                 print("increased thresh div", self.eval_env.thresh_div)
             # evaluate
@@ -128,8 +130,8 @@ def train_cartpole(model_path, load_model=None, modified_params={}):
         env,
         evaluate_cartpole,
         load_model=load_model,
-        total_timesteps=200000,
-        eval_freq=200
+        total_timesteps=500000,
+        eval_freq=10000
     )
 
 
@@ -139,10 +141,18 @@ def evaluate_cartpole(model, env, max_steps=250, nr_iters=1, render=0):
     for j in range(nr_iters):
         obs = env.reset()
         for i in range(max_steps):
-            action, _states = model.predict(obs, deterministic=True)
+            if isinstance(model, NetPole):  # DP
+                with torch.no_grad():
+                    obs_torch = torch.from_numpy(np.expand_dims(obs,
+                                                                0)).float()
+                    suggested_action = model(obs_torch)
+                    suggested_action = torch.reshape(suggested_action, (10, 1))
+                    action = suggested_action[0].numpy()
+            else:
+                action, _states = model.predict(obs, deterministic=True)
             actions.append(action)
             obs, rewards, done, info = env.step(action)
-            states.append(obs)
+            states.append(env.state)
             if render:
                 env.render()
             if done:
@@ -172,6 +182,17 @@ def test_rl_cartpole(save_name, modified_params={}, max_steps=250):
     dyn = CartpoleDynamics(modified_params=modified_params)
     env = CartPoleEnvRL(dyn, dt=cartpole_dt)
     model = PPO.load(save_name)
+    evaluate_cartpole(model, env, max_steps, nr_iters=30, render=0)
+
+
+def test_ours_cartpole(model_path, modified_params={}, max_steps=500):
+    model = torch.load(os.path.join(model_path, "model_cartpole"))
+    config_path = os.path.join(model_path, "config.json")
+    with open(config_path, "r") as outfile:
+        param_dict = json.load(outfile)
+    dyn = CartpoleDynamics(modified_params=modified_params)
+    # param_dict["speed_factor"] = .2
+    env = CartPoleEnvRL(dyn, **param_dict)
     evaluate_cartpole(model, env, max_steps, nr_iters=40, render=0)
 
 
@@ -264,7 +285,7 @@ def test_rl_wing(save_name, modified_params={}, max_steps=1000):
     dyn = FixedWingDynamics(modified_params=modified_params)
     env = WingEnvRL(dyn, fixed_wing_dt)
     model = PPO.load(save_name)
-    trajectory, _ = evaluate_wing(model, env, max_steps, nr_iters=40, render=0)
+    trajectory, _ = evaluate_wing(model, env, max_steps, nr_iters=30, render=0)
     # plot
     plot_wing_pos_3d(
         trajectory, [env.target_point], save_path=save_name + "_plot.png"
@@ -387,18 +408,21 @@ def test_marios():
 
 if __name__ == "__main__":
     # ------------------ CartPole -----------------------
-    # save_name = "trained_models/cartpole/reinforcement_learning/lesssteps_finetuned"
-    # load_name = "trained_models/cartpole/reinforcement_learning/smallvel/rl_final"
-    # scenario = {"wind": .5}
+    # save_name = "trained_models/cartpole/reinforcement_learning/img_finetune/"
+    # load_name = "trained_models/cartpole/reinforcement_learning/img_bl/rl_150001_steps"
+    # scenario = {"contact": 1}
     # train_cartpole(save_name, load_model=load_name, modified_params=scenario)
     # test_rl_cartpole(
-    #     os.path.join(save_name, "rl_final"), modified_params=scenario
+    #     os.path.join(save_name, "rl_230001_steps"), modified_params=scenario
+    # )
+    # test_ours_cartpole(
+    #     "trained_models/cartpole/con_seq_500", modified_params=scenario
     # )
 
     # ------------------ Fixed wing drone -----------------------
-    load_name = "trained_models/wing/reinforcement_final/rl_150000_steps"
+    load_name = "trained_models/wing/reinforcement_bl_new/rl_final"
     # # "trained_models/wing/reinforcement_learning/final/ppo_50"
-    save_name = "trained_models/wing/reinforcement_veldrag_200"
+    save_name = "trained_models/wing/reinforcement_veldrag_bl_new"
     scenario = {"vel_drag_factor": .3}
     train_wing(save_name, load_model=load_name, modified_params=scenario)
     # # test_ours_wing(
@@ -408,15 +432,15 @@ if __name__ == "__main__":
     # evaluate_wing(render=1)
 
     # ------------------ Quadrotor -----------------------
-    # load_path = "trained_models/quad/reinforcement_learning/best_2speed/rl_final"
-    # # # # "trained_models/quad/reinforcement_learning/best_2speed/rl_final"
-    # save_name = "trained_models/quad/reinforcement_learning/finetuned"
+    # load_path = None
+    # # "trained_models/quad/reinforcement_learning/best_2speed/rl_final"
+    # save_name = "trained_models/quad/reinforcement_learning/lowdt"
 
-    # scenario = {"translational_drag": np.array([.3, .3, .3])}
-    # # test_ours_quad(
-    # #     "trained_models/quad/current_model/", modified_params=scenario
-    # # )
-    # train_quad(save_name, load_model=load_path, modified_params=scenario)
+    # scenario = {}  # {"translational_drag": np.array([.3, .3, .3])}
+    # test_ours_quad(
+    #     "trained_models/quad/current_model/", modified_params=scenario
+    # )
+    # train_quad(save_name, load_model=None, modified_params=scenario)
     # test_rl_quad(
     #     os.path.join(save_name, "rl_280000_steps"), modified_params=scenario
     # )

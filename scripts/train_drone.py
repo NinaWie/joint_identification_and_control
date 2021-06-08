@@ -4,6 +4,7 @@ import time
 import numpy as np
 import torch
 import torch.nn.functional as F
+import argparse
 
 from neural_control.dataset import QuadDataset
 from train_base import TrainBase
@@ -13,6 +14,7 @@ from neural_control.dynamics.quad_dynamics_flightmare import (
     FlightmareDynamics
 )
 from neural_control.dynamics.quad_dynamics_trained import LearntQuadDynamics
+from neural_control.dynamics.learnt_dynamics import LearntDynamics
 from neural_control.controllers.network_wrapper import NetworkWrapper
 from neural_control.environments.drone_env import QuadRotorEnvBase
 from evaluate_drone import QuadEvaluator
@@ -63,8 +65,6 @@ class TrainDrone(TrainBase):
                 config_path = os.path.join(base_model, "param_dict.json")
             with open(config_path, "r") as outfile:
                 previous_parameters = json.load(outfile)
-            data_std = np.array(previous_parameters["std"]).astype(float)
-            data_mean = np.array(previous_parameters["mean"]).astype(float)
             if previous_parameters["dt"] != self.delta_t:
                 raise RuntimeWarning(
                     f"dt difference: {previous_parameters['dt']} in loaded\
@@ -88,12 +88,6 @@ class TrainDrone(TrainBase):
                 self.action_dim * self.nr_actions,
                 conv=1
             )
-            (data_std, data_mean) = (self.state_data.std, self.state_data.mean)
-
-        # save std for normalization during test time
-        self.config["std"] = data_std.tolist()
-        self.config["mean"] = data_mean.tolist()
-
         # update the used parameters:
         self.config["horizon"] = self.nr_actions
         self.config["ref_length"] = self.nr_actions
@@ -146,9 +140,9 @@ class TrainDrone(TrainBase):
 
         # Backprop
         loss.backward()
-        for name, param in self.net.named_parameters():
-            if param.grad is not None:
-                self.writer.add_histogram(name + ".grad", param.grad)
+        # for name, param in self.net.named_parameters():
+        #     if param.grad is not None:
+        #         self.writer.add_histogram(name + ".grad", param.grad)
         self.optimizer_controller.step()
         return loss
 
@@ -156,22 +150,37 @@ class TrainDrone(TrainBase):
         # EVALUATE
         controller = NetworkWrapper(self.net, self.state_data, **self.config)
 
+        self.state_data.num_self_play = 0
         print("--------- eval in trained simulator (D1 modified) --------")
-        evaluator = QuadEvaluator(controller, self.eval_env, **self.config)
+        eval_dyn = (
+            self.train_dynamics
+            if isinstance(self.train_dynamics, LearntDynamics) else None
+        )
+        evaluator = QuadEvaluator(
+            controller, self.eval_env, eval_dyn=eval_dyn, **self.config
+        )
         with torch.no_grad():
-            suc_mean, suc_std = evaluator.run_eval(
-                "rand", nr_test=10, **self.config
+            res_eval = evaluator.run_eval("rand", nr_test=10, **self.config)
+
+        # logging
+        if self.config["return_div"]:
+            suc_mean, suc_std = (res_eval["mean_div"], res_eval["std_div"])
+        else:
+            suc_mean, suc_std = (
+                res_eval["mean_stable"], res_eval["std_stable"]
             )
+        for key, val in res_eval.items():
+            self.results_dict[key].append(val)
         self.results_dict["eval_in_d1_trained_mean"].append(suc_mean)
         self.results_dict["eval_in_d1_trained_std"].append(suc_std)
 
-        if epoch == 0 and self.config["train_dyn_for_epochs"] >= 0:
-            self.tmp_num_selfplay = self.state_data.num_self_play
-            self.state_data.num_self_play = 0
-            print("stop self play")
-        if epoch == self.config["train_dyn_for_epochs"]:
-            self.state_data.num_self_play = self.tmp_num_selfplay
-            print("start self play to", self.tmp_num_selfplay)
+        # if epoch == 0 and self.config["train_dyn_for_epochs"] >= 0:
+        #     self.tmp_num_selfplay = self.state_data.num_self_play
+        #     self.state_data.num_self_play = 0
+        #     print("stop self play")
+        # if epoch == self.config["train_dyn_for_epochs"]:
+        #     self.state_data.num_self_play = self.tmp_num_selfplay
+        #     print("start self play to", self.tmp_num_selfplay)
 
         ### code to evaluate also in D1 and D2
         ### need to ensure that eval_env is with train_dynamics
@@ -201,7 +210,7 @@ class TrainDrone(TrainBase):
         # self.results_dict["eval_in_d1_std"].append(suc_std)
         # self.state_data.num_self_play = tmp_self_play
 
-        self.sample_new_data(epoch)
+        # self.sample_new_data(epoch)
 
         # increase threshold
         if epoch % 5 == 0 and self.config["thresh_div"] < self.thresh_div_end:
@@ -213,6 +222,28 @@ class TrainDrone(TrainBase):
 
         self.results_dict["thresh_div"].append(self.config["thresh_div"])
         return suc_mean, suc_std
+
+    def collect_data(self, allocate=False, random=False, use_mpc=False):
+        print("COLLECT DATA")
+        self.state_data.num_self_play = self.tmp_num_selfplay
+        if allocate and self.current_epoch > 0:
+            self.state_data.allocate_self_play(self.tmp_num_selfplay)
+
+        controller = NetworkWrapper(self.net, self.state_data, **self.config)
+        evaluator = QuadEvaluator(controller, self.eval_env, **self.config)
+
+        if random:
+            print("USE RANDOM")
+            evaluator.use_random_actions = True
+        if use_mpc:
+            print("USE MPC")
+            from neural_control.controllers.mpc import MPC
+            evaluator.use_mpc = MPC(horizon=10, dt=.1, dynamics="flightmare")
+        prev_eval_counter = self.state_data.eval_counter
+        with torch.no_grad():
+            while self.state_data.eval_counter < self.config[
+                "self_play"] + prev_eval_counter:
+                evaluator.run_eval("rand", nr_test=5, **self.config)
 
 
 def train_control(base_model, config):
@@ -243,6 +274,7 @@ def train_dynamics(base_model, config, trainable_params=1):
     """
     modified_params = config["modified_params"]
     config["sample_in"] = "train_env"
+    # config["sample_in"] = "eval_env"
 
     config["thresh_div_start"] = 1
     config["thresh_div_end"] = 3
@@ -258,6 +290,15 @@ def train_dynamics(base_model, config, trainable_params=1):
     # make sure not to resample during dynamics training
     config["resample_every"] = config["train_dyn_for_epochs"] + 1
 
+    # config["epoch_size"] = 1
+    # config["self_play"] = 200
+    # config["min_epochs"] = 5
+    # config["eval_var_dyn"] = "mean_trained_delta"
+    # config["eval_var_con"] = "mean_div"
+    # config["min_epochs"] = 5
+    # config["suc_up_down"] = -1
+    # config["return_div"] = 1
+
     # train environment is learnt
     train_dynamics = LearntQuadDynamics(trainable_params=trainable_params)
     eval_dynamics = FlightmareDynamics(modified_params)
@@ -267,6 +308,7 @@ def train_dynamics(base_model, config, trainable_params=1):
 
     # RUN
     trainer.run_dynamics(config)
+    # trainer.run_iterative(config)
 
 
 def train_sampling_finetune(base_model, config):
@@ -295,28 +337,60 @@ if __name__ == "__main__":
     with open("configs/quad_config.json", "r") as infile:
         config = json.load(infile)
 
-    ##### For finetune dynamics
-    mod_params = {'translational_drag': np.array([0.3, 0.3, 0.3])}
-    config["modified_params"] = mod_params
-    # define whether the parameters are trainable
-    trainable_params = 0
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-t",
+        "--todo",
+        type=str,
+        default="pretrain",
+        help="what to do - pretrain, adapt or finetune"
+    )
+    parser.add_argument(
+        "-m",
+        "--model_load",
+        type=str,
+        default="trained_models/quad/current_model",
+        help="Model to start with (default: None - from scratch)"
+    )
+    parser.add_argument(
+        "-s",
+        "--save_name",
+        type=str,
+        default="test",
+        help="Name under which the trained model shall be saved"
+    )
+    parser.add_argument(
+        "-p",
+        "--params_trainable",
+        type=bool,
+        default=False,
+        help="Train the parameters of \hat{f} (1) or only residual (0)"
+    )
+    args = parser.parse_args()
 
-    baseline_model = "trained_models/quad/current_model"
-    # config["thresh_div_start"] = 1
-    # config["thresh_stable_start"] = 1.5
+    baseline_model = args.model_load
+    trainable_params = args.params_trainable
+    todo = args.todo
+    config["save_name"] = args.save_name
 
-    config["save_name"] = "final_dyn_woparams"
-
-    config["nr_epochs"] = 400
-
-    # TRAIN
-    # train_control(baseline_model, config)
-    train_dynamics(baseline_model, config, trainable_params)
-    # train_sampling_finetune(baseline_model, config)
-    # FINE TUNING parameters:
-    # self.thresh_div_start = 1
-    # self.self_play = 1.5
-    # self.epoch_size = 500
-    # self.max_steps = 1000
-    # self.self_play_every_x = 5
-    # self.learning_rate = 0.0001
+    if todo == "pretrain":
+        # No baseline model used
+        baseline_model = None
+        train_control(baseline_model, config)
+    elif todo == "adapt":
+        # For finetune dynamics
+        mod_params = {'translational_drag': np.array([0.3, 0.3, 0.3])}
+        config["modified_params"] = mod_params
+        # Define whether the parameters are trainable
+        trainable_params = args.params_trainable
+        print(
+            f"start from pretrained model {args.model_load}, consider scenario\
+                {mod_params}, train also parameters - {trainable_params}\
+                save adapted dynamics and controller at {args.save_name}"
+        )
+        # Run
+        train_dynamics(baseline_model, config, trainable_params)
+    elif todo == "finetune":
+        config["thresh_div_start"] = 1
+        config["thresh_stable_start"] = 1.5
+        train_control(baseline_model, config)

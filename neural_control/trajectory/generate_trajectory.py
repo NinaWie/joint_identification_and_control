@@ -7,6 +7,8 @@ import casadi as cs
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy.spatial.transform import Rotation as R
+from scipy.spatial.transform import Slerp
 from scipy import interpolate
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import ExpSineSquared
@@ -589,15 +591,147 @@ def load_prepare_trajectory(base_dir, dt, speed_factor, test=False):
     return transformed_ref
 
 
+config = {
+    "duration": 10,
+    "train_split": .9,
+    "freq_x": 0.9,
+    "freq_y": 0.7,
+    "freq_z": 0.7,
+    "out_dir": "data/traj_data_1/",
+}
+
+
+def export(trajectory, t_vec, take_every_nth, output_fn):
+    # save trajectory to csv
+    # trajectory = [pos_np, att_np, vel_np, rate_np, alin_np, arot_np]
+    df_traj = pd.DataFrame()
+    df_traj['t'] = t_vec[::take_every_nth]
+    df_traj['p_x'] = trajectory[::take_every_nth, 0]
+    df_traj['p_y'] = trajectory[::take_every_nth, 1]
+    df_traj['p_z'] = trajectory[::take_every_nth, 2]
+
+    df_traj['q_w'] = trajectory[::take_every_nth, 3]
+    df_traj['q_x'] = trajectory[::take_every_nth, 4]
+    df_traj['q_y'] = trajectory[::take_every_nth, 5]
+    df_traj['q_z'] = trajectory[::take_every_nth, 6]
+
+    df_traj['v_x'] = trajectory[::take_every_nth, 7]
+    df_traj['v_y'] = trajectory[::take_every_nth, 8]
+    df_traj['v_z'] = trajectory[::take_every_nth, 9]
+
+    df_traj['w_x'] = trajectory[::take_every_nth, 10]
+    df_traj['w_y'] = trajectory[::take_every_nth, 11]
+    df_traj['w_z'] = trajectory[::take_every_nth, 12]
+
+    # df_traj['a_lin_x'] = trajectory[::take_every_nth, 13]
+    # df_traj['a_lin_y'] = trajectory[::take_every_nth, 14]
+    # df_traj['a_lin_z'] = trajectory[::take_every_nth, 15]
+
+    # df_traj['a_rot_x'] = trajectory[::take_every_nth, 16]
+    # df_traj['a_rot_y'] = trajectory[::take_every_nth, 17]
+    # df_traj['a_rot_z'] = trajectory[::take_every_nth, 18]
+
+    # df_traj['u_1'] = 0
+    # df_traj['u_2'] = 0
+    # df_traj['u_3'] = 0
+    # df_traj['u_4'] = 0
+
+    # # Sihao needs jerk and snap
+    # df_traj['jerk_x'] = 0
+    # df_traj['jerk_y'] = 0
+    # df_traj['jerk_z'] = 0
+
+    # df_traj['snap_x'] = 0
+    # df_traj['snap_y'] = 0
+    # df_traj['snap_z'] = 0
+
+    print("Saving trajectory to [%s]." % output_fn)
+    df_traj.to_csv(output_fn, index=False)
+
+
+def upsample(trajectory):
+    # to twice the speed
+    # np.save("data/orig_traj.npy", trajectory)
+    new_trajectory = np.zeros((2 * len(trajectory), 13))
+    # np.set_printoptions(suppress=True, precision=3)
+
+    # quaternion
+    # norm = np.linalg.norm(trajectory[:, 3:7], axis=1)
+    # normed_quats = trajectory[:, 3:7] / np.expand_dims(norm, 1)
+
+    # half_quats = np.sqrt(np.absolute(normed_quats))
+    # half_norm = np.linalg.norm(half_quats, axis=1)
+    # normed_half_quats = half_quats / np.expand_dims(half_norm, 1)
+
+    # signed_half_quats = np.sign(normed_quats) * normed_half_quats
+    from pyquaternion import Quaternion
+    quats = [
+        Quaternion(trajectory[i, 3:7])**(0.5) for i in range(len(trajectory))
+    ]
+    quats_as_array = np.array([list(quat) for quat in quats])
+
+    key_rots = R.from_quat(quats_as_array)
+    key_times = np.arange(len(key_rots))
+    sample_times = np.arange(len(new_trajectory)) * .5
+    slerp = Slerp(key_times, key_rots)
+    interp_rots = slerp(sample_times[:-1])
+    new_quats = interp_rots.as_quat()
+    new_trajectory[:-1, 3:7] = new_quats
+    new_trajectory[-1, 3:7] = new_quats[-1]
+
+    for i in range(len(trajectory) - 1):
+        # pos
+        new_trajectory[i * 2, :3] = trajectory[i, :3]
+        new_trajectory[
+            i * 2 +
+            1, :3] = (0.5 * trajectory[i, :3] + 0.5 * trajectory[i + 1, :3])
+        # vel
+        new_trajectory[i * 2, 7:10] = trajectory[i, 7:10] / 2
+        new_trajectory[
+            i * 2 + 1,
+            7:10] = 0.25 * (trajectory[i, 7:10] + trajectory[i + 1, 7:10])
+        # body rates
+        new_trajectory[i * 2, 10:] = trajectory[i, 10:13] / 2
+        new_trajectory[
+            i * 2 + 1,
+            10:] = 0.25 * (trajectory[i, 10:13] + trajectory[i + 1, 10:13])
+    return new_trajectory
+
+
+def make_csvs_rl(num=3, out_path="data/csvs_rl"):
+    if not os.path.exists(out_path):
+        os.makedirs(out_path)
+    base_dir = "data/traj_data_1/test"
+    use_files = os.listdir(base_dir)[:num]
+    seeds = [int(fn[5:-4]) for fn in use_files]
+    print("use seeds", seeds)
+
+    quad = Quad(10.0)
+    # the arena bounds
+    arena_bound_max = np.array([6.5, 10, 10])
+    arena_bound_min = np.array([-6.5, -10, 0])
+    for seed in seeds:
+        trajectory, _, t_vec = compute_random_trajectory(
+            quad,
+            arena_bound_max,
+            arena_bound_min,
+            config["freq_x"],
+            config["freq_y"],
+            config["freq_z"],
+            config["duration"],
+            0.01,
+            seed=seed
+        )
+        upsampled_traj = upsample(trajectory)
+        new_t_vec = np.linspace(0.0, 20, int(20 / 0.01), endpoint=False)
+        export(
+            upsampled_traj, new_t_vec, 1,
+            os.path.join(out_path,
+                         str(seed) + ".csv")
+        )
+
+
 def make_dataset():
-    config = {
-        "duration": 10,
-        "train_split": .9,
-        "freq_x": 0.9,
-        "freq_y": 0.7,
-        "freq_z": 0.7,
-        "out_dir": "data/traj_data_1/",
-    }
 
     cutoff = int(10000 * config["train_split"])
     rand_nums = np.random.permutation(10000)
@@ -644,6 +778,7 @@ def make_dataset():
 
 
 if __name__ == '__main__':
-    make_dataset()
+    make_csvs_rl(num=20)
+    # make_dataset()
     # # Test loading function
     # load_prepare_trajectory("data/traj_data_1/", 0.1, 0.6, test=1)

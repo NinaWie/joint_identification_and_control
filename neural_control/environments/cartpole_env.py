@@ -7,11 +7,18 @@ import logging
 import math
 import numpy as np
 import torch
+
 import time
 logger = logging.getLogger(__name__)
-from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
+from neural_control.dynamics.cartpole_dynamics import (
+    CartpoleDynamics, ImageCartpoleDynamics, SequenceCartpoleDynamics
+)
 try:
-    from . import cartpole_rendering as rendering
+    import cv2
+except ImportError:
+    print("Warning: cv2 not installed, install for cartpole image experiments")
+try:
+    import neural_control.environments.cartpole_rendering as rendering
 except:
     pass
 
@@ -22,12 +29,16 @@ class CartPoleEnv():
         'video.frames_per_second': 50
     }
 
-    def __init__(self, dynamics, dt=0.02):
+    def __init__(self, dynamics, dt, thresh_div=.21):
         self.dynamics = dynamics
+        self.is_img_dyn = isinstance(self.dynamics, ImageCartpoleDynamics)
+        self.is_seq_dyn = isinstance(self.dynamics, SequenceCartpoleDynamics)
+
         self.dt = dt
 
         # Angle at which to fail the episode
-        self.theta_thresh = 12 * 2 * math.pi / 360
+        # self.theta_thresh = 12 * 2 * math.pi / 360
+        self.thresh_div = thresh_div
         self.x_threshold = 2.4
 
         # Angle limit set to 2 * theta_threshold_radians so failing observation
@@ -41,13 +52,27 @@ class CartPoleEnv():
 
     def is_upright(self):
         theta = self.state[2]
-        return theta > -self.theta_thresh and theta < self.theta_thresh
+        return theta > -self.thresh_div and theta < self.thresh_div
 
-    def _step(self, action, is_torch=True):
+    def _step(
+        self, action, image=None, state_action_buffer=None, is_torch=True
+    ):
         torch_state = torch.tensor([list(self.state)])
         if not is_torch:
             action = torch.tensor([action])
-        self.state = self.dynamics(torch_state, action, dt=self.dt)[0].numpy()
+        if self.is_img_dyn:
+            next_torch_state = self.dynamics(
+                torch_state, image, action, dt=self.dt
+            )
+        elif self.is_seq_dyn:
+            next_torch_state = self.dynamics(
+                torch_state, state_action_buffer, action, dt=self.dt
+            )
+        else:
+            next_torch_state = self.dynamics(
+                torch_state.float(), action, dt=self.dt
+            )
+        self.state = next_torch_state[0].numpy()
         # stay in bounds with theta
         theta = self.state[2]
         if theta > np.pi:
@@ -71,9 +96,11 @@ class CartPoleEnv():
         """
         reset state to a position of the pole close to the optimal upright pos
         """
-        self.state = np.zeros(4)
-        # upright angle
-        self.state[2] = (np.random.rand(1) - .5) * .2
+        # randomize state between -0.25 and 0.25
+        self.state = (np.random.rand(4) - .5) * .3
+        # randomize theta between 0.15 max
+        self.state[2] = (np.random.rand(1) - .5) * .1
+        return self.state
 
     def _render(self, mode='human', close=False):
         """
@@ -137,7 +164,11 @@ class CartPoleEnv():
 
 
 def construct_states(
-    num_data, save_path="models/minimize_x/state_data.npy", **kwargs
+    num_data,
+    dt,
+    save_path="models/minimize_x/state_data.npy",
+    thresh_div=.21,
+    **kwargs
 ):
     # define parts of the dataset:
     randomized_runs = .8
@@ -146,7 +177,7 @@ def construct_states(
 
     # Sample states
     dyn = CartpoleDynamics()
-    env = CartPoleEnv(dyn)
+    env = CartPoleEnv(dyn, dt, thresh_div=thresh_div)
     data = []
     # randimized runs
     # while len(data) < num_data * randomized_runs:
@@ -160,10 +191,10 @@ def construct_states(
     # # after randomized runs: run balancing
     while len(data) < num_data:
         # only theta between -0.5 and 0.5
-        env._reset()
-        env.state[2] = (np.random.rand(1) - .5) * .2
+        env.state = (np.random.rand(4) - .5) * .1
+        #  env.state[2] = (np.random.rand(1) - .5) * .2
         while env.is_upright():
-            action = np.random.rand() * 2 - 0.5
+            action = np.random.rand() - 0.5
             state = env._step(action, is_torch=False)
             data.append(state)
         env._reset()
@@ -196,24 +227,41 @@ def construct_states(
     return data[:num_data]
 
 
-if __name__ == "__main__":
-    data = np.load("../trained_models/minimize_x_best_model/state_data.npy")
-    env = CartPoleEnv()
-    pick_random_starts = np.random.permutation(len(data))[:100]
-    for i in pick_random_starts:
-        env.state = data[i]
-        for j in range(10):
-            env._step(np.random.rand(1) - .5)
-            env._render()
-            time.sleep(.1)
-        time.sleep(1)
-        # sign = np.sign(np.random.rand() - 0.5)
-        # if i % 2 == 0:
-        #     sign = -1
-        # else:
-        #     sign = 1
+def preprocess_img(image, img_height, img_width):
+    resized = cv2.resize(
+        np.mean(image, axis=2),
+        dsize=(img_height, img_width),
+        interpolation=cv2.INTER_LINEAR
+    )
+    return ((255 - resized) > 0).astype(float)
 
-        # USUAL pipeline
-        # action = 2 * (np.random.rand() - 0.5)
-        # out = env._step(action)
-        # print("action", action, "out:", out)
+
+def make_state_to_img_dataset(dataset_size=2000):
+    dyn = CartpoleDynamics()
+    env = CartPoleEnv(dyn, dt=0.1)
+
+    min_theta, max_theta = (-0.3, 0.3)
+    theta_range = max_theta - min_theta
+    img_width_base = 300 // 2
+    x_bound = 2.4
+    img_des_half = 120 // 2
+    min_x_diff, max_x_diff = (-1, 1)
+    x_range = max_x_diff - min_x_diff
+
+    inputs = np.zeros((dataset_size, 2))
+    images = []
+    for i in range(dataset_size):
+        random_theta = np.random.rand() * theta_range + min_theta
+        random_x = np.random.rand() * theta_range + min_theta
+        inputs[i] = [random_x, random_theta]
+        env.state = np.array([random_x, 0, random_theta, 0])
+        img = preprocess_img(env._render(mode="rgb_array"), 300,
+                             200)[75:175, img_width_base -
+                                  img_des_half:img_width_base + img_des_half]
+
+        images.append(img)
+    np.savez("data/state_to_img.npz", inputs, np.array(images))
+
+
+if __name__ == "__main__":
+    make_state_to_img_dataset(2000)
