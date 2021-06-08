@@ -312,7 +312,7 @@ if __name__ == "__main__":
         )
     else:
         load_dynamics = None
-        # 'trained_models/wing/final_dyn_veldrag_wparams/dynamics_model'
+        # load_dynamics = 'trained_models/wing/dyn_veldrag_tanh/dynamics_model'
         controller = MPC(
             horizon=20,
             dt=0.1,

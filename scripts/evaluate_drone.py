@@ -444,7 +444,11 @@ if __name__ == "__main__":
     if model_path.split(os.sep)[-1] == "mpc":
         # mpc parameters:
         params = {"horizon": 10, "dt": .1}
-        controller = MPC(dynamics=DYNAMICS, **params)
+        load_dynamics = None
+        # load_dynamics = 'trained_models/quad/dyn_tanh_woparams/dynamics_model'
+        controller = MPC(
+            dynamics=DYNAMICS, load_dynamics=load_dynamics, **params
+        )
     # Neural controller
     else:
         controller, params = load_model(model_path, epoch=args.epoch)
@@ -483,10 +487,11 @@ if __name__ == "__main__":
     # dyn_trained.load_state_dict(
     #     torch.load(
     #         os.path.join(
-    #             "trained_models/quad/iterative_seq_dyn", "dynamics_model"
+    #             "trained_models/quad/iterative_seq_dyn_mpc",
+    #             "dynamics_model_1000"
     #         )
     #     ),
-    #     strict=False
+    #     strict=True
     # )
     # EVALUATOR
     evaluator = QuadEvaluator(
@@ -495,7 +500,7 @@ if __name__ == "__main__":
         test_time=1,
         eval_dyn=dyn_trained,
         is_seq=is_seq,
-        # buffer_len=5,
+        buffer_len=5,
         **params
     )
 

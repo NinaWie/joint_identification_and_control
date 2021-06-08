@@ -7,7 +7,9 @@ import casadi as ca
 import torch.nn as nn
 import torch
 
-from neural_control.dynamics.learnt_dynamics import LearntDynamics
+from neural_control.dynamics.learnt_dynamics import (
+    LearntDynamics, LearntDynamicsMPC
+)
 
 # target state means that theta is zero --> only third position matters
 target_state = 0  # torch.from_numpy(np.array([0, 0, 0, 0]))
@@ -146,7 +148,7 @@ class LearntCartpoleDynamics(LearntDynamics, CartpoleDynamics):
         return self.simulate_cartpole(state, action, dt)
 
 
-class SequenceCartpoleDynamics(LearntDynamics, CartpoleDynamics):
+class SequenceCartpoleDynamics(LearntDynamicsMPC, CartpoleDynamics):
 
     def __init__(self, buffer_length=3):
         CartpoleDynamics.__init__(self)

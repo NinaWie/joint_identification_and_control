@@ -373,10 +373,19 @@ class SequenceFixedWingDynamics(LearntDynamics, FixedWingDynamics):
 
 class FixedWingDynamicsMPC(FixedWingDynamics):
 
-    def __init__(self, modified_params={}):
+    def __init__(self, modified_params={}, use_residual=False):
 
         # change the config accordingly
         super().__init__(modified_params)
+
+        self.use_residual = use_residual
+        if use_residual and "linear_state_1.weight" in modified_params:
+            self.weight1 = modified_params["linear_state_1.weight"]
+            self.bias1 = modified_params["linear_state_1.bias"]
+            self.weight2 = modified_params["linear_state_2.weight"]
+        elif len(modified_params) > 0:
+            print("Using identified system but only parameters, no res")
+            self.use_residual = False
 
         # if I is loaded, it's not in the config
         if "I" in modified_params.keys():
@@ -542,7 +551,16 @@ class FixedWingDynamicsMPC(FixedWingDynamics):
             eul_psi_dot, omega_dot[0], omega_dot[1], omega_dot[2]
         )
 
-        X = x_state + dt * x_dot
+        if self.use_residual:
+            state_action = ca.vertcat(x_state, u_control)
+            residual_state_1 = ca.tanh(
+                self.weight1 @ state_action + self.bias1
+            )
+            residual_state = self.weight2 @ residual_state_1
+        else:
+            residual_state = 0
+
+        X = x_state + dt * x_dot + residual_state
 
         F = ca.Function('F', [x_state, u_control], [X], ['x', 'u'], ['ode'])
         return F

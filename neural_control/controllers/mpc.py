@@ -186,7 +186,7 @@ class MPC(object):
             dyn = SimpleDynamicsMPC()
             F = dyn.drone_dynamics_simple(self._dt)
         elif self.dynamics_model == "flightmare":
-            dyn = FlightmareDynamicsMPC()
+            dyn = FlightmareDynamicsMPC(self.modified_dynamics)
             F = dyn.drone_dynamics_flightmare(self._dt)
         elif self.dynamics_model == "fixed_wing_2D":
             F = fixed_wing_dynamics_mpc(self._dt)
