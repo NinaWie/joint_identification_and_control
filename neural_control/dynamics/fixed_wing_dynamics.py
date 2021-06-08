@@ -6,7 +6,9 @@ import os
 import casadi as ca
 from pathlib import Path
 
-from neural_control.dynamics.learnt_dynamics import LearntDynamics
+from neural_control.dynamics.learnt_dynamics import (
+    LearntDynamics, LearntDynamicsMPC
+)
 
 # lower and upper bounds:
 alpha_bound = float(10 / 180 * np.pi)
@@ -34,6 +36,8 @@ class FixedWingDynamics:
 
         # pi
         self.pi = np.pi
+        # self.reset_wind()
+        self.timestamp = np.random.rand() * np.pi * 2
 
         # update with modified parameters
         self.cfg.update(modified_params)
@@ -229,11 +233,21 @@ class FixedWingDynamics:
             torch.unsqueeze(vel, 2)
         )
 
+        if "wind" in self.cfg and self.cfg["wind"] != 0:
+            wind_vec_world = torch.zeros(3)
+            wind_vec_world[1] = self.cfg["wind"] * (np.cos(self.timestamp) + 1)
+            wind_drag = torch.matmul(body_to_inertia, wind_vec_world)
+            self.timestamp += 0.05
+            # print(wind_vec_world)
+            # print(wind_drag.size())
+        else:
+            wind_drag = 0
+
         # # Body fixed accelerations
         # see Small Unmanned Aircraft, Beard et al., 2012, p.36
         uvw_dot = (1 / self.cfg["mass"]) * f_xyz[:, :, 0] - torch.cross(
             omega, vel, dim=1
-        ) - self.cfg["vel_drag_factor"] * vel
+        ) - self.cfg["vel_drag_factor"] * vel + wind_drag
 
         # # Change in pitch attitude (change in euler angles)
         # see Small Unmanned Aircraft, Beard et al., 2012, p.36
@@ -338,12 +352,40 @@ class LearntFixedWingDynamics(LearntDynamics, FixedWingDynamics):
         return self.simulate_fixed_wing(state, action, dt)
 
 
+class SequenceFixedWingDynamics(LearntDynamics, FixedWingDynamics):
+
+    def __init__(self, buffer_length=3):
+        FixedWingDynamics.__init__(self)
+        super(SequenceFixedWingDynamics, self).__init__(
+            (12 + 4) * buffer_length, 4, out_state_size=12, std=0.001
+        )
+
+    def simulate(self, state, action, dt):
+        return self.simulate_fixed_wing(state, action, dt)
+
+    def forward(self, state, state_action_buffer, action, dt):
+        # run through normal simulator f hat
+        new_state = self.simulate(state, action, dt)
+        # run through residual network delta
+        added_new_state = self.state_transformer(state_action_buffer, action)
+        return new_state + added_new_state
+
+
 class FixedWingDynamicsMPC(FixedWingDynamics):
 
-    def __init__(self, modified_params={}):
+    def __init__(self, modified_params={}, use_residual=False):
 
         # change the config accordingly
         super().__init__(modified_params)
+
+        self.use_residual = use_residual
+        if use_residual and "linear_state_1.weight" in modified_params:
+            self.weight1 = modified_params["linear_state_1.weight"]
+            self.bias1 = modified_params["linear_state_1.bias"]
+            self.weight2 = modified_params["linear_state_2.weight"]
+        elif len(modified_params) > 0:
+            print("Using identified system but only parameters, no res")
+            self.use_residual = False
 
         # if I is loaded, it's not in the config
         if "I" in modified_params.keys():
@@ -509,7 +551,16 @@ class FixedWingDynamicsMPC(FixedWingDynamics):
             eul_psi_dot, omega_dot[0], omega_dot[1], omega_dot[2]
         )
 
-        X = x_state + dt * x_dot
+        if self.use_residual:
+            state_action = ca.vertcat(x_state, u_control)
+            residual_state_1 = ca.tanh(
+                self.weight1 @ state_action + self.bias1
+            )
+            residual_state = self.weight2 @ residual_state_1
+        else:
+            residual_state = 0
+
+        X = x_state + dt * x_dot + residual_state
 
         F = ca.Function('F', [x_state, u_control], [X], ['x', 'u'], ['ode'])
         return F

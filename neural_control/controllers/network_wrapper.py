@@ -38,20 +38,35 @@ class NetworkWrapper:
         # four control signals
         self.action_dim = 4
 
-    def predict_actions(self, current_np_state, ref_states):
+    def predict_actions(
+        self,
+        current_np_state,
+        ref_states,
+        timestamp=None,
+        is_seq=0,
+        hist_conv=0
+    ):
         """
         Predict an action for the current state. This function is used by all
         evaluation functions
         """
         # determine whether we also add the sample to our train data
         add_to_dataset = (self.action_counter + 1) % self.take_every_x == 0
+        if (timestamp
+            is not None) and (np.abs(np.sin(timestamp)) - 0.5 < 0.05):
+            add_to_dataset = False
         # preprocess state
         in_state, current_state, ref, _ = self.dataset.get_and_add_eval_data(
-            current_np_state.copy(), ref_states, add_to_dataset=add_to_dataset
+            current_np_state.copy(),
+            ref_states,
+            add_to_dataset=add_to_dataset,
+            timestamp=timestamp
         )
 
         with torch.no_grad():
-            suggested_action = self.net(in_state, ref)
+            suggested_action = self.net(
+                in_state, ref, is_seq=is_seq, hist_conv=hist_conv
+            )
 
             suggested_action = torch.sigmoid(suggested_action)
 
@@ -76,12 +91,17 @@ class FixedWingNetWrapper:
         self.action_counter = 0
         self.take_every_x = take_every_x
 
-    def predict_actions(self, state, ref_state):
+    def predict_actions(self, state, ref_state, timestamp=None):
         # determine whether we also add the sample to our train data
         add_to_dataset = (self.action_counter + 1) % self.take_every_x == 0
-
+        if (timestamp
+            is not None) and (np.abs(np.sin(timestamp)) - 0.5 < 0.05):
+            add_to_dataset = False
         normed_state, _, normed_ref, _ = self.dataset.get_and_add_eval_data(
-            state, ref_state, add_to_dataset=add_to_dataset
+            state,
+            ref_state,
+            add_to_dataset=add_to_dataset,
+            timestamp=timestamp
         )
         with torch.no_grad():
             suggested_action = self.net(normed_state, normed_ref)
@@ -93,6 +113,10 @@ class FixedWingNetWrapper:
 
         self.action_counter += 1
         return suggested_action.detach().numpy()
+
+
+# class WingSequenceWrapper(FixedWingNetWrapper):
+#     def predict_actions(self, state_action_history, ref_state):
 
 
 class CartpoleWrapper:
@@ -141,4 +165,64 @@ class CartpoleWrapper:
         action_seq = torch.reshape(
             action_seq, (-1, self.nr_actions, self.action_dim)
         )
+        return action_seq
+
+
+class CartpoleImageWrapper:
+
+    def __init__(
+        self,
+        net,
+        dataset,
+        nr_actions=3,
+        action_dim=1,
+        self_play=1,
+        take_every_x=5,
+        **kwargs
+    ):
+        self.dataset = dataset
+        self.nr_actions = nr_actions
+        self.action_dim = action_dim
+        self.net = net
+        self.self_play = (self_play == "all" or self_play > 0)
+        self.action_counter = 0
+        self.take_every_x = take_every_x
+
+    def to_torch(self, inp):
+        """
+        To torch tensor
+        """
+        return torch.from_numpy(np.expand_dims(inp, 0)).float()
+
+    def predict_actions(self, img_input, state):
+        # img_input = self.to_torch(image)
+        action_seq = self.net(img_input)
+        action_seq = torch.reshape(
+            action_seq, (-1, self.nr_actions, self.action_dim)
+        )
+        if self.self_play and (
+            self.action_counter + 1
+        ) % self.take_every_x == 0:
+            torch_state = self.to_torch(state)
+            self.dataset.add_data(img_input, torch_state, action_seq[:, 0])
+
+        self.action_counter += 1
+        return action_seq
+
+
+class SequenceCartpoleWrapper(CartpoleImageWrapper):
+
+    def predict_actions(self, state_buffer, action_buffer, network_input):
+
+        action_seq = self.net(network_input)
+        action_seq = torch.reshape(
+            action_seq, (-1, self.nr_actions, self.action_dim)
+        )
+        if self.self_play and (
+            self.action_counter + 1
+        ) % self.take_every_x == 0:
+            self.dataset.add_data(
+                state_buffer, action_buffer, action_seq[:, 0]
+            )
+        self.action_counter += 1
         return action_seq

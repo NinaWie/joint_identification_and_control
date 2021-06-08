@@ -29,7 +29,10 @@ except ImportError:
             pass
 
 
-from neural_control.dynamics.learnt_dynamics import LearntDynamics
+from neural_control.dynamics.learnt_dynamics import (
+    LearntDynamics, LearntDynamicsMPC
+)
+from neural_control.dynamics.cartpole_dynamics import ImageCartpoleDynamics
 from neural_control.plotting import (
     plot_loss_episode_len, print_state_ref_div
 )
@@ -109,8 +112,8 @@ class TrainBase:
         self.save_model_name = "model_" + system
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
-        else:
-            input("Save directory already exists. Continue?")
+        # else:
+        #     input("Save directory already exists. Continue?")
 
         # dynamics
         self.eval_dynamics = eval_dynamics
@@ -126,8 +129,11 @@ class TrainBase:
 
         if os.path.exists("runs"):
             shutil.rmtree("runs")
-        self.writer = SummaryWriter()
+        # self.writer = SummaryWriter()
         self.log_train_dyn = False
+
+        self.tmp_num_selfplay = self.config["self_play"]
+        self.model_to_train = "controller"  # default is controller
 
     def init_optimizer(self):
         # Init train loader
@@ -143,7 +149,9 @@ class TrainBase:
             lr=self.learning_rate_controller,
             momentum=0.9
         )
-        if isinstance(self.train_dynamics, LearntDynamics):
+        if isinstance(self.train_dynamics, LearntDynamics) or isinstance(
+            self.train_dynamics, ImageCartpoleDynamics
+        ) or isinstance(self.train_dynamics, LearntDynamicsMPC):
             self.log_train_dyn = True
             self.optimizer_dynamics = optim.SGD(
                 self.train_dynamics.parameters(),
@@ -173,7 +181,6 @@ class TrainBase:
         if self.l2_lambda > 0:
             l2_loss = (
                 torch.norm(self.train_dynamics.linear_state_2.weight) +
-                torch.norm(self.train_dynamics.linear_state_2.bias) +
                 torch.norm(self.train_dynamics.linear_state_1.weight) +
                 torch.norm(self.train_dynamics.linear_state_1.bias)
             )
@@ -182,14 +189,14 @@ class TrainBase:
             (next_state_d1 - next_state_d2)**2
         ) + self.l2_lambda * l2_loss
         loss.backward()
-        if self.log_train_dyn:
-            for name, param in self.train_dynamics.named_parameters():
-                if param.grad is not None:
-                    self.writer.add_histogram(name + ".grad", param.grad)
+        # if self.log_train_dyn:
+        #     for name, param in self.train_dynamics.named_parameters():
+        #         if param.grad is not None:
+        #             self.writer.add_histogram(name + ".grad", param.grad)
         self.optimizer_dynamics.step()
 
         self.results_dict["loss_dyn_per_step"].append(loss.item())
-        return loss
+        return torch.sqrt(loss)
 
     def test_dynamics(self):
         test_loss = []
@@ -227,6 +234,16 @@ class TrainBase:
             # order to correctly apply the action
             in_state, current_state, in_ref_state, ref_states = data
 
+            # print()
+            # print("in state")
+            # print(in_state[0])
+            # print("current state")
+            # print(current_state[0])
+            # print("in ref state")
+            # print(in_ref_state[0])
+            # print("ref state")
+            # print(ref_states[0])
+
             actions = self.net(in_state, in_ref_state)
             actions = torch.sigmoid(actions)
             action_seq = torch.reshape(
@@ -234,6 +251,8 @@ class TrainBase:
             )
 
             if train == "controller":
+                # print("train controller")
+                # print(action_seq[0])
                 loss = self.train_controller_model(
                     current_state, action_seq, in_ref_state, ref_states
                 )
@@ -265,7 +284,7 @@ class TrainBase:
         self.results_dict["loss"].append(epoch_loss)
         self.results_dict["trained"].append(train)
         print(f"Loss ({train}): {round(epoch_loss, 2)}")
-        self.writer.add_scalar("Loss/train", epoch_loss)
+        # self.writer.add_scalar("Loss/train", epoch_loss)
         return epoch_loss
 
     def sample_new_data(self, epoch):
@@ -292,7 +311,8 @@ class TrainBase:
             torch.save(
                 self.net,
                 os.path.join(
-                    self.save_path, self.save_model_name + str(epoch)
+                    self.save_path,
+                    self.save_model_name  #  + str(epoch)
                 )
             )
 
@@ -300,11 +320,11 @@ class TrainBase:
         self.results_dict["std_success"].append(suc_std)
 
         # In any case do tensorboard logging
-        for name, param in self.net.named_parameters():
-            self.writer.add_histogram(name, param)
-        self.writer.add_scalar("success_mean", success)
-        self.writer.add_scalar("success_std", suc_std)
-        self.writer.flush()
+        # for name, param in self.net.named_parameters():
+        #     self.writer.add_histogram(name, param)
+        # self.writer.add_scalar("success_mean", success)
+        # self.writer.add_scalar("success_std", suc_std)
+        # self.writer.flush()
 
     def evaluate_model(self, epoch):
         """
@@ -315,18 +335,19 @@ class TrainBase:
         """
         return 0
 
-    def finalize(self):
+    def finalize(self, plot_loss="loss_controller"):
         """
         Save model and plot loss and performance
         """
         torch.save(
-            self.net, os.path.join(self.save_path, self.save_model_name)
+            self.net,
+            os.path.join(self.save_path, self.save_model_name + "_last")
         )
         # plot performance
         plot_loss_episode_len(
             self.results_dict["mean_success"],
             self.results_dict["std_success"],
-            self.results_dict["loss"],
+            self.results_dict[plot_loss],
             save_path=os.path.join(self.save_path, "performance.png")
         )
         # save performance logging
@@ -334,15 +355,23 @@ class TrainBase:
             json.dump(self.results_dict, ofile)
 
         # save dynamics model if applicable
-        if isinstance(self.train_dynamics, LearntDynamics):
+        if isinstance(self.train_dynamics, LearntDynamics) or isinstance(
+            self.train_dynamics, ImageCartpoleDynamics
+        ):
             torch.save(
                 self.train_dynamics.state_dict(),
                 os.path.join(self.save_path, "dynamics_model")
             )
-        self.writer.close()
+        # self.writer.close()
         print("finished and saved.")
 
     def update_curriculum(self, successes):
+        # get max speed
+        max_speed = self.config.get("max_speed", 0.4)
+        if max_speed == self.config["speed_factor"]:
+            # no need to increase anymore
+            return successes
+
         current_possible_steps = 1000 / (
             self.config["speed_factor"] / self.config["delta_t"]
         )
@@ -359,14 +388,25 @@ class TrainBase:
             self.config["thresh_div"] = 0.1
             successes = []
             self.current_score = 0 if self.suc_up_down == 1 else np.inf
+            if max_speed == self.config["speed_factor"]:
+                # from now on measure divergence
+                self.current_score = np.inf
+                self.config["return_div"] = 1
+                self.config["suc_up_down"] = -1
+
         return successes
 
     def run_control(self, config, sampling_based_finetune=False, curriculum=1):
         if curriculum:
-            self.config["speed_factor"] = 0.4
+            self.config["speed_factor"] = 0.2
             successes = []
         try:
             for epoch in range(config["nr_epochs"]):
+                self.current_epoch = epoch
+                # collect new data by self play
+                if epoch % self.config["resample_every"] == 0:
+                    self.collect_data(allocate=False)
+
                 _ = self.evaluate_model(epoch)
 
                 if curriculum:
@@ -383,47 +423,186 @@ class TrainBase:
                     self.results_dict["samples_in_d2"].append(
                         self.state_data.eval_counter
                     )
-                else:
-                    print(
-                        "Data used for training:",
-                        epoch * (self.epoch_size * (1 + self.self_play))
+        except KeyboardInterrupt:
+            pass
+        # Save model
+        self.finalize()
+
+    def run_sequentially(
+        self, config, start_with="dynamics", start_evaluate=0
+    ):
+        # usually the controller is pretrained, so we start with the dynamics
+        self.model_to_train = start_with
+        epoch_counter = 0
+        # minimum number of epochs to train each of them
+        min_epochs = config.get("min_epochs", 3)
+        # if start_with == "controller":
+        #     for param in self.train_dynamics.parameters():
+        #         param.requires_grad = False
+        # Run training
+        try:
+            for epoch in range(config["nr_epochs"]):
+                self.current_epoch = epoch
+                just_switched = 0
+                # SWITCH:
+                # was dynamics, now switching to controller?
+                dyn_check = self.results_dict[self.config["eval_var_dyn"]]
+                if (
+                    self.model_to_train == "dynamics"
+                    and epoch_counter > min_epochs and np.all(
+                        np.array(dyn_check[-min_epochs +
+                                           1:]) > dyn_check[-min_epochs]
                     )
+                ):
+                    print("converged - resample")
+                    epoch_counter = 0
+                    just_switched = 1
+
+                # was controller, now training dynamics
+                con_check = self.results_dict[self.config["eval_var_con"]]
+                if (
+                    self.model_to_train == "controller"
+                    and epoch_counter > min_epochs and np.all(
+                        np.array(con_check[-min_epochs +
+                                           1:]) > con_check[-min_epochs]
+                    )
+                ):
+                    print("converged - resample")
+                    epoch_counter = 0
+                    just_switched = 1
+
+                # If switched to dynamics or beginning: collect new data
+                if epoch == 0 or just_switched:
+                    # or self.model_to_train == "controller"
+                    allocate_new = not (self.model_to_train == "controller")
+                    self.results_dict["samples_in_d2"].append(self.epoch_size)
+                    current_data_size = len(self.state_data)
+                    # save dynamics
+                    if self.model_to_train == "dynamics":
+                        print("saved current dynamics model")
+                        torch.save(
+                            self.train_dynamics.state_dict(),
+                            os.path.join(
+                                self.save_path,
+                                "dynamics_model_" + str(current_data_size)
+                            )
+                        )
+                    self.collect_data(allocate=allocate_new)
+                else:
+                    self.results_dict["samples_in_d2"].append(0)
+
+                print(f"\nEpoch {epoch}")
+                self.run_epoch(train=self.model_to_train)
+
+                # evaluate
+                if epoch >= start_evaluate:
+                    epoch_counter += 1
+                    _ = self.evaluate_model(epoch)
+
         except KeyboardInterrupt:
             pass
         # Save model
         self.finalize()
 
     def run_dynamics(self, config):
+        model_to_train = "dynamics" if config["train_dyn_for_epochs"
+                                              ] > 0 else "controller"
+
+        self.collect_data()
         try:
             for epoch in range(config["nr_epochs"]):
-                _ = self.evaluate_model(epoch)
+                self.epoch = epoch
+                if model_to_train == "controller":
+                    print(f"\nEpoch {epoch}")
+                    _ = self.evaluate_model(epoch)
 
-                # train dynamics as long as
-                # - lower than train_dyn_for_epochs
-                # - alternating or use all?
-                if (
-                    epoch <= config.get("train_dyn_for_epochs", 10)
-                    and epoch % config.get("train_dyn_every", 1) == 0
-                ):
-                    model_to_train = "dynamics"
-                else:
-                    model_to_train = "controller"
-
-                print(f"\nEpoch {epoch}")
                 self.run_epoch(train=model_to_train)
 
-                self.results_dict["samples_in_d2"].append(
-                    self.count_finetune_data
-                )
+                if model_to_train == "dynamics" and (
+                    epoch == config["train_dyn_for_epochs"]
+                    # or self.results_dict["loss_dynamics"][-1] < 500
+                ):
+                    # self.config["self_play"] = 1 # to use more data
+                    model_to_train = "controller"
+                    print("---------- start train con ---------- ")
+                    # print("Params of dynamics model after training:")
+                    # for key, val in self.train_dynamics.state_dict().items():
+                    #     if len(val) > 10:
+                    #         print(key, torch.sum(torch.abs(val)).item())
+                    #         continue
+                    #     print(key, val)
+                    self.current_score = 0 if self.suc_up_down == 1 else np.inf
+        except KeyboardInterrupt:
+            pass
+        # Save model
+        self.finalize()
 
-                if epoch == config["train_dyn_for_epochs"]:
+    def run_iterative(self, config, start_with="dynamics"):
+        # usually the controller is pretrained, so we start with the dynamics
+        self.model_to_train = start_with
+        epoch_counter = 0
+        # minimum number of epochs to train each of them
+        min_epochs = config.get("min_epochs", 3)
+        # Run training
+        try:
+            for epoch in range(config["nr_epochs"]):
+                self.current_epoch = epoch
+                just_switched = 0
+                # SWITCH:
+                # was dynamics, now switching to controller?
+                dyn_check = self.results_dict[self.config["eval_var_dyn"]]
+                if (
+                    self.model_to_train == "dynamics"
+                    and epoch_counter > min_epochs and np.all(
+                        np.array(dyn_check[-min_epochs +
+                                           1:]) > dyn_check[-min_epochs]
+                    )
+                ):
+                    print("---------------Switch to controller------------")
+                    # print out the current params
                     print("Params of dynamics model after training:")
                     for key, val in self.train_dynamics.state_dict().items():
-                        if len(val) > 10:
+                        if len(torch.flatten(val)) > 10:
                             print(key, torch.sum(torch.abs(val)).item())
                             continue
                         print(key, val)
-                    self.current_score = 0 if self.suc_up_down == 1 else np.inf
+                    epoch_counter = 0
+                    self.model_to_train = "controller"
+                    for param in self.train_dynamics.parameters():
+                        param.requires_grad = False
+
+                # was controller, now training dynamics
+                con_check = self.results_dict[self.config["eval_var_con"]]
+                if (
+                    self.model_to_train == "controller"
+                    and epoch_counter > min_epochs and np.all(
+                        np.array(con_check[-min_epochs +
+                                           1:]) > con_check[-min_epochs]
+                    )
+                ):
+                    print("---------------Switch to dynamics------------")
+                    # collect samples when switching to dynamics
+                    self.model_to_train = "dynamics"
+                    just_switched = 1
+                    epoch_counter = 0
+                    # Reset score for optimal model saving
+                    # self.current_score = np.inf
+                    for param in self.train_dynamics.parameters():
+                        param.requires_grad = True
+
+                # If switched to dynamics or beginning: collect new data
+                if just_switched or epoch == 0:
+                    self.results_dict["samples_in_d2"].append(self.epoch_size)
+                    self.collect_data(allocate=True)
+                else:
+                    self.results_dict["samples_in_d2"].append(0)
+
+                print(f"\nEpoch {epoch}")
+                self.run_epoch(train=self.model_to_train)
+                epoch_counter += 1
+
+                # evaluate
+                _ = self.evaluate_model(epoch)
 
         except KeyboardInterrupt:
             pass

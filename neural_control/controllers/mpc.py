@@ -43,6 +43,7 @@ class MPC(object):
         self.modified_dynamics = {}
         if load_dynamics is not None:
             import torch
+            print("loading dynamics in mpc from", load_dynamics)
             modified_params = torch.load(load_dynamics)
             # transform loaded torch parameters into normal
             numpy_modified_params = {}
@@ -51,6 +52,10 @@ class MPC(object):
                     raw_key = key[4:]
                     raw_val = val[0].item()
                     numpy_modified_params[raw_key] = raw_val
+                elif "." in key:
+                    np_val = val.numpy()
+                    print("loaded in mpc", key, np_val.shape)
+                    numpy_modified_params[key] = np_val
             self.modified_dynamics = numpy_modified_params
 
         # Gravity
@@ -155,16 +160,16 @@ class MPC(object):
         self._default_u = [.25, .5, .5, .5]
 
     def _initParamsCartpole(self):
-        self._s_dim = 4
+        self._s_dim = 15
         self._u_dim = 1
         self._w_min_xy = -1
         self._w_max_xy = 1
         self._thrust_min = -1
         self._thrust_max = 1
         self._Q_u = np.diag([0])
-        self._Q_pen = np.diag([0, 0, 10, 1])
+        self._Q_pen = np.diag([0, 3, 10, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
         # initial states
-        self._quad_s0 = np.zeros(4).tolist()
+        self._quad_s0 = np.zeros(15).tolist()
         self._quad_u0 = [0]
         # default u
         self._default_u = [0]
@@ -181,7 +186,7 @@ class MPC(object):
             dyn = SimpleDynamicsMPC()
             F = dyn.drone_dynamics_simple(self._dt)
         elif self.dynamics_model == "flightmare":
-            dyn = FlightmareDynamicsMPC()
+            dyn = FlightmareDynamicsMPC(self.modified_dynamics)
             F = dyn.drone_dynamics_flightmare(self._dt)
         elif self.dynamics_model == "fixed_wing_2D":
             F = fixed_wing_dynamics_mpc(self._dt)
@@ -438,14 +443,21 @@ class MPC(object):
         # interpolate theta
         inter_theta = np.linspace(current_state[2], 0, self._N + 2)
         inter_theta_dot = np.linspace(current_state[3], 0, self._N + 2)
+        inter_x = np.linspace(current_state[0], 0, self._N + 2)
+        inter_x_dot = np.linspace(current_state[1], 0, self._N + 2)
 
         middle_ref_states = np.zeros((self._N + 2, len(current_state)))
+        middle_ref_states[:, 0] = inter_x
+        middle_ref_states[:, 1] = inter_x_dot
         middle_ref_states[:, 2] = inter_theta
         middle_ref_states[:, 3] = inter_theta_dot
 
         goal_state = middle_ref_states[-1]
 
         high_mpc_reference = np.hstack((middle_ref_states[1:-1], self.addon))
+        # print(current_state)
+        # print(high_mpc_reference)
+        # print()
 
         flattened_ref = (
             current_state.tolist() + high_mpc_reference.flatten().tolist() +
@@ -461,69 +473,6 @@ class MPC(object):
                 current_state, ref_states
             )
         elif self.dynamics_model == "cartpole":
-            preprocessed_ref = self.preprocess_cartpole(current_state)
+            preprocessed_ref = self.preprocess_cartpole(ref_states[0].numpy())
         action, _ = self.solve(preprocessed_ref)
         return np.array([action[:, 0]])
-
-    def drone_dynamics_high_mpc(self, dt):
-
-        self.f = self.get_dynamics_high_mpc()
-
-        M = 4  # refinement
-        DT = dt / M
-        X0 = ca.SX.sym("X", self._s_dim)
-        U = ca.SX.sym("U", self._u_dim)
-        # #
-        X = X0
-        for _ in range(M):
-            # --------- RK4------------
-            k1 = DT * self.f(X, U)
-            k2 = DT * self.f(X + 0.5 * k1, U)
-            k3 = DT * self.f(X + 0.5 * k2, U)
-            k4 = DT * self.f(X + k3, U)
-            #
-            X = X + (k1 + 2 * k2 + 2 * k3 + k4) / 6
-        # Fold
-        F = ca.Function('F', [X0, U], [X])
-        return F
-
-    def get_dynamics_high_mpc(self):
-        px, py, pz = ca.SX.sym('px'), ca.SX.sym('py'), ca.SX.sym('pz')
-        #
-        qw, qx, qy, qz = ca.SX.sym('qw'), ca.SX.sym('qx'), ca.SX.sym('qy'), \
-            ca.SX.sym('qz')
-        #
-        vx, vy, vz = ca.SX.sym('vx'), ca.SX.sym('vy'), ca.SX.sym('vz')
-
-        # -- conctenated vector
-        self._x = ca.vertcat(px, py, pz, qw, qx, qy, qz, vx, vy, vz)
-
-        # # # # # # # # # # # # # # # # # # #
-        # --------- Control Command ------------
-        # # # # # # # # # # # # # # # # # # #
-
-        thrust, wx, wy, wz = ca.SX.sym('thrust'), ca.SX.sym('wx'), \
-            ca.SX.sym('wy'), ca.SX.sym('wz')
-
-        # -- conctenated vector
-        self._u = ca.vertcat(thrust, wx, wy, wz)
-
-        # # # # # # # # # # # # # # # # # # #
-        # --------- System Dynamics ---------
-        # # # # # # # # # # # # # # # # # # #
-
-        x_dot = ca.vertcat(
-            vx, vy, vz, 0.5 * (-wx * qx - wy * qy - wz * qz),
-            0.5 * (wx * qw + wz * qy - wy * qz),
-            0.5 * (wy * qw - wz * qx + wx * qz),
-            0.5 * (wz * qw + wy * qx - wx * qy),
-            2 * (qw * qy + qx * qz) * thrust, 2 * (qy * qz - qw * qx) * thrust,
-            (qw * qw - qx * qx - qy * qy + qz * qz) * thrust - self._gz
-            # (1 - 2*qx*qx - 2*qy*qy) * thrust - self._gz
-        )
-
-        #
-        func = ca.Function(
-            'f', [self._x, self._u], [x_dot], ['x', 'u'], ['ode']
-        )
-        return func

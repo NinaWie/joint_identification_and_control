@@ -10,6 +10,7 @@ class FlightmareDynamics(Dynamics):
         super().__init__(modified_params=modified_params)
 
         self.simulate_rotors = simulate_rotors
+        self.timestamp = np.random.rand() * np.pi * 2
 
         # new parameters needed for flightmare simulation
         self.t_BM_ = self.arm_length * np.sqrt(0.5) * torch.tensor(
@@ -89,8 +90,15 @@ class FlightmareDynamics(Dynamics):
             body_to_world,
             torch.unsqueeze(self.torch_translational_drag * vel_body, 2)
         )[:, :, 0]
+
+        if self.cfg.get("wind", 0) != 0:
+            wind = torch.zeros(3)
+            wind[1] = self.cfg["wind"] * np.sin(self.timestamp)
+            self.timestamp += 0.05
+        else:
+            wind = 0
         thrust_min_grav = (
-            thrust[:, :, 0] + self.torch_gravity - translational_drag
+            thrust[:, :, 0] + self.torch_gravity - translational_drag + wind
         )
         return thrust_min_grav
 
@@ -220,8 +228,18 @@ class FlightmareDynamics(Dynamics):
 
 class FlightmareDynamicsMPC(Dynamics):
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, modified_params={}, use_residual=False):
+        super().__init__(modified_params)
+
+        self.use_residual = use_residual
+        if use_residual and "linear_state_1.weight" in modified_params:
+            print("using residual network, load param")
+            self.weight1 = modified_params["linear_state_1.weight"]
+            self.bias1 = modified_params["linear_state_1.bias"]
+            self.weight2 = modified_params["linear_state_2.weight"]
+        elif len(modified_params) > 0:
+            print("Using identified system but only parameters, no res")
+            self.use_residual = False
 
         # # run rotors params:
         # kappa_ = 0.016
@@ -313,10 +331,21 @@ class FlightmareDynamicsMPC(Dynamics):
         az_new = az + dt * euler_rate_z
 
         # stack together
-        X = ca.vertcat(
+        X_prev = ca.vertcat(
             px_new, py_new, pz_new, ax_new, ay_new, az_new, vx_new, vy_new,
             vz_new, avx_new, avy_new, avz_new
         )
+        if self.use_residual:
+            state_action = ca.vertcat(self._x, self._u)
+            residual_state_1 = ca.tanh(
+                self.weight1 @ state_action + self.bias1
+            )
+            residual_state = self.weight2 @ residual_state_1
+        else:
+            residual_state = 0
+
+        X = X_prev + residual_state
+
         # Fold
         F = ca.Function('F', [self._x, self._u], [X], ['x', 'u'], ['ode'])
         return F
