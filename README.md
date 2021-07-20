@@ -1,4 +1,4 @@
-# Weakly supervised flight
+# Joint identification and control
 
 ![Learning paradigm](assets/paradigm.png)
 
