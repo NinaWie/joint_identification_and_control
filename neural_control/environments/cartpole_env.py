@@ -17,10 +17,10 @@ try:
     import cv2
 except ImportError:
     print("Warning: cv2 not installed, install for cartpole image experiments")
-try:
-    import neural_control.environments.cartpole_rendering as rendering
-except:
-    pass
+# try:
+import neural_control.environments.cartpole_rendering as rendering
+# except:
+#     import .cartpole_rendering as rendering
 
 
 class CartPoleEnv():
@@ -91,6 +91,14 @@ class CartPoleEnv():
         # self.np_random.uniform(low=-0.05, high=0.05, size=(4, ))
         self.steps_beyond_done = None
         return np.array(self.state)
+
+    def _reset_swingup(self):
+        self.state = (np.random.rand(4) * 2 - 1) * self.state_limits
+        self.state[0] = 0
+        self.state[1] *= 0.1
+        self.state[2] = 3
+        self.state[3] *= 0.1
+        return self.state
 
     def _reset_upright(self):
         """
@@ -180,13 +188,18 @@ def construct_states(
     env = CartPoleEnv(dyn, dt, thresh_div=thresh_div)
     data = []
     # randimized runs
-    # while len(data) < num_data * randomized_runs:
-    #     # run 100 steps then reset (randomized runs)
-    #     for _ in range(10):
-    #         action = np.random.rand() - 0.5
-    #         state, _, _, _ = env._step(action)
-    #         data.append(state)
-    #     env._reset()
+    while len(data) < num_data * randomized_runs:
+        env._reset()
+        env.state[1] *= .2
+        env.state[3] *= .2
+        # run 100 steps then reset (randomized runs)
+        for _ in range(20):
+            action = (np.random.rand() - 0.5) * .2
+            state = env._step(action, is_torch=False)
+            # env._render()
+            # time.sleep(0.1)
+            data.append(state)
+        env._reset()
 
     # # after randomized runs: run balancing
     while len(data) < num_data:

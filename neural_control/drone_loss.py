@@ -101,7 +101,7 @@ def fixed_wing_last_loss(drone_states, linear_reference, action, printout=0):
     return loss
 
 
-mpc_losses = torch.tensor([0, 3, 10, 1])
+mpc_losses = torch.tensor([0, 3, 10, 3])
 
 
 def cartpole_loss_mpc(states, ref_states, actions):

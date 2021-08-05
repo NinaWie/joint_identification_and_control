@@ -175,7 +175,7 @@ class TrainCartpole(TrainBase):
             self.model_wrapped, self.eval_env, eval_dyn=eval_dyn
         )
         # Start in upright position and see how long it is balaned
-        res_eval = evaluator.evaluate_in_environment(
+        res_eval = evaluator.evaluate_swingup(
             nr_iters=10, render=self.train_image_dyn
         )
         success_mean = res_eval["mean_vel"]
@@ -298,7 +298,7 @@ if __name__ == "__main__":
 
     if args.todo == "pretrain":
         # No baseline model used
-        train_control(None, config)
+        train_control(baseline_model, config)
     elif args.todo == "adapt":
         mod_params = {"wind": 0.5}
         config["modified_params"] = mod_params

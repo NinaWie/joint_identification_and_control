@@ -33,7 +33,7 @@ collect_states, collect_actions, collect_img = [], [], []
 buffer_len = 4
 img_width, img_height = (200, 300)
 crop_width = 60
-center_at_x = True
+center_at_x = False
 
 
 class Evaluator:
@@ -77,6 +77,51 @@ class Evaluator:
             x_img = img_width_half
             return self.image_buffer[:, 75:175,
                                      x_img - crop_width:x_img + crop_width]
+
+    def evaluate_swingup(
+        self,
+        nr_iters=1,
+        max_steps=250,
+        render=False,
+        burn_in_steps=100,
+        return_success=0
+    ):
+        avg_state = []
+        velocities = []
+        with torch.no_grad():
+            success = np.zeros(nr_iters)
+            # observe also the oscillation
+            avg_angle = np.zeros(nr_iters)
+            for n in range(nr_iters):
+                self.eval_env._reset_swingup()
+                for i in range(max_steps):
+                    new_state = self.eval_env.state
+                    # print(new_state)
+                    action_seq = self.controller.predict_actions(
+                        new_state, new_state
+                    )
+                    # print(action_seq[:, 0])
+
+                    # run action in environment
+                    new_state = self.eval_env._step(
+                        action_seq[:, 0],
+                        image=self.image_buffer,
+                        state_action_buffer=new_state,
+                        is_torch=True
+                    )
+                    if i > burn_in_steps:
+                        velocities.append(new_state[1])
+                        avg_state.append(new_state)
+                    if render:
+                        self.eval_env._render()
+                        time.sleep(0.05)
+
+        mean_state = np.mean(np.absolute(np.array(avg_state)), axis=0)
+        print("average states", [round(e, 2) for e in mean_state])
+        res_eval = {}
+        res_eval["mean_vel"] = float(np.mean(np.absolute(velocities)))
+        res_eval["std_vel"] = float(np.mean(np.absolute(velocities)))
+        return res_eval
 
     def evaluate_in_environment(
         self,
@@ -422,6 +467,4 @@ if __name__ == "__main__":
         # )
     else:
         evaluator.initialize_straight = False
-        _ = evaluator.evaluate_in_environment(
-            render=True, max_steps=500, nr_iters=1
-        )
+        _ = evaluator.evaluate_swingup(render=True, max_steps=500, nr_iters=1)
