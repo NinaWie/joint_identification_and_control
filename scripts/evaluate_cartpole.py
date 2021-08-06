@@ -93,6 +93,8 @@ class Evaluator:
             # observe also the oscillation
             avg_angle = np.zeros(nr_iters)
             for n in range(nr_iters):
+                # initialize success (upright in intermediate checks) to true
+                is_upright = True
                 self.eval_env._reset_swingup()
                 for i in range(max_steps):
                     new_state = self.eval_env.state
@@ -112,15 +114,21 @@ class Evaluator:
                     if i > burn_in_steps:
                         velocities.append(new_state[1])
                         avg_state.append(new_state)
+                        # set upright to false as soon as it was one time lower
+                        if new_state[2] > 1:
+                            is_upright = False
                     if render:
                         self.eval_env._render()
                         time.sleep(0.05)
+                success[n] = int(is_upright)
 
         mean_state = np.mean(np.absolute(np.array(avg_state)), axis=0)
         print("average states", [round(e, 2) for e in mean_state])
         res_eval = {}
         res_eval["mean_vel"] = float(np.mean(np.absolute(velocities)))
         res_eval["std_vel"] = float(np.mean(np.absolute(velocities)))
+        if return_success:
+            return success
         return res_eval
 
     def evaluate_in_environment(
@@ -467,4 +475,8 @@ if __name__ == "__main__":
         # )
     else:
         evaluator.initialize_straight = False
-        _ = evaluator.evaluate_swingup(render=True, max_steps=500, nr_iters=1)
+        # _ = evaluator.evaluate_swingup(render=True, max_steps=500, nr_iters=1)
+        suc = evaluator.evaluate_swingup(
+            render=False, max_steps=250, nr_iters=100, return_success=True
+        )
+        print(suc)

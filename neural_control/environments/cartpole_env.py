@@ -96,8 +96,10 @@ class CartPoleEnv():
         self.state = (np.random.rand(4) * 2 - 1) * self.state_limits
         self.state[0] = 0
         self.state[1] *= 0.1
-        self.state[2] = 3
+        rand_sign = (-1) if np.random.rand() > .5 else 1
+        self.state[2] = rand_sign * (2.8 + np.random.rand() * .3)
         self.state[3] *= 0.1
+        # print(self.state)
         return self.state
 
     def _reset_upright(self):
