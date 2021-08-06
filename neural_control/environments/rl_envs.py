@@ -18,7 +18,7 @@ from neural_control.trajectory.generate_trajectory import (
 from neural_control.trajectory.random_traj import PolyObject
 metadata = {'render.modes': ['human']}
 
-buffer_len = 3
+buffer_len = 1
 img_width, img_height = (200, 300)
 crop_width = 60
 center_at_x = True
@@ -27,6 +27,8 @@ center_at_x = True
 class CartPoleEnvRL(gym.Env, CartPoleEnv):
 
     def __init__(self, dynamics, dt=0.05, **kwargs):
+        self.step_counter = 0
+
         CartPoleEnv.__init__(self, dynamics, dt=dt)
 
         # Angle at which to fail the episode
@@ -34,7 +36,8 @@ class CartPoleEnvRL(gym.Env, CartPoleEnv):
         self.x_threshold = 2.4
 
         # CHANGE HERE WHETHER image or not
-        self.image_obs = True
+        self.image_obs = False
+        self.history_obs = False
 
         high = np.array(
             [
@@ -48,9 +51,21 @@ class CartPoleEnvRL(gym.Env, CartPoleEnv):
         if self.image_obs:
             high = np.ones((buffer_len, 100, 120))
             self.observation_space = spaces.Box(np.zeros(high.shape), high)
-        else:
+        elif self.history_obs:
             self.obs_dim = len(high)
             self.observation_space = spaces.Box(-high, high)
+        else:
+            self.obs_dim = len(high) - 1  # no action
+            high = np.array(
+                [
+                    self.x_threshold * 2,
+                    20,
+                    self.theta_threshold_radians * 2,
+                    20,
+                ]
+            )
+            self.observation_space = spaces.Box(-high, high)
+
         self.init_buffers()
 
     def init_buffers(self):
@@ -119,8 +134,12 @@ class CartPoleEnvRL(gym.Env, CartPoleEnv):
         self.action_buffer[0] = action.copy()
         if self.image_obs:
             self.obs = self.get_img_obs()
-        else:
+        elif self.history_obs:
             self.obs = self.get_history_obs()
+        else:
+            self.obs = self.state
+
+        self.step_counter += 1
 
         return self.obs, reward, done, info
 
@@ -145,8 +164,10 @@ class CartPoleEnvRL(gym.Env, CartPoleEnv):
                 [start_img for _ in range(buffer_len)]
             )
             return self.get_img_obs()
-        else:
+        elif self.history_obs:
             return self.get_history_obs()
+        else:
+            return self.state
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
