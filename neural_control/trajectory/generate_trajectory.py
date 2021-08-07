@@ -485,26 +485,26 @@ def compute_geometric_trajectory(quad, duration=30.0, dt=0.001):
         ) / (96 * cs.pi)
     )
 
-    # sphere trajectory rotating around x-axis
-    radius_x = 5.0
-    radius_y = 3.5
-    radius_z = 2.5
+    freq_fast = 0.18
+    radius = 6
+    pos_x = radius * cs.sin(2.0 * cs.pi * freq_fast * t_adj)
+    pos_y = 1.0
+    pos_z = 3.0 + radius * cs.cos(2.0 * cs.pi * freq_fast * t_adj)
 
-    # fast config
-    # freq_slow = 0.009
-    # freq_fast = 0.33
-    # slow config
-    freq_slow = 0.02
-    freq_fast = 0.12
-    pos_x = 3.0 + radius_x * (
-        cs.sin(2.0 * cs.pi * freq_fast * t_adj) *
-        cs.cos(2.0 * cs.pi * freq_slow * t_adj)
-    )
-    pos_y = 1.0 + radius_y * (cs.cos(2.0 * cs.pi * freq_fast * t_adj))
-    pos_z = 3.5 + radius_z * (
-        cs.sin(2.0 * cs.pi * freq_fast * t_adj) *
-        cs.sin(2.0 * cs.pi * freq_slow * t_adj)
-    )
+    # sphere trajectory rotating around x-axis
+    # radius_x = 1.0  # 5.0
+    # radius_y = 1.0  # 3.5
+    # radius_z = 5.0  # 2.5
+    # pos_x = 3.0 + radius_x * (
+    #     cs.sin(2.0 * cs.pi * freq_fast * t_adj) *
+    #     cs.cos(2.0 * cs.pi * freq_slow * t_adj)
+    # )
+    # pos_y = pos_x * 0
+    # #  1.0 + radius_y * (cs.cos(2.0 * cs.pi * freq_fast * t_adj))
+    # pos_z = 3.5 + radius_z * (
+    #     cs.sin(2.0 * cs.pi * freq_fast * t_adj) *
+    #     cs.sin(2.0 * cs.pi * freq_slow * t_adj)
+    # )
 
     pos = cs.vertcat(pos_x, pos_y, pos_z)
     vel = cs.jacobian(pos, t)
@@ -556,7 +556,18 @@ def load_prepare_trajectory(base_dir, dt, speed_factor, test=False):
     actual speed (but discrete steps! if dt=0.05 then speed_factor can only be
     0.8, 0.6, 0.4, etc)
     """
-    # FOR TESTING: original version
+    # GEOMETRIC
+    # DT_TRAJ = 0.001
+    # quad = Quad(10.0)
+    # arena_bound_max = np.array([6.5, 10, 10])  # np.array([8.0, 5.0, 5.0]) #
+    # arena_bound_min = np.array([-6.5, -10, 0])
+    # trajectory, _, _ = compute_geometric_trajectory(
+    #     quad,
+    #     10,
+    #     DT_TRAJ,
+    # )
+
+    # RANDOM GENERATION FOR TESTING: original version
     # quad = Quad(10.0)
     # arena_bound_max = np.array([6.5, 10, 10])  # np.array([8.0, 5.0, 5.0]) #
     # arena_bound_min = np.array([-6.5, -10, 0])
@@ -564,14 +575,17 @@ def load_prepare_trajectory(base_dir, dt, speed_factor, test=False):
     #     quad, arena_bound_max, arena_bound_min, .9, .7, .7,
     #     10, 0.01, seed=np.random.randint(10000)
     # )
+
+    # LOAD RANDOM
+    DT_TRAJ = 0.01
     folder = 'test' if test else "train"
     data_list = os.listdir(os.path.join(base_dir, folder))
     rand_traj = np.random.choice(data_list)
     trajectory = np.load(os.path.join(base_dir, folder, rand_traj))
 
     # dt for trajectory generation is 0.01, then transform back
-    take_every_nth = int(dt / 0.01 * speed_factor)
-    assert np.isclose(take_every_nth, dt / 0.01 * speed_factor)
+    take_every_nth = int(dt / DT_TRAJ * speed_factor)
+    assert np.isclose(take_every_nth, dt / DT_TRAJ * speed_factor)
     taken_every = trajectory[::take_every_nth, :]
 
     # transform to euler angels
