@@ -24,6 +24,7 @@ from ruamel.yaml import timestamp
 import torch
 import omegaconf
 import time
+import json
 import os
 
 import mbrl.env.reward_fns as reward_fns
@@ -34,7 +35,7 @@ import mbrl.util.common as common_util
 import mbrl.util as util
 
 modified_params = {}  # {"wind": .5}
-SYSTEM = "cartpole"
+SYSTEM = "quad"
 
 # import mbrl.env.cartpole_continuous as cartpole_env
 # env = cartpole_env.CartPoleEnv()
@@ -52,7 +53,7 @@ elif SYSTEM == "quad":
     from neural_control.dynamics.quad_dynamics_flightmare import FlightmareDynamics
     quad_dt = 0.1
     quad_speed = 0.2
-    dyn = FlightmareDynamics(modified_params)
+    dyn = FlightmareDynamics(modified_params=modified_params)
     env = quad_env.QuadEnvRL(dyn, quad_dt, speed_factor=quad_speed)
     # This functions allows the model to evaluate the true rewards given an observation
     reward_fn = reward_fns.quad
@@ -60,12 +61,12 @@ elif SYSTEM == "quad":
     term_fn = termination_fns.quad
 
 # SPECIFY
-model_load_path = None  #  "trained_models/out_mbrl/cartpole/"
-model_save_path = "trained_models/out_mbrl/cartpole_finetuned_from_scratch"  #  "trained_models/out_mbrl/quad/"
+model_load_path = None  # "trained_models/out_mbrl/quad/"
+model_save_path = "trained_models/out_mbrl/quad_trained_new"  #  "trained_models/out_mbrl/quad/"
 if not os.path.exists(model_save_path):
     os.makedirs(model_save_path)
-trial_length = 100  # 200
-num_trials = 10  # 10
+trial_length = 200  # 200
+num_trials = 50  # 10
 ensemble_size = 5
 
 mpl.rcParams.update({"font.size": 16})
@@ -223,6 +224,8 @@ def train_callback(
 model_trainer = models.ModelTrainer(
     dynamics_model, optim_lr=1e-3, weight_decay=5e-5
 )
+
+
 # print(dynamics_model.state_dict)
 # print(agent)
 # Create visualization objects
@@ -230,12 +233,27 @@ model_trainer = models.ModelTrainer(
 #     1, 2, figsize=(14, 3.75), gridspec_kw={"width_ratios": [1, 1]}
 # )
 # ax_text = axs[0].text(300, 50, "")
+def make_dict_and_save():
+    out_dict = {}
+    out_dict["train_losses"] = list(train_losses)
+    out_dict["all_rewards"] = list(all_rewards)
+    out_dict["timestamps"] = list(timestamps)
+    out_dict["val_scores"] = list(val_scores)
+    out_dict["all_rewards"] = list(all_rewards)
+    out_dict["sum_rewards"] = list(sum_rewards)
+    out_dict["episode_lens_list"] = list(episode_lens_list)
+    out_dict["step_counter_list"] = list(step_counter_list)
+    out_dict["velocity_list"] = list(eval_metric_list)
+
+    with open(os.path.join(model_save_path, "out_res.json"), "w") as outfile:
+        json.dump(out_dict, outfile)
+
 
 # Main PETS loop
 all_rewards = []
 sum_rewards = []
 step_counter_list = []
-velocity_list = []
+eval_metric_list = []
 episode_lens_list = []
 for trial in range(num_trials):
     obs = env.reset()
@@ -250,7 +268,7 @@ for trial in range(num_trials):
     # )
     episode_length = 0
     single_rewards = []
-    episode_vel = []
+    eval_metric = []  # vel for cartpole and div for quad
     while not done:
         # --------------- Model Training -----------------
         if steps_trial == 0:
@@ -291,8 +309,12 @@ for trial in range(num_trials):
         #     axs, env.render(mode="rgb_array"), ax_text, trial, steps_trial,
         #     all_rewards
         # )
-        print("reward", reward, "vel", env.state[1])
-        episode_vel.append(env.state[1])
+        # print("reward", reward, "vel", env.state[1])
+        if SYSTEM == "cartpole":
+            eval_metric.append(env.state[1])
+        elif SYSTEM == "quad":
+            eval_metric.append(env.get_divergence())
+            print("div", eval_metric[-1])
         single_rewards.append(reward)
         obs = next_obs
         total_reward += reward
@@ -300,7 +322,7 @@ for trial in range(num_trials):
 
         if steps_trial == trial_length:
             break
-    velocity_list.append(float(np.mean(np.absolute(np.array(episode_vel)))))
+    eval_metric_list.append(float(np.mean(np.absolute(np.array(eval_metric)))))
     step_counter_list.append(env.step_counter)
     episode_lens_list.append(episode_length)
     print("total", total_reward)
@@ -310,26 +332,14 @@ for trial in range(num_trials):
     all_rewards.append(single_rewards)
     timestamps.append(time.time())
 
-    episode_out_dir = f"eps_{trial}_{env.step_counter}"
-    out_path = os.path.join(model_save_path, episode_out_dir)
-    os.makedirs(out_path)
-    dynamics_model.save(save_dir=out_path)
+    if trial == 0 or (trial + 1) % 5 == 0:
+        episode_out_dir = f"eps_{trial}_{env.step_counter}"
+        out_path = os.path.join(model_save_path, episode_out_dir)
+        os.makedirs(out_path)
+        dynamics_model.save(save_dir=out_path)
+        make_dict_and_save()
 
 # Save training results as json
-import json
-out_dict = {}
-out_dict["train_losses"] = list(train_losses)
-out_dict["all_rewards"] = list(all_rewards)
-out_dict["timestamps"] = list(timestamps)
-out_dict["val_scores"] = list(val_scores)
-out_dict["all_rewards"] = list(all_rewards)
-out_dict["sum_rewards"] = list(sum_rewards)
-out_dict["episode_lens_list"] = list(episode_lens_list)
-out_dict["step_counter_list"] = list(step_counter_list)
-out_dict["velocity_list"] = list(velocity_list)
-
-with open(os.path.join(model_save_path, "out_res.json"), "w") as outfile:
-    json.dump(out_dict, outfile)
 
 fig, ax = plt.subplots(2, 1, figsize=(12, 10))
 ax[0].plot(train_losses)

@@ -4,6 +4,7 @@ import numpy as np
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import torch
+import time
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
@@ -142,18 +143,28 @@ def evaluate_cartpole(model, env, max_steps=250, nr_iters=1, render=0):
     num_stable = []
     for j in range(nr_iters):
         obs = env.reset()
+        # times = []
         for i in range(max_steps):
             if isinstance(model, NetPole):  # DP
                 with torch.no_grad():
+                    # tic = time.time()
                     obs_torch = torch.from_numpy(np.expand_dims(obs,
                                                                 0)).float()
                     suggested_action = model(obs_torch)
                     suggested_action = torch.reshape(suggested_action, (10, 1))
                     action = suggested_action[0].numpy()
+                    # time_act = time.time() - tic
             elif isinstance(model, TrajectoryOptimizerAgent):
+                # tic = time.time()
                 action = model.act(obs)
+                # time_act = time.time() - tic
             else:
                 action, _states = model.predict(obs, deterministic=True)
+            # times.append(time_act)
+            # if i > 50:
+            #     print(times)
+            #     print(np.mean(times))
+            #     exit()
             actions.append(action)
             obs, rewards, done, info = env.step(action)
             states.append(env.state)
@@ -535,14 +546,14 @@ if __name__ == "__main__":
     # test_rl_cartpole(
     #     os.path.join(save_name, "rl_230001_steps"), modified_params=scenario
     # )
-    # test_ours_cartpole(
-    #     "trained_models/cartpole/transfer_wind_50", modified_params=scenario
-    # )
-
-    test_mbrl_cartpole(
-        "trained_models/out_mbrl/cartpole_finetuned_from_scratch/eps_1_208",
-        modified_params=scenario
+    test_ours_cartpole(
+        "trained_models/cartpole/transfer_wind_50", modified_params=scenario
     )
+
+    # test_mbrl_cartpole(
+    #     "trained_models/out_mbrl/cartpole_finetuned_from_scratch/eps_1_208",
+    #     modified_params={}
+    # )
 
     # ------------------ Fixed wing drone -----------------------
     # load_name = "trained_models/wing/reinforcement_bl_new/rl_final"
