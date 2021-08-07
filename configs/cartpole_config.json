@@ -6,7 +6,7 @@
     "state_size": 4,
     "batch_size": 8,
     "nr_epochs": 200,
-    "self_play": 0,
+    "self_play": 0.2,
     "sample_in": "eval_env",
     "resample_every": 5,
     "take_every_x": 2,
