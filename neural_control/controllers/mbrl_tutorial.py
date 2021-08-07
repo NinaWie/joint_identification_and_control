@@ -26,19 +26,48 @@ import omegaconf
 import time
 import os
 
-# import mbrl.env.cartpole_continuous as cartpole_env
-# env = cartpole_env.CartPoleEnv()
-import neural_control.environments.rl_envs as cartpole_env
-from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
-dyn = CartpoleDynamics()
-env = cartpole_env.CartPoleEnvRL(dyn)
-
 import mbrl.env.reward_fns as reward_fns
 import mbrl.env.termination_fns as termination_fns
 import mbrl.models as models
 import mbrl.planning as planning
 import mbrl.util.common as common_util
 import mbrl.util as util
+
+modified_params = {}  # {"wind": .5}
+SYSTEM = "cartpole"
+
+# import mbrl.env.cartpole_continuous as cartpole_env
+# env = cartpole_env.CartPoleEnv()
+if SYSTEM == "cartpole":
+    import neural_control.environments.rl_envs as cartpole_env
+    from neural_control.dynamics.cartpole_dynamics import CartpoleDynamics
+    dyn = CartpoleDynamics(modified_params=modified_params)
+    env = cartpole_env.CartPoleEnvRL(dyn)
+    # This functions allows the model to evaluate the true rewards given an observation
+    reward_fn = reward_fns.cartpole
+    # This function allows the model to know if an observation should make the episode end
+    term_fn = termination_fns.cartpole
+elif SYSTEM == "quad":
+    import neural_control.environments.rl_envs as quad_env
+    from neural_control.dynamics.quad_dynamics_flightmare import FlightmareDynamics
+    quad_dt = 0.1
+    quad_speed = 0.2
+    dyn = FlightmareDynamics(modified_params)
+    env = quad_env.QuadEnvRL(dyn, quad_dt, speed_factor=quad_speed)
+    # This functions allows the model to evaluate the true rewards given an observation
+    reward_fn = reward_fns.quad
+    # This function allows the model to know if an observation should make the episode end
+    term_fn = termination_fns.quad
+
+# SPECIFY
+model_load_path = None  #  "trained_models/out_mbrl/cartpole/"
+model_save_path = "trained_models/out_mbrl/cartpole_finetuned_from_scratch"  #  "trained_models/out_mbrl/quad/"
+if not os.path.exists(model_save_path):
+    os.makedirs(model_save_path)
+trial_length = 100  # 200
+num_trials = 10  # 10
+ensemble_size = 5
+
 mpl.rcParams.update({"font.size": 16})
 
 device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -55,22 +84,9 @@ generator.manual_seed(seed)
 obs_shape = env.observation_space.shape
 act_shape = env.action_space.shape
 
-# This functions allows the model to evaluate the true rewards given an observation
-reward_fn = reward_fns.cartpole
-# This function allows the model to know if an observation should make the episode end
-term_fn = termination_fns.cartpole
-
 # # Hydra configuration
 #
 # MBRL-Lib uses [Hydra](https://github.com/facebookresearch/hydra) to manage configurations. For the purpose of this example, you can think of the configuration object as a dictionary with key/value pairs--and equivalent attributes--that specify the model and algorithmic options. Our toolbox expects the configuration object to be organized as follows:
-
-model_load_path = None  # "trained_models/out_mbrl/modeltest/"
-model_save_path = "trained_models/out_mbrl/modeltest/"
-if not os.path.exists(model_save_path):
-    os.makedirs(model_save_path)
-trial_length = 200  # 200
-num_trials = 10  # 10
-ensemble_size = 5
 
 # count steps in environment
 global step_counter
@@ -219,6 +235,7 @@ model_trainer = models.ModelTrainer(
 all_rewards = []
 sum_rewards = []
 step_counter_list = []
+velocity_list = []
 episode_lens_list = []
 for trial in range(num_trials):
     obs = env.reset()
@@ -233,6 +250,7 @@ for trial in range(num_trials):
     # )
     episode_length = 0
     single_rewards = []
+    episode_vel = []
     while not done:
         # --------------- Model Training -----------------
         if steps_trial == 0:
@@ -273,7 +291,8 @@ for trial in range(num_trials):
         #     axs, env.render(mode="rgb_array"), ax_text, trial, steps_trial,
         #     all_rewards
         # )
-        print(reward)
+        print("reward", reward, "vel", env.state[1])
+        episode_vel.append(env.state[1])
         single_rewards.append(reward)
         obs = next_obs
         total_reward += reward
@@ -281,14 +300,20 @@ for trial in range(num_trials):
 
         if steps_trial == trial_length:
             break
+    velocity_list.append(float(np.mean(np.absolute(np.array(episode_vel)))))
     step_counter_list.append(env.step_counter)
     episode_lens_list.append(episode_length)
-    print("\ntotal", total_reward)
+    print("total", total_reward)
+    print("episode length", episode_length)
+    print()
     sum_rewards.append(total_reward)
     all_rewards.append(single_rewards)
     timestamps.append(time.time())
 
-dynamics_model.save(save_dir=model_save_path)
+    episode_out_dir = f"eps_{trial}_{env.step_counter}"
+    out_path = os.path.join(model_save_path, episode_out_dir)
+    os.makedirs(out_path)
+    dynamics_model.save(save_dir=out_path)
 
 # Save training results as json
 import json
@@ -301,6 +326,7 @@ out_dict["all_rewards"] = list(all_rewards)
 out_dict["sum_rewards"] = list(sum_rewards)
 out_dict["episode_lens_list"] = list(episode_lens_list)
 out_dict["step_counter_list"] = list(step_counter_list)
+out_dict["velocity_list"] = list(velocity_list)
 
 with open(os.path.join(model_save_path, "out_res.json"), "w") as outfile:
     json.dump(out_dict, outfile)

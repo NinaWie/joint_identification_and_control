@@ -202,6 +202,8 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
         self.thresh_stable = 1.5
         self.thresh_div = .3
 
+        self.step_counter = 0
+
         kwargs["dt"] = dt
         kwargs['speed_factor'] = speed_factor
         kwargs["self_play"] = 0
@@ -351,7 +353,7 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
         if not done:
             # reward = self.thresh_div - pos_div
             # reward = self.get_reward(action)
-            reward = self.get_reward_mario(action)
+            reward = self.get_reward_mpc(action)
         info = {}
         # print()
         # np.set_printoptions(precision=3, suppress=1)
@@ -363,6 +365,7 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
         # print(self.state)
         # print(self.obs.shape)
         # print(div, reward)
+        self.step_counter += 1
         return self.obs, reward, done, info
 
     def render(self, mode="human"):

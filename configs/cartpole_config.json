@@ -19,9 +19,9 @@
     "nr_actions": 10,
     "learning_rate_controller": 1e-7,
     "learning_rate_dynamics": 0.01,
-    "sample_data": 1000,
+    "sample_data": 50,
     "action_dim": 1,
     "suc_up_down": -1,
     "use_new_data": 500,
-    "train_dyn_for_epochs": 10
+    "train_dyn_for_epochs": 40
 }

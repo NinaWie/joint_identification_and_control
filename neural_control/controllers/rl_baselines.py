@@ -19,6 +19,8 @@ from neural_control.models.simple_model import Net as NetPole
 from neural_control.plotting import plot_wing_pos_3d
 from neural_control.trajectory.q_funcs import project_to_line
 
+from mbrl.planning.trajectory_opt import TrajectoryOptimizerAgent
+
 # PARAMS
 fixed_wing_dt = 0.05
 cartpole_dt = 0.05
@@ -148,6 +150,8 @@ def evaluate_cartpole(model, env, max_steps=250, nr_iters=1, render=0):
                     suggested_action = model(obs_torch)
                     suggested_action = torch.reshape(suggested_action, (10, 1))
                     action = suggested_action[0].numpy()
+            elif isinstance(model, TrajectoryOptimizerAgent):
+                action = model.act(obs)
             else:
                 action, _states = model.predict(obs, deterministic=True)
             actions.append(action)
@@ -159,6 +163,7 @@ def evaluate_cartpole(model, env, max_steps=250, nr_iters=1, render=0):
                 break
 
         num_stable.append(i)
+        # print("iteration ", j, "number steps", i)
     states = np.array(states)
     actions = np.array(actions)
     mean_vel = np.mean(np.absolute(states[:, 1]))
@@ -176,6 +181,116 @@ def evaluate_cartpole(model, env, max_steps=250, nr_iters=1, render=0):
     # plt.hist(actions)
     # plt.show()
     return 0, res_step
+
+
+def initialize_mbrl_agent(env, model_load_path, reward_fn, term_fn):
+    import mbrl.models as models
+    import mbrl.planning as planning
+    import mbrl.util.common as common_util
+    import mbrl.util as util
+    import omegaconf
+
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    # PARAMETERS
+    ensemble_size = 5
+    seed = 0
+    env.seed(seed)
+    rng = np.random.default_rng(seed=0)
+    generator = torch.Generator(device=device)
+    generator.manual_seed(seed)
+    obs_shape = env.observation_space.shape
+    act_shape = env.action_space.shape
+    trial_length = 200
+    num_trials = 10
+
+    cfg_dict = {
+        # dynamics model configuration
+        "dynamics_model":
+            {
+                "model":
+                    {
+                        "_target_": "mbrl.models.GaussianMLP",
+                        "device": device,
+                        "num_layers": 3,
+                        "ensemble_size": ensemble_size,
+                        "hid_size": 200,
+                        "use_silu": True,
+                        "in_size": "???",
+                        "out_size": "???",
+                        "deterministic": False,
+                        "propagation_method": "fixed_model"
+                    }
+            },
+        # options for training the dynamics model
+        "algorithm":
+            {
+                "learned_rewards": False,
+                "target_is_delta": True,
+                "normalize": True,
+            },
+        # these are experiment specific options
+        "overrides":
+            {
+                "trial_length": trial_length,
+                "num_steps": num_trials * trial_length,
+                "model_batch_size": 32,
+                "validation_ratio": 0.05
+            }
+    }
+    cfg = omegaconf.OmegaConf.create(cfg_dict)
+
+    dynamics_model = common_util.create_one_dim_tr_model(
+        cfg, obs_shape, act_shape, model_dir=model_load_path
+    )
+    # load_weights_from_path TODO specifiy here
+    # Create a gym-like environment to encapsulate the model
+    model_env = models.ModelEnv(
+        env, dynamics_model, term_fn, reward_fn, generator=generator
+    )
+
+    agent_cfg = omegaconf.OmegaConf.create(
+        {
+            # this class evaluates many trajectories and picks the best one
+            "_target_": "mbrl.planning.TrajectoryOptimizerAgent",
+            "planning_horizon": 15,
+            "replan_freq": 1,
+            "verbose": False,
+            "action_lb": "???",
+            "action_ub": "???",
+            # this is the optimizer to generate and choose a trajectory
+            "optimizer_cfg":
+                {
+                    "_target_": "mbrl.planning.CEMOptimizer",
+                    "num_iterations": 5,
+                    "elite_ratio": 0.1,
+                    "population_size": 500,
+                    "alpha": 0.1,
+                    "device": device,
+                    "lower_bound": "???",
+                    "upper_bound": "???",
+                    "return_mean_elites": True
+                }
+        }
+    )
+
+    agent = planning.create_trajectory_optim_agent_for_model(
+        model_env, agent_cfg, num_particles=20
+    )
+    return agent
+
+
+def test_mbrl_cartpole(model_load_path, modified_params={}, max_steps=200):
+    """Test PETS algorithm on cartpole"""
+    import mbrl.env.reward_fns as reward_fns
+    import mbrl.env.termination_fns as termination_fns
+    dyn = CartpoleDynamics(modified_params=modified_params)
+    env = CartPoleEnvRL(dyn)
+    # This functions allows the model to evaluate the true rewards given an observation
+    reward_fn = reward_fns.cartpole
+    # This function allows the model to know if an observation should make the episode end
+    term_fn = termination_fns.cartpole
+    agent = initialize_mbrl_agent(env, model_load_path, reward_fn, term_fn)
+    evaluate_cartpole(agent, env, max_steps, nr_iters=5, render=0)
 
 
 def test_rl_cartpole(save_name, modified_params={}, max_steps=250):
@@ -406,28 +521,38 @@ def test_marios():
     train_main(save, env, evaluate_quad, load_model=path)
 
 
+# ------------------ MODEL BASED RL -----------------------------
+# def model_based():
+#     import mbrl
+#     python -m mbrl.examples.main algorithm=mbpo overrides=mbpo_halfcheetah
+
 if __name__ == "__main__":
     # ------------------ CartPole -----------------------
     # save_name = "trained_models/cartpole/reinforcement_learning/img_finetune/"
     # load_name = "trained_models/cartpole/reinforcement_learning/img_bl/rl_150001_steps"
-    # scenario = {"contact": 1}
+    scenario = {"wind": .5}
     # train_cartpole(save_name, load_model=load_name, modified_params=scenario)
     # test_rl_cartpole(
     #     os.path.join(save_name, "rl_230001_steps"), modified_params=scenario
     # )
     # test_ours_cartpole(
-    #     "trained_models/cartpole/con_seq_500", modified_params=scenario
+    #     "trained_models/cartpole/transfer_wind_50", modified_params=scenario
     # )
 
+    test_mbrl_cartpole(
+        "trained_models/out_mbrl/cartpole_finetuned_from_scratch/eps_1_208",
+        modified_params=scenario
+    )
+
     # ------------------ Fixed wing drone -----------------------
-    load_name = "trained_models/wing/reinforcement_bl_new/rl_final"
+    # load_name = "trained_models/wing/reinforcement_bl_new/rl_final"
     # # "trained_models/wing/reinforcement_learning/final/ppo_50"
-    save_name = "trained_models/wing/reinforcement_veldrag_bl_new"
-    scenario = {"vel_drag_factor": .3}
-    train_wing(save_name, load_model=load_name, modified_params=scenario)
-    # # test_ours_wing(
-    # #     "trained_models/wing/current_model", modified_params=scenario
-    # # )
+    # save_name = "trained_models/wing/reinforcement_veldrag_bl_new"
+    # scenario = {}  # "vel_drag_factor": .3}
+    # train_wing(save_name, load_model=load_name, modified_params=scenario)
+    # test_ours_wing(
+    #     "trained_models/wing/current_model", modified_params=scenario
+    # )
     # test_rl_wing(save_name, modified_params=scenario)
     # evaluate_wing(render=1)
 
@@ -437,9 +562,7 @@ if __name__ == "__main__":
     # save_name = "trained_models/quad/reinforcement_learning/lowdt"
 
     # scenario = {}  # {"translational_drag": np.array([.3, .3, .3])}
-    # test_ours_quad(
-    #     "trained_models/quad/current_model/", modified_params=scenario
-    # )
+    # test_ours_quad("trained_models/quad/current_model/", modified_params={})
     # train_quad(save_name, load_model=None, modified_params=scenario)
     # test_rl_quad(
     #     os.path.join(save_name, "rl_280000_steps"), modified_params=scenario
