@@ -3,6 +3,7 @@ import time
 import argparse
 import json
 import numpy as np
+from numpy.core.fromnumeric import mean
 import torch
 try:
     import cv2
@@ -113,7 +114,7 @@ class Evaluator:
                     )
                     if i > burn_in_steps:
                         velocities.append(new_state[1])
-                        avg_state.append(new_state)
+                        avg_state.append(new_state.copy())
                         # set upright to false as soon as it was one time lower
                         if new_state[2] > 1:
                             is_upright = False
@@ -122,8 +123,11 @@ class Evaluator:
                         time.sleep(0.05)
                 success[n] = int(is_upright)
 
-        mean_state = np.mean(np.absolute(np.array(avg_state)), axis=0)
+        avg_state = np.sqrt(np.array(avg_state)**2)
+        mean_state = np.mean(avg_state, axis=0)
+        std_state = np.std(avg_state, axis=0)
         print("average states", [round(e, 2) for e in mean_state])
+        # print("std", std_state)
         res_eval = {}
         res_eval["mean_vel"] = float(np.mean(np.absolute(velocities)))
         res_eval["std_vel"] = float(np.mean(np.absolute(velocities)))
@@ -475,8 +479,8 @@ if __name__ == "__main__":
         # )
     else:
         evaluator.initialize_straight = False
-        # _ = evaluator.evaluate_swingup(render=True, max_steps=500, nr_iters=1)
-        suc = evaluator.evaluate_swingup(
-            render=False, max_steps=250, nr_iters=100, return_success=True
-        )
-        print(suc)
+        _ = evaluator.evaluate_swingup(render=True, max_steps=500, nr_iters=1)
+        # suc = evaluator.evaluate_swingup(
+        #     render=False, max_steps=250, nr_iters=30, return_success=True
+        # )
+        # print(suc)

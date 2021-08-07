@@ -298,7 +298,7 @@ if __name__ == "__main__":
 
     if args.todo == "pretrain":
         # No baseline model used
-        train_control(baseline_model, config)
+        train_control(None, config)
     elif args.todo == "adapt":
         mod_params = {"wind": 0.5}
         config["modified_params"] = mod_params

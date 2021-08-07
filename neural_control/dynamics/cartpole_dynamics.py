@@ -20,7 +20,10 @@ gravity = 9.81
 
 class CartpoleDynamics:
 
-    def __init__(self, modified_params={}, test_time=0, batch_size=1):
+    def __init__(
+        self, modified_params={}, test_time=0, batch_size=1, swingup=True
+    ):
+        self.swingup = swingup
         self.batch_size = batch_size
         with open(
             os.path.join(
@@ -31,6 +34,7 @@ class CartpoleDynamics:
 
         self.test_time = test_time
         self.cfg.update(modified_params)
+        self.cfg["friction"] = 0
         self.cfg["total_mass"] = self.cfg["masspole"] + self.cfg["masscart"]
         self.cfg["polemass_length"] = self.cfg["masspole"] * self.cfg["length"]
         self.timestamp = 0
@@ -48,9 +52,7 @@ class CartpoleDynamics:
         return self.simulate_cartpole(state, action, dt)
 
     def simulate_cartpole(self, state, action, dt):
-        """
-        Compute new state from state and action
-        """
+        # preprocess action
         self.timestamp += .05
         # # get action to range [-1, 1]
         # action = torch.sigmoid(action)
@@ -63,6 +65,17 @@ class CartpoleDynamics:
         # else:
         #     action = torch.softmax(action, dim=1)
         #     action = action[:, 0] * -1 + action[:, 1]
+
+        if self.swingup:
+            new_state = self.transition_fn(state, action, dt)
+        else:
+            new_state = self.orig_transition_fn(state, action, dt)
+        return new_state
+
+    def orig_transition_fn(self, state, action, dt):
+        """
+        Compute new state from state and action - original version
+        """
         # get state
         x = state[:, 0]
         x_dot = state[:, 1]
@@ -125,6 +138,72 @@ class CartpoleDynamics:
 
         new_state = torch.stack((x, x_dot, theta, theta_dot), dim=1)
         return new_state
+
+    def transition_fn(self, state, action, delta_t, sample_shape=()):
+        """Compute the next state and its log-probability.
+        Accepts a `sample_shape` argument to sample multiple next states.
+        """
+        # pylint: disable=no-member,unused-argument
+        action = action[..., 0] * self.cfg["max_force_mag"]
+
+        sin_theta = torch.sin(state[..., 2])
+        cos_theta = torch.cos(state[..., 2])
+
+        xdot_update = self._calculate_xdot_update(
+            state, action, sin_theta, cos_theta
+        )
+        thetadot_update = self._calculate_thetadot_update(
+            state, action, sin_theta, cos_theta
+        )
+
+        new_x = state[..., 0] + state[..., 1] * delta_t
+        new_xdot = state[..., 1] + xdot_update * delta_t
+        new_costheta, new_sintheta = self._calculate_theta_update(
+            state, delta_t, sin_theta, cos_theta
+        )
+        new_theta = torch.atan2(new_sintheta, new_costheta)
+        new_thetadot = state[..., 3] + thetadot_update * delta_t
+
+        next_state = torch.stack(
+            [new_x, new_xdot, new_theta, new_thetadot], dim=-1
+        )
+        return next_state
+        # next_state.expand(torch.Size(sample_shape) + state.shape)
+
+    def _calculate_xdot_update(self, state, action, sin_theta, cos_theta):
+        # pylint: disable=no-member
+        x_dot = state[..., 1]
+        theta_dot = state[..., 3]
+        return (
+            -2 * self.cfg["polemass_length"] * (theta_dot**2) * sin_theta +
+            3 * self.cfg["masspole"] * gravity * sin_theta * cos_theta +
+            4 * action - 4 * self.cfg["friction"] * x_dot
+        ) / (
+            4 * self.cfg["total_mass"] -
+            3 * self.cfg["masspole"] * cos_theta**2
+        )
+
+    def _calculate_thetadot_update(self, state, action, sin_theta, cos_theta):
+        # pylint: disable=no-member
+        x_dot = state[..., 1]
+        theta_dot = state[..., 3]
+        return (
+            -3 * self.cfg["polemass_length"] *
+            (theta_dot**2) * sin_theta * cos_theta +
+            6 * self.cfg["total_mass"] * gravity * sin_theta + 6 *
+            (action - self.cfg["friction"] * x_dot) * cos_theta
+        ) / (
+            4 * self.cfg["length"] * self.cfg["total_mass"] -
+            3 * self.cfg["polemass_length"] * cos_theta**2
+        )
+
+    @staticmethod
+    def _calculate_theta_update(state, delta_t, sin_theta, cos_theta):
+        sin_theta_dot = torch.sin(state[..., 3] * delta_t)
+        cos_theta_dot = torch.cos(state[..., 3] * delta_t)
+        new_sintheta = sin_theta * cos_theta_dot + cos_theta * sin_theta_dot
+        new_costheta = cos_theta * cos_theta_dot - sin_theta * sin_theta_dot
+        return new_costheta, new_sintheta
 
 
 class LearntCartpoleDynamics(LearntDynamics, CartpoleDynamics):
