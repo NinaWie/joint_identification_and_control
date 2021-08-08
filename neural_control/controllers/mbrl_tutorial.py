@@ -62,11 +62,11 @@ elif SYSTEM == "quad":
 
 # SPECIFY
 model_load_path = None  # "trained_models/out_mbrl/quad/"
-model_save_path = "trained_models/out_mbrl/quad_trained_new"  #  "trained_models/out_mbrl/quad/"
+model_save_path = "trained_models/out_mbrl/quad_single_traj"  #  "trained_models/out_mbrl/quad/"
 if not os.path.exists(model_save_path):
     os.makedirs(model_save_path)
 trial_length = 200  # 200
-num_trials = 50  # 10
+num_trials = 100  # 10
 ensemble_size = 5
 
 mpl.rcParams.update({"font.size": 16})
