@@ -34,7 +34,9 @@ import mbrl.planning as planning
 import mbrl.util.common as common_util
 import mbrl.util as util
 
-modified_params = {}  # {"wind": .5}
+modified_params = {
+    'translational_drag': np.array([0.3, 0.3, 0.3])
+}  # {"wind": .5}
 SYSTEM = "quad"
 
 # import mbrl.env.cartpole_continuous as cartpole_env
@@ -61,8 +63,8 @@ elif SYSTEM == "quad":
     term_fn = termination_fns.quad
 
 # SPECIFY
-model_load_path = None  # "trained_models/out_mbrl/quad/"
-model_save_path = "trained_models/out_mbrl/quad_single_traj"  #  "trained_models/out_mbrl/quad/"
+model_load_path = "trained_models/out_mbrl/quad_single_traj/eps_14_1588"
+model_save_path = "trained_models/out_mbrl/quad_single_traj_finetuned"
 if not os.path.exists(model_save_path):
     os.makedirs(model_save_path)
 trial_length = 200  # 200
