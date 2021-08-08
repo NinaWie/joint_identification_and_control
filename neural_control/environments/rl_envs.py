@@ -26,15 +26,17 @@ center_at_x = True
 
 class CartPoleEnvRL(gym.Env, CartPoleEnv):
 
-    def __init__(self, dynamics, dt=0.05, **kwargs):
+    def __init__(self, dynamics, dt=0.05, swingup=True, **kwargs):
         CartPoleEnv.__init__(self, dynamics, dt=dt)
 
+        self.swingup = swingup
         # Angle at which to fail the episode
         self.theta_threshold_radians = 12 * 2 * math.pi / 360
         self.x_threshold = 2.4
 
         # CHANGE HERE WHETHER image or not
-        self.image_obs = True
+        self.image_obs = False
+        self.history_obs = False
 
         high = np.array(
             [
@@ -48,8 +50,19 @@ class CartPoleEnvRL(gym.Env, CartPoleEnv):
         if self.image_obs:
             high = np.ones((buffer_len, 100, 120))
             self.observation_space = spaces.Box(np.zeros(high.shape), high)
-        else:
+        elif self.history_obs:
             self.obs_dim = len(high)
+            self.observation_space = spaces.Box(-high, high)
+        else:
+            self.obs_dim = len(high) - 1  # no action
+            high = np.array(
+                [
+                    self.x_threshold * 2,
+                    20,
+                    self.theta_threshold_radians * 2,
+                    20,
+                ]
+            )
             self.observation_space = spaces.Box(-high, high)
         self.init_buffers()
 
@@ -100,12 +113,22 @@ class CartPoleEnvRL(gym.Env, CartPoleEnv):
     def step(self, action):
         super()._step(action, is_torch=False)
         # print(self.state)
-        done = not self.is_upright() or self.step_ind > 250
+        if self.swingup:
+            done = self.step_ind > 200
+        else:
+            done = not self.is_upright() or self.step_ind > 250
 
         # this reward is positive if theta is smaller 0.1 and else negative
         if not done:
-            # training to stay stable with low velocity
-            reward = 1.0 - abs(self.state[1])
+            if not self.swingup:
+                # training to stay stable with low velocity
+                reward = 1.0 - abs(self.state[1])
+            # swingup
+            else:
+                rew_angle = max([1.5 - abs(self.state[2]), 0])
+                rew_ang_vel = 3 - abs(self.state[3])
+                rew_vel = 2.4 - abs(self.state[0])
+                reward = rew_angle * (rew_ang_vel + rew_vel)
         else:
             reward = 0.0
 
@@ -119,8 +142,10 @@ class CartPoleEnvRL(gym.Env, CartPoleEnv):
         self.action_buffer[0] = action.copy()
         if self.image_obs:
             self.obs = self.get_img_obs()
-        else:
+        elif self.history_obs:
             self.obs = self.get_history_obs()
+        else:
+            self.obs = self.state
 
         return self.obs, reward, done, info
 
@@ -133,7 +158,8 @@ class CartPoleEnvRL(gym.Env, CartPoleEnv):
         return ((255 - resized) > 0).astype(float)
 
     def reset(self):
-        super()._reset_upright()
+        # super()._reset_upright()
+        super()._reset_swingup()
         for i in range(buffer_len):
             self.state_buffer[i] = self.state
         self.action_buffer = np.zeros(self.action_buffer.shape)
@@ -145,8 +171,10 @@ class CartPoleEnvRL(gym.Env, CartPoleEnv):
                 [start_img for _ in range(buffer_len)]
             )
             return self.get_img_obs()
-        else:
+        elif self.history_obs:
             return self.get_history_obs()
+        else:
+            return self.state
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)

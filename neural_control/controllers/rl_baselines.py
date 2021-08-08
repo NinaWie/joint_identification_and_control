@@ -4,6 +4,7 @@ import numpy as np
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import torch
+import time
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
@@ -138,6 +139,8 @@ def train_cartpole(model_path, load_model=None, modified_params={}):
 def evaluate_cartpole(model, env, max_steps=250, nr_iters=1, render=0):
     states, actions = [], []
     num_stable = []
+    swingup_state = []
+    success = np.ones(nr_iters)
     for j in range(nr_iters):
         obs = env.reset()
         for i in range(max_steps):
@@ -152,13 +155,24 @@ def evaluate_cartpole(model, env, max_steps=250, nr_iters=1, render=0):
                 action, _states = model.predict(obs, deterministic=True)
             actions.append(action)
             obs, rewards, done, info = env.step(action)
+            if i > 100:
+                swingup_state.append(np.absolute(env.state))
+                if abs(env.state[2]) > 1:
+                    success[j] = 0
             states.append(env.state)
             if render:
                 env.render()
+                # time.sleep(1)
             if done:
                 break
 
         num_stable.append(i)
+    swingup_state = np.array(swingup_state)
+    print("SWINGUP parameters")
+    print(success, np.sum(success) / len(success))
+    print("mean and std swingup")
+    print(np.mean(swingup_state, axis=0))
+    print(np.std(swingup_state, axis=0))
     states = np.array(states)
     actions = np.array(actions)
     mean_vel = np.mean(np.absolute(states[:, 1]))
@@ -408,23 +422,23 @@ def test_marios():
 
 if __name__ == "__main__":
     # ------------------ CartPole -----------------------
-    # save_name = "trained_models/cartpole/reinforcement_learning/img_finetune/"
+    save_name = "trained_models/cartpole/reinforcement_learning/swingup/"
     # load_name = "trained_models/cartpole/reinforcement_learning/img_bl/rl_150001_steps"
-    # scenario = {"contact": 1}
-    # train_cartpole(save_name, load_model=load_name, modified_params=scenario)
-    # test_rl_cartpole(
-    #     os.path.join(save_name, "rl_230001_steps"), modified_params=scenario
-    # )
+    scenario = {}  # {"contact": 1}
+    # train_cartpole(save_name, modified_params=scenario)
+    test_rl_cartpole(
+        os.path.join(save_name, "rl_300001_steps"), modified_params=scenario
+    )
     # test_ours_cartpole(
-    #     "trained_models/cartpole/con_seq_500", modified_params=scenario
+    #     "trained_models/cartpole/swingup_corrected_dyn", modified_params={}
     # )
 
     # ------------------ Fixed wing drone -----------------------
-    load_name = "trained_models/wing/reinforcement_bl_new/rl_final"
+    # load_name = "trained_models/wing/reinforcement_bl_new/rl_final"
     # # "trained_models/wing/reinforcement_learning/final/ppo_50"
-    save_name = "trained_models/wing/reinforcement_veldrag_bl_new"
-    scenario = {"vel_drag_factor": .3}
-    train_wing(save_name, load_model=load_name, modified_params=scenario)
+    # save_name = "trained_models/wing/reinforcement_veldrag_bl_new"
+    # scenario = {"vel_drag_factor": .3}
+    # train_wing(save_name, load_model=load_name, modified_params=scenario)
     # # test_ours_wing(
     # #     "trained_models/wing/current_model", modified_params=scenario
     # # )
