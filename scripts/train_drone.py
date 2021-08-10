@@ -15,6 +15,7 @@ from neural_control.dynamics.quad_dynamics_flightmare import (
 )
 from neural_control.dynamics.quad_dynamics_trained import LearntQuadDynamics
 from neural_control.dynamics.learnt_dynamics import LearntDynamics
+from neural_control.dynamics.learnt_dynamics import LearntDynamicsMPC
 from neural_control.controllers.network_wrapper import NetworkWrapper
 from neural_control.environments.drone_env import QuadRotorEnvBase
 from evaluate_drone import QuadEvaluator
@@ -154,7 +155,8 @@ class TrainDrone(TrainBase):
         print("--------- eval in trained simulator (D1 modified) --------")
         eval_dyn = (
             self.train_dynamics
-            if isinstance(self.train_dynamics, LearntDynamics) else None
+            if isinstance(self.train_dynamics, LearntDynamics)
+            or isinstance(self.train_dynamics, LearntDynamicsMPC) else None
         )
         evaluator = QuadEvaluator(
             controller, self.eval_env, eval_dyn=eval_dyn, **self.config

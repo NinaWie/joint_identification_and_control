@@ -500,7 +500,6 @@ if __name__ == "__main__":
         test_time=1,
         eval_dyn=dyn_trained,
         is_seq=is_seq,
-        buffer_len=5,
         **params
     )
 
@@ -549,7 +548,7 @@ if __name__ == "__main__":
     print(
         "Speed: max:", round(np.max(speed), 2), ", mean:",
         round(np.mean(speed), 2), "stopped at", len(drone_traj),
-        "avg tracking error", np.mean(divergences)
+        "avg tracking error", np.mean(divergences), "max", np.max(divergences)
     )
     # print(speed)
     plot_trajectory(
