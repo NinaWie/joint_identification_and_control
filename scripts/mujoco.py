@@ -187,9 +187,9 @@ def test_dynamics(dynamics_model, con_model=DummyController(), render=False):
             obs_pred = dynamics_model(
                 list_to_torch([state_before]), list_to_torch([action])
             )  # .numpy()[0]
-            print(
-                "Loss:", loss_reacher(list_to_torch([state_before]), obs_pred)
-            )
+            # print(
+            #     "Loss:", loss_reacher(list_to_torch([state_before]), obs_pred)
+            # )
             obs_pred = obs_pred.numpy()[0]
 
             # prev_dist = np.sum(state_before[-3:]**2) * 100
@@ -214,7 +214,7 @@ def test_dynamics(dynamics_model, con_model=DummyController(), render=False):
                 env.render()
                 time.sleep(.5)
                 # print(np.around(state_before, 2))
-                print(np.around(obs_gt, 2))
+                print(np.around(obs_gt[-3:], 2))
                 # print(np.around(obs_pred, 2)) # obs_pred[-3:])
                 # # print("actu", after_dist - prev_dist)
                 # print("pred", rew_pred)
@@ -313,17 +313,16 @@ def eval_in_trained_dyn(controller, dynamics, nr_actions=3, episode_len=200):
         x_pos_change = 0
 
         while count < episode_len:
-            x_pos = obs[0, 0]
+            x_pos = (obs[0, -3:])**2
             # predict action
             action_seq = controller(obs)
             action_seq = torch.reshape(action_seq, (-1, nr_actions, act_size))
             action = action_seq[:, 0]
             # pass through dynamics
             obs = dynamics(obs, action)
-            # x_pos_change += dynamics(obs, action).item()  # TODO
 
-            x_pos_change += torch.sum(obs[0, -3:]**2).item()
-            # x_pos_change += (obs[0, 0] - x_pos)
+            # distance afterwards - distance before --> should be low
+            x_pos_change += torch.sum(obs[0, -3:]**2 - x_pos).item()
 
             count += 1
         print(
@@ -337,10 +336,11 @@ def loss_cheetah(in_obs, out_obs):
     return 2 - torch.mean((out_obs[:, 0] - in_obs[:, 0]))
 
 
-def loss_reacher(in_obs, out_obs):
-    start_diff = torch.sum(in_obs[:, -3:]**2)
-    end_diff = torch.sum(out_obs[:, -3:]**2)
-    return 2 - (start_diff - end_diff)
+def loss_reacher(obs_list, reference):
+    return torch.sum((obs_list - reference)**2)
+    # start_diff = torch.sum(in_obs[:, -3:]**2)
+    # end_diff = torch.sum(out_obs[:, -3:]**2)
+    # return 2 - (start_diff - end_diff)
 
 
 def set_not_trainable(model):
@@ -363,6 +363,7 @@ def train_controller(
     controller_model=None,
     nr_epochs=1000,
     nr_actions=3,
+    batch_size=8,
     controller_loss=loss_cheetah
 ):
     if controller_model is None:
@@ -376,7 +377,7 @@ def train_controller(
 
     dataset = MujocoDataset()
     trainloader = torch.utils.data.DataLoader(
-        dataset, batch_size=8, shuffle=True, num_workers=0
+        dataset, batch_size=batch_size, shuffle=True, num_workers=0
     )
     train_model = "controller"
     set_not_trainable(dynamics_model)
@@ -399,16 +400,32 @@ def train_controller(
                 (in_state, _, _) = data
                 state = in_state.clone()
 
+                # design reference
+                dist_normed = in_state[:, -3:-1]
+                use_step = torch.minimum(
+                    torch.abs(dist_normed),
+                    # TODO: Assumes that we can move 0.02 per step in each dir
+                    torch.ones(dist_normed.size()) * 0.02 * nr_actions
+                ) / nr_actions * torch.sign(dist_normed)
+                reference = torch.zeros(in_state.size()[0], nr_actions, 2)
+                for ind in range(nr_actions):
+                    reference[:,
+                              ind] = in_state[:, -3:-1] - use_step * (ind + 1)
+
                 act = controller_model(state)
 
-                # # TODO: switch back
+                collect_obs = torch.zeros(in_state.size()[0], nr_actions, 2)
                 action_seq = torch.reshape(act, (-1, nr_actions, act_size))
                 for act_ind in range(nr_actions):
                     state = dynamics_model(state, action_seq[:, act_ind, :])
+                    collect_obs[:, act_ind] = state[:, -3:-1]
                 # predicted_reward = -1 * dynamics_model(state, act)
                 # print(predicted_reward)
                 # loss = torch.sum(predicted_reward)
-                loss = controller_loss(in_state, state)  # TODO
+                # print()
+                # print(reference[0])
+                # print(collect_obs[0])
+                loss = controller_loss(collect_obs, reference)  # TODO
                 loss.backward()
                 optimizer_controller.step()
             else:
@@ -489,7 +506,7 @@ if __name__ == "__main__":
 
     # train_dynamics(nr_epochs=4000, out_path=dynamics_path)
 
-    controller_model = torch.load(out_path + "controller_final")
+    # controller_model = torch.load(out_path + "controller_final")
     # evaluate(
     #     # DummyController(),
     #     ControllerWrapper(controller_model, nr_actions=nr_actions),
@@ -503,20 +520,20 @@ if __name__ == "__main__":
 
     # dynamics_model = torch.load(out_path + "dynamics")
     dynamics_model = torch.load(dynamics_path)
-    test_dynamics(
-        dynamics_model,
-        con_model=ControllerWrapper(controller_model, nr_actions=3),
-        render=True
-    )
-
-    # controller_model = None  # torch.load(
-    # # #     "trained_models/mujoco/working_a_bit/reachercontroller"
-    # # # )
-    # train_controller(
+    # test_dynamics(
     #     dynamics_model,
-    #     out_path,
-    #     controller_model=controller_model,
-    #     nr_epochs=4000,
-    #     nr_actions=nr_actions,
-    #     controller_loss=loss_dict[env_name]
+    #     # con_model=ControllerWrapper(controller_model, nr_actions=3),
+    #     render=True
     # )
+
+    controller_model = None  # torch.load(
+    # # # #     "trained_models/mujoco/working_a_bit/reachercontroller"
+    # # # # )
+    train_controller(
+        dynamics_model,
+        out_path,
+        controller_model=controller_model,
+        nr_epochs=4000,
+        nr_actions=nr_actions,
+        controller_loss=loss_dict[env_name]
+    )
