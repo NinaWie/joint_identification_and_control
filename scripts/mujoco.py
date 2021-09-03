@@ -171,7 +171,7 @@ def collect_episode(model=None, nr_data=1000):
     )
 
 
-def test_dynamics(dynamics_model, render=False):
+def test_dynamics(dynamics_model, con_model=DummyController(), render=False):
     obs_gt = env.reset()
     done = False
     count = 0
@@ -180,15 +180,20 @@ def test_dynamics(dynamics_model, render=False):
     avg_pred = []
     with torch.no_grad():
         while count < 100:
-            action = np.random.rand(act_size) * 2 - 1
+            action = con_model(obs_gt)  # np.random.rand(act_size) * 2 - 1
+
             state_before = obs_gt.copy()
             # print(state_before)
+            obs_pred = dynamics_model(
+                list_to_torch([state_before]), list_to_torch([action])
+            )  # .numpy()[0]
+            print(
+                "Loss:", loss_reacher(list_to_torch([state_before]), obs_pred)
+            )
+            obs_pred = obs_pred.numpy()[0]
 
             # prev_dist = np.sum(state_before[-3:]**2) * 100
             obs_gt, rew_gt, done, info = env.step(action)
-            obs_pred = dynamics_model(
-                list_to_torch([state_before]), list_to_torch([action])
-            ).numpy()[0]
             after_dist = np.sum(obs_gt[-3:]**2) * 100
 
             # rew_gt = prev_dist - after_dist
@@ -196,20 +201,21 @@ def test_dynamics(dynamics_model, render=False):
             # save outputs
             mse.append(np.sum((obs_gt - obs_pred)**2))
             avg_pred.append(obs_pred)
+
+            # store the differences
+            diff_to_bef = np.sum((state_before - obs_gt)**2)
+            diff_to_gt = np.sum((obs_pred - obs_gt)**2)
+            # print("actu", rew_gt)  # prev_dist - after_dist)
+            actu_list.append(diff_to_bef)
+            # obs_gt[-3:])  # prev_dist - after_dist)
+            pred_list.append(diff_to_gt)
+
             if render:
                 env.render()
-                time.sleep(.1)
+                time.sleep(.5)
                 # print(np.around(state_before, 2))
-                # print(np.around(obs_gt, 2))
-                # print(np.around(obs_pred, 2))
-                diff_to_bef = np.sum(np.abs(state_before - obs_gt))
-                diff_to_gt = np.sum(np.abs(obs_pred - obs_gt))
-
-                # print("actu", rew_gt)  # prev_dist - after_dist)
-                actu_list.append(
-                    diff_to_bef
-                )  # obs_gt[-3:])  # prev_dist - after_dist)
-                pred_list.append(diff_to_gt)  # obs_pred[-3:])
+                print(np.around(obs_gt, 2))
+                # print(np.around(obs_pred, 2)) # obs_pred[-3:])
                 # # print("actu", after_dist - prev_dist)
                 # print("pred", rew_pred)
                 # print(np.around(np.sum(obs_gt[-3:]**2), 4))
@@ -219,7 +225,7 @@ def test_dynamics(dynamics_model, render=False):
                 # print()
             count += 1
     print(
-        "mean diff to bef", np.mean(actu_list), "mean error",
+        "Test dynamics: mean diff to bef", np.mean(actu_list), "mean error",
         np.mean(pred_list)
     )
     # if render:
@@ -229,12 +235,12 @@ def test_dynamics(dynamics_model, render=False):
     #     "Average predicted reward and std", np.mean(avg_pred),
     #     np.std(avg_pred)
     # )
-    print("Average mse", np.mean(mse))
+    # print("Average mse", np.mean(mse))
 
 
 def train_dynamics(out_path, nr_epochs=3000):
     dynamics_model = LearntDynamicsNew(obs_size, act_size)
-    optimizer = torch.optim.Adam(dynamics_model.parameters(), lr=0.001)
+    optimizer = torch.optim.SGD(dynamics_model.parameters(), lr=0.00001)
 
     dataset = MujocoDataset()
     trainloader = torch.utils.data.DataLoader(
@@ -296,7 +302,7 @@ def evaluate(controller, render=False):
     return reward_sum
 
 
-def eval_in_trained_dyn(controller, dynamics, nr_actions=3, episode_len=1000):
+def eval_in_trained_dyn(controller, dynamics, nr_actions=3, episode_len=200):
     obs = env.reset()
     done = False
     count = 0
@@ -320,7 +326,10 @@ def eval_in_trained_dyn(controller, dynamics, nr_actions=3, episode_len=1000):
             # x_pos_change += (obs[0, 0] - x_pos)
 
             count += 1
-        print("In trained env: should decrease: ", round(x_pos_change, 2))
+        print(
+            "In trained env: should decrease: ",
+            round(x_pos_change / episode_len, 2)
+        )
 
 
 def loss_cheetah(in_obs, out_obs):
@@ -380,6 +389,9 @@ def train_controller(
         # if epoch < 200:
         #     train_model = "dynamics"
         #     set_trainable(dynamics_model)
+        train_model = "controller"
+        set_trainable(controller_model)
+        # TODO
         for i, data in enumerate(trainloader):
             if train_model == "controller":
                 optimizer_controller.zero_grad()
@@ -405,7 +417,7 @@ def train_controller(
                 (state, act, state_out) = data
                 state_pred = dynamics_model(state, act)
 
-                loss = torch.sum((state_pred - state_out)**2)
+                loss = torch.sum((state_pred - state_out)**2 / 8)
 
                 loss.backward()
                 optimizer_dynamics.step()
@@ -413,6 +425,7 @@ def train_controller(
             epoch_loss += loss.item()
 
         if epoch % 20 == 0:
+            wrapped_model = ControllerWrapper(controller_model, nr_actions)
             print()
             print(f"Epoch {epoch} trained ", train_model)
             print(f"Loss: {round(epoch_loss / i * 100, 2)}")
@@ -421,12 +434,14 @@ def train_controller(
                 set_trainable(controller_model)
                 train_model = "controller"
                 dyn_loss.append(epoch_loss / i)
+                test_dynamics(dynamics_model)
+                print("with controller:")
+                test_dynamics(dynamics_model, con_model=wrapped_model)
             elif train_model == "controller":
                 set_not_trainable(controller_model)
                 set_trainable(dynamics_model)
                 train_model = "dynamics"
                 con_loss.append(epoch_loss / i)
-                wrapped_model = ControllerWrapper(controller_model, nr_actions)
                 reward_sum = evaluate(wrapped_model, render=False)
                 rewards.append(reward_sum)
                 eval_in_trained_dyn(
@@ -438,7 +453,11 @@ def train_controller(
                     torch.save(dynamics_model, out_path + "dynamics")
                     print("Saved models, best episode")
 
-                    dataset.collect_new_data(wrapped_model)
+                dataset.collect_new_data()  # wrapped_model)
+
+    torch.save(controller_model, out_path + "controller_final")
+    torch.save(dynamics_model, out_path + "dynamics_final")
+
     plt.figure(figsize=(15, 5))
     plt.subplot(1, 3, 1)
     plt.plot(con_loss)
@@ -470,10 +489,10 @@ if __name__ == "__main__":
 
     # train_dynamics(nr_epochs=4000, out_path=dynamics_path)
 
-    # controller_model = torch.load(out_path + "controller")
+    controller_model = torch.load(out_path + "controller_final")
     # evaluate(
-    #     DummyController(),
-    #     # ControllerWrapper(controller_model, nr_actions=nr_actions),
+    #     # DummyController(),
+    #     ControllerWrapper(controller_model, nr_actions=nr_actions),
     #     render=True
     # )
 
@@ -484,16 +503,20 @@ if __name__ == "__main__":
 
     # dynamics_model = torch.load(out_path + "dynamics")
     dynamics_model = torch.load(dynamics_path)
-    # test_dynamics(dynamics_model, render=True)
-
-    controller_model = None  # torch.load(
-    #     "trained_models/mujoco/working_a_bit/reachercontroller"
-    # )
-    train_controller(
+    test_dynamics(
         dynamics_model,
-        out_path,
-        controller_model=controller_model,
-        nr_epochs=3000,
-        nr_actions=nr_actions,
-        controller_loss=loss_dict[env_name]
+        con_model=ControllerWrapper(controller_model, nr_actions=3),
+        render=True
     )
+
+    # controller_model = None  # torch.load(
+    # # #     "trained_models/mujoco/working_a_bit/reachercontroller"
+    # # # )
+    # train_controller(
+    #     dynamics_model,
+    #     out_path,
+    #     controller_model=controller_model,
+    #     nr_epochs=4000,
+    #     nr_actions=nr_actions,
+    #     controller_loss=loss_dict[env_name]
+    # )
