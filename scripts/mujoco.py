@@ -130,7 +130,6 @@ class ControllerNet(nn.Module):
 
 
 def collect_episode(model=None, nr_data=1000):
-    # TODO: use model itself
     if model is None:
         model = DummyController()
     count = 0
@@ -147,7 +146,7 @@ def collect_episode(model=None, nr_data=1000):
 
             prev_dist = np.sum(obs[-3:]**2) * 100
 
-            obs, _, done, _ = env.step(action)
+            obs, rew, done, _ = env.step(action)
 
             after_dist = np.sum(obs[-3:]**2) * 100
             # env.render()
@@ -156,7 +155,7 @@ def collect_episode(model=None, nr_data=1000):
 
             # We want to predict only how much closer this action brought us
             # want to maximize this, so we want to minimize 2- this
-            states_after.append(prev_dist - after_dist)
+            states_after.append(rew)  # prev_dist - after_dist)
             # [np.sum(obs[-3:]**2)])
 
             count += 1
@@ -178,15 +177,15 @@ def test_dynamics(dynamics_model, render=False):
             state_before = obs_gt.copy()
             # print(state_before)
 
-            prev_dist = np.sum(state_before[-3:]**2) * 100
+            # prev_dist = np.sum(state_before[-3:]**2) * 100
 
-            obs_gt, rew, done, info = env.step(action)
+            obs_gt, rew_gt, done, info = env.step(action)
             rew_pred = dynamics_model(
                 list_to_torch([state_before]), list_to_torch([action])
             )
-            after_dist = np.sum(obs_gt[-3:]**2) * 100
+            # after_dist = np.sum(obs_gt[-3:]**2) * 100
 
-            rew_gt = prev_dist - after_dist
+            # rew_gt = prev_dist - after_dist
 
             # save outputs
             mse_rew.append((rew_gt - rew_pred)**2)
@@ -194,8 +193,8 @@ def test_dynamics(dynamics_model, render=False):
             if render:
                 env.render()
                 time.sleep(.1)
-                print("actu", prev_dist - after_dist)
-                actu_list.append(prev_dist - after_dist)
+                print("actu", rew_gt)  # prev_dist - after_dist)
+                actu_list.append(rew_gt)  # prev_dist - after_dist)
                 pred_list.append(rew_pred)
                 # print("actu", after_dist - prev_dist)
                 print("pred", rew_pred)
@@ -208,7 +207,10 @@ def test_dynamics(dynamics_model, render=False):
     if render:
         plt.scatter(pred_list, actu_list)
         plt.show()
-    print("Average action and std", np.mean(avg_pred), np.std(avg_pred))
+    print(
+        "Average predicted reward and std", np.mean(avg_pred),
+        np.std(avg_pred)
+    )
     print("Average mse", np.mean(mse_rew))
 
 
@@ -228,6 +230,11 @@ def train_dynamics(out_path, nr_epochs=3000):
 
             (state, act, state_out) = data
             state_pred = dynamics_model(state, act)
+
+            # if i == 0:
+            # print(state[0])
+            # print(act[0])
+            # print(state_pred[0], state_out[0])
 
             loss = torch.sum((state_pred - state_out)**2)
 
@@ -258,9 +265,9 @@ def evaluate(controller, render=False):
             action = controller(obs)
             obs, rew, done, _ = env.step(action)
             if render:
-                print(action)
+                # print(action)
                 env.render()
-                time.sleep(0.1)
+                time.sleep(0.05)
 
             reward_sum += rew
             x_pos_change += (obs[0] - x_pos)
@@ -323,13 +330,15 @@ def set_trainable(model):
 def train_controller(
     dynamics_model,
     out_path,
+    controller_model=None,
     nr_epochs=1000,
     nr_actions=3,
     controller_loss=loss_cheetah
 ):
-    controller_model = ControllerNet(obs_size, act_size * nr_actions)
+    if controller_model is None:
+        controller_model = ControllerNet(obs_size, act_size * nr_actions)
     optimizer_controller = torch.optim.Adam(
-        controller_model.parameters(), lr=0.0001
+        controller_model.parameters(), lr=0.01
     )
     optimizer_dynamics = torch.optim.Adam(
         dynamics_model.parameters(), lr=0.0001
@@ -362,8 +371,9 @@ def train_controller(
                 # action_seq = torch.reshape(act, (-1, nr_actions, act_size))
                 # for act_ind in range(nr_actions):
                 #     state = dynamics_model(state, action_seq[:, act_ind, :])
-                print(state.size(), act.size())
-                loss = torch.sum(dynamics_model(state, act))
+                predicted_reward = -1 * dynamics_model(state, act)
+                # print(predicted_reward)
+                loss = torch.sum(predicted_reward)
                 # loss = controller_loss(in_state, state) # TODO
                 loss.backward()
                 optimizer_controller.step()
@@ -395,7 +405,7 @@ def train_controller(
                 train_model = "dynamics"
                 con_loss.append(epoch_loss / i)
                 wrapped_model = ControllerWrapper(controller_model, nr_actions)
-                reward_sum = evaluate(wrapped_model, render=False)
+                reward_sum = evaluate(wrapped_model, render=True)
                 rewards.append(reward_sum)
                 eval_in_trained_dyn(
                     controller_model, dynamics_model, nr_actions=nr_actions
@@ -435,7 +445,7 @@ if __name__ == "__main__":
     print(env.action_space.low, env.action_space.high)
     dynamics_path = "trained_models/mujoco/dynamics_" + env_name
     out_path = "trained_models/mujoco/" + env_name
-    # train_dynamics(nr_epochs=3000, out_path=dynamics_path)
+    # train_dynamics(nr_epochs=1000, out_path=dynamics_path)
 
     # controller_model = torch.load(out_path + "controller")
     # evaluate(
@@ -450,11 +460,11 @@ if __name__ == "__main__":
     # )  # only distance as output
 
     dynamics_model = torch.load(dynamics_path)
-    test_dynamics(dynamics_model, render=True)
-    # train_controller(
-    #     dynamics_model,
-    #     out_path,
-    #     nr_epochs=1000,
-    #     nr_actions=nr_actions,
-    #     controller_loss=loss_dict[env_name]
-    # )
+    # test_dynamics(dynamics_model, render=True)
+    train_controller(
+        dynamics_model,
+        out_path,
+        nr_epochs=1000,
+        nr_actions=nr_actions,
+        controller_loss=loss_dict[env_name]
+    )
