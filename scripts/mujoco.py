@@ -44,12 +44,18 @@ class MujocoDataset(torch.utils.data.Dataset):
 
     def __init__(self):
         self.collect_new_data(DummyController())
+        # TODO: normalize? - but difference is entscheidend!
+        # self.mean = torch.mean(self.states_x, dim=0)
+        # print("means", self.mean.size())
+        # self.std = torch.std(self.states_x, dim=0)
 
     def collect_new_data(self, model=DummyController()):
         with torch.no_grad():
             self.states_x, self.actions, self.states_y = collect_episode(
                 model=model
             )
+        # if self.mean is None:
+        #     states_x, actions, states_y =
 
     def __len__(self):
         return len(self.states_x)
@@ -80,7 +86,7 @@ class LearntDynamicsNew(nn.Module):
         x1 = torch.relu(self.lin1(state_action))
         x2 = torch.relu(self.lin2(x1))
         x3 = torch.relu(self.lin3(x2))
-        return torch.tanh(self.lin4(x3)) * 3
+        return state + torch.tanh(self.lin4(x3)) * 3
 
 
 # class LearntDynamicsNew(LearntDynamicsMPC):
@@ -141,7 +147,7 @@ def collect_episode(model=None, nr_data=1000):
         while not done:
             # predict random action
             action = model(obs)
-            states_before.append(obs)
+            states_before.append(obs.copy())
             actions.append(action)
 
             prev_dist = np.sum(obs[-3:]**2) * 100
@@ -155,7 +161,8 @@ def collect_episode(model=None, nr_data=1000):
 
             # We want to predict only how much closer this action brought us
             # want to maximize this, so we want to minimize 2- this
-            states_after.append(rew)  # prev_dist - after_dist)
+            states_after.append(obs.copy())
+            # rew)  # prev_dist - after_dist)
             # [np.sum(obs[-3:]**2)])
 
             count += 1
@@ -169,7 +176,7 @@ def test_dynamics(dynamics_model, render=False):
     done = False
     count = 0
     actu_list, pred_list = [], []
-    mse_rew = []
+    mse = []
     avg_pred = []
     with torch.no_grad():
         while count < 100:
@@ -178,44 +185,55 @@ def test_dynamics(dynamics_model, render=False):
             # print(state_before)
 
             # prev_dist = np.sum(state_before[-3:]**2) * 100
-
             obs_gt, rew_gt, done, info = env.step(action)
-            rew_pred = dynamics_model(
+            obs_pred = dynamics_model(
                 list_to_torch([state_before]), list_to_torch([action])
-            )
-            # after_dist = np.sum(obs_gt[-3:]**2) * 100
+            ).numpy()[0]
+            after_dist = np.sum(obs_gt[-3:]**2) * 100
 
             # rew_gt = prev_dist - after_dist
 
             # save outputs
-            mse_rew.append((rew_gt - rew_pred)**2)
-            avg_pred.append(rew_pred)
+            mse.append(np.sum((obs_gt - obs_pred)**2))
+            avg_pred.append(obs_pred)
             if render:
                 env.render()
                 time.sleep(.1)
-                print("actu", rew_gt)  # prev_dist - after_dist)
-                actu_list.append(rew_gt)  # prev_dist - after_dist)
-                pred_list.append(rew_pred)
-                # print("actu", after_dist - prev_dist)
-                print("pred", rew_pred)
+                # print(np.around(state_before, 2))
+                # print(np.around(obs_gt, 2))
+                # print(np.around(obs_pred, 2))
+                diff_to_bef = np.sum(np.abs(state_before - obs_gt))
+                diff_to_gt = np.sum(np.abs(obs_pred - obs_gt))
+
+                # print("actu", rew_gt)  # prev_dist - after_dist)
+                actu_list.append(
+                    diff_to_bef
+                )  # obs_gt[-3:])  # prev_dist - after_dist)
+                pred_list.append(diff_to_gt)  # obs_pred[-3:])
+                # # print("actu", after_dist - prev_dist)
+                # print("pred", rew_pred)
                 # print(np.around(np.sum(obs_gt[-3:]**2), 4))
                 # print(np.around(state_before, 2)[-3:-1])
                 # print(np.around(obs_gt, 2)[-3:-1])
                 # print(np.around(obs_pred[0].numpy(), 2)[-3:-1])
-                print()
+                # print()
             count += 1
-    if render:
-        plt.scatter(pred_list, actu_list)
-        plt.show()
     print(
-        "Average predicted reward and std", np.mean(avg_pred),
-        np.std(avg_pred)
+        "mean diff to bef", np.mean(actu_list), "mean error",
+        np.mean(pred_list)
     )
-    print("Average mse", np.mean(mse_rew))
+    # if render:
+    #     plt.scatter(actu_list, pred_list)
+    #     plt.show()
+    # print(
+    #     "Average predicted reward and std", np.mean(avg_pred),
+    #     np.std(avg_pred)
+    # )
+    print("Average mse", np.mean(mse))
 
 
 def train_dynamics(out_path, nr_epochs=3000):
-    dynamics_model = LearntDynamicsNew(obs_size, act_size, out_state_size=1)
+    dynamics_model = LearntDynamicsNew(obs_size, act_size)
     optimizer = torch.optim.Adam(dynamics_model.parameters(), lr=0.001)
 
     dataset = MujocoDataset()
@@ -295,9 +313,10 @@ def eval_in_trained_dyn(controller, dynamics, nr_actions=3, episode_len=1000):
             action_seq = torch.reshape(action_seq, (-1, nr_actions, act_size))
             action = action_seq[:, 0]
             # pass through dynamics
-            x_pos_change += dynamics(obs, action).item()  # TODO
+            obs = dynamics(obs, action)
+            # x_pos_change += dynamics(obs, action).item()  # TODO
 
-            # x_pos_change += torch.sum(obs[0, -3:]**2).item()
+            x_pos_change += torch.sum(obs[0, -3:]**2).item()
             # x_pos_change += (obs[0, 0] - x_pos)
 
             count += 1
@@ -310,7 +329,9 @@ def loss_cheetah(in_obs, out_obs):
 
 
 def loss_reacher(in_obs, out_obs):
-    return torch.sum(out_obs[:, -3:]**2)
+    start_diff = torch.sum(in_obs[:, -3:]**2)
+    end_diff = torch.sum(out_obs[:, -3:]**2)
+    return 2 - (start_diff - end_diff)
 
 
 def set_not_trainable(model):
@@ -337,8 +358,8 @@ def train_controller(
 ):
     if controller_model is None:
         controller_model = ControllerNet(obs_size, act_size * nr_actions)
-    optimizer_controller = torch.optim.Adam(
-        controller_model.parameters(), lr=0.01
+    optimizer_controller = torch.optim.SGD(
+        controller_model.parameters(), lr=0.00001
     )
     optimizer_dynamics = torch.optim.Adam(
         dynamics_model.parameters(), lr=0.0001
@@ -349,6 +370,7 @@ def train_controller(
         dataset, batch_size=8, shuffle=True, num_workers=0
     )
     train_model = "controller"
+    set_not_trainable(dynamics_model)
 
     best_rew = -500
     con_loss, dyn_loss, rewards = [], [], []
@@ -368,13 +390,13 @@ def train_controller(
                 act = controller_model(state)
 
                 # # TODO: switch back
-                # action_seq = torch.reshape(act, (-1, nr_actions, act_size))
-                # for act_ind in range(nr_actions):
-                #     state = dynamics_model(state, action_seq[:, act_ind, :])
-                predicted_reward = -1 * dynamics_model(state, act)
+                action_seq = torch.reshape(act, (-1, nr_actions, act_size))
+                for act_ind in range(nr_actions):
+                    state = dynamics_model(state, action_seq[:, act_ind, :])
+                # predicted_reward = -1 * dynamics_model(state, act)
                 # print(predicted_reward)
-                loss = torch.sum(predicted_reward)
-                # loss = controller_loss(in_state, state) # TODO
+                # loss = torch.sum(predicted_reward)
+                loss = controller_loss(in_state, state)  # TODO
                 loss.backward()
                 optimizer_controller.step()
             else:
@@ -405,7 +427,7 @@ def train_controller(
                 train_model = "dynamics"
                 con_loss.append(epoch_loss / i)
                 wrapped_model = ControllerWrapper(controller_model, nr_actions)
-                reward_sum = evaluate(wrapped_model, render=True)
+                reward_sum = evaluate(wrapped_model, render=False)
                 rewards.append(reward_sum)
                 eval_in_trained_dyn(
                     controller_model, dynamics_model, nr_actions=nr_actions
@@ -434,7 +456,7 @@ env_dict = {"reacher": "Reacher-v1", "cheetah": 'HalfCheetah-v1'}
 loss_dict = {"cheetah": loss_cheetah, "reacher": loss_reacher}
 
 if __name__ == "__main__":
-    nr_actions = 1
+    nr_actions = 3
     env_name = "reacher"
     # env = DummyEnv()
     env = gym.make(env_dict[env_name])
@@ -445,7 +467,8 @@ if __name__ == "__main__":
     print(env.action_space.low, env.action_space.high)
     dynamics_path = "trained_models/mujoco/dynamics_" + env_name
     out_path = "trained_models/mujoco/" + env_name
-    # train_dynamics(nr_epochs=1000, out_path=dynamics_path)
+
+    # train_dynamics(nr_epochs=4000, out_path=dynamics_path)
 
     # controller_model = torch.load(out_path + "controller")
     # evaluate(
@@ -459,12 +482,18 @@ if __name__ == "__main__":
     #     obs_size, act_size, out_state_size=1
     # )  # only distance as output
 
+    # dynamics_model = torch.load(out_path + "dynamics")
     dynamics_model = torch.load(dynamics_path)
     # test_dynamics(dynamics_model, render=True)
+
+    controller_model = None  # torch.load(
+    #     "trained_models/mujoco/working_a_bit/reachercontroller"
+    # )
     train_controller(
         dynamics_model,
         out_path,
-        nr_epochs=1000,
+        controller_model=controller_model,
+        nr_epochs=3000,
         nr_actions=nr_actions,
         controller_loss=loss_dict[env_name]
     )
