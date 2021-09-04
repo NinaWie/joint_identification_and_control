@@ -86,7 +86,9 @@ class LearntDynamicsNew(nn.Module):
         x1 = torch.relu(self.lin1(state_action))
         x2 = torch.relu(self.lin2(x1))
         x3 = torch.relu(self.lin3(x2))
-        return state + torch.tanh(self.lin4(x3)) * 3
+        delta_state = torch.tanh(self.lin4(x3)) * 3
+        delta_state[:, -1] *= 0  # last one is always zero
+        return state + delta_state
 
 
 # class LearntDynamicsNew(LearntDynamicsMPC):
@@ -214,14 +216,15 @@ def test_dynamics(dynamics_model, con_model=DummyController(), render=False):
                 env.render()
                 time.sleep(.5)
                 # print(np.around(state_before, 2))
-                print(np.around(obs_gt[-3:], 2))
+                # print(np.around(obs_gt[-3:], 2))
                 # print(np.around(obs_pred, 2)) # obs_pred[-3:])
                 # # print("actu", after_dist - prev_dist)
                 # print("pred", rew_pred)
                 # print(np.around(np.sum(obs_gt[-3:]**2), 4))
                 # print(np.around(state_before, 2)[-3:-1])
-                # print(np.around(obs_gt, 2)[-3:-1])
-                # print(np.around(obs_pred[0].numpy(), 2)[-3:-1])
+                print(np.around(obs_gt, 2)[-3:])
+                print(np.around(obs_pred, 2)[-3:])
+                print()
                 # print()
             count += 1
     print(
@@ -284,7 +287,7 @@ def evaluate(controller, render=False):
         x_pos_change = 0
         reward_sum = 0
 
-        while not done:  #  and count < 20:
+        while count < 1000:
             x_pos = obs[0]
             action = controller(obs)
             obs, rew, done, _ = env.step(action)
@@ -302,32 +305,37 @@ def evaluate(controller, render=False):
     return reward_sum
 
 
-def eval_in_trained_dyn(controller, dynamics, nr_actions=3, episode_len=200):
-    obs = env.reset()
-    done = False
+def eval_in_trained_dyn(controller, dynamics, nr_actions=3, episode_len=500):
     count = 0
-
-    obs = list_to_torch([obs])
 
     with torch.no_grad():
         x_pos_change = 0
 
         while count < episode_len:
+            if count % 50 == 0:
+                obs = env.reset()
+                obs = list_to_torch([obs])
+
             x_pos = (obs[0, -3:])**2
             # predict action
             action_seq = controller(obs)
             action_seq = torch.reshape(action_seq, (-1, nr_actions, act_size))
             action = action_seq[:, 0]
+
+            # compare to random action
+            # action = torch.randn(action.size())
             # pass through dynamics
             obs = dynamics(obs, action)
+            # print(obs)
 
             # distance afterwards - distance before --> should be low
             x_pos_change += torch.sum(obs[0, -3:]**2 - x_pos).item()
+            # print(x_pos_change)
 
             count += 1
         print(
             "In trained env: should decrease: ",
-            round(x_pos_change / episode_len, 2)
+            round(x_pos_change / episode_len * 1000, 2)
         )
 
 
@@ -390,8 +398,8 @@ def train_controller(
         # if epoch < 200:
         #     train_model = "dynamics"
         #     set_trainable(dynamics_model)
-        train_model = "controller"
-        set_trainable(controller_model)
+        # train_model = "controller"
+        # set_trainable(controller_model)
         # TODO
         for i, data in enumerate(trainloader):
             if train_model == "controller":
@@ -470,10 +478,13 @@ def train_controller(
                     torch.save(dynamics_model, out_path + "dynamics")
                     print("Saved models, best episode")
 
-                dataset.collect_new_data()  # wrapped_model)
+                dataset.collect_new_data(wrapped_model)
+                if epoch % 100 == 0:
+                    # every now and then, collect data with the controller
+                    dataset.collect_new_data(wrapped_model)
 
-    torch.save(controller_model, out_path + "controller_final")
-    torch.save(dynamics_model, out_path + "dynamics_final")
+    torch.save(controller_model, out_path + "controller_final_new")
+    torch.save(dynamics_model, out_path + "dynamics_final_new")
 
     plt.figure(figsize=(15, 5))
     plt.subplot(1, 3, 1)
@@ -485,6 +496,7 @@ def train_controller(
     plt.subplot(1, 3, 3)
     plt.plot(rewards)
     plt.title("rewards")
+    plt.savefig("out_plot.png")
     plt.show()
 
 
@@ -506,7 +518,9 @@ if __name__ == "__main__":
 
     # train_dynamics(nr_epochs=4000, out_path=dynamics_path)
 
-    # controller_model = torch.load(out_path + "controller_final")
+    dynamics_model = torch.load(out_path + "dynamics_final_new")
+    controller_model = torch.load(out_path + "controller_final_new")
+    eval_in_trained_dyn(controller_model, dynamics_model)
     # evaluate(
     #     # DummyController(),
     #     ControllerWrapper(controller_model, nr_actions=nr_actions),
@@ -518,22 +532,22 @@ if __name__ == "__main__":
     #     obs_size, act_size, out_state_size=1
     # )  # only distance as output
 
-    # dynamics_model = torch.load(out_path + "dynamics")
-    dynamics_model = torch.load(dynamics_path)
+    # dynamics_model = torch.load(out_path + "dynamics_final")
+    # dynamics_model = torch.load(dynamics_path)
     # test_dynamics(
     #     dynamics_model,
     #     # con_model=ControllerWrapper(controller_model, nr_actions=3),
     #     render=True
     # )
 
-    controller_model = None  # torch.load(
-    # # # #     "trained_models/mujoco/working_a_bit/reachercontroller"
-    # # # # )
-    train_controller(
-        dynamics_model,
-        out_path,
-        controller_model=controller_model,
-        nr_epochs=4000,
-        nr_actions=nr_actions,
-        controller_loss=loss_dict[env_name]
-    )
+    # controller_model = None  # torch.load(
+    # #     "trained_models/mujoco/working_a_bit/reachercontroller"
+    # # )
+    # train_controller(
+    #     dynamics_model,
+    #     out_path,
+    #     controller_model=controller_model,
+    #     nr_epochs=10000,
+    #     nr_actions=nr_actions,
+    #     controller_loss=loss_dict[env_name]
+    # )
