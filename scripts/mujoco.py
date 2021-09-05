@@ -222,8 +222,9 @@ def test_dynamics(dynamics_model, con_model=DummyController(), render=False):
                 # print("pred", rew_pred)
                 # print(np.around(np.sum(obs_gt[-3:]**2), 4))
                 # print(np.around(state_before, 2)[-3:-1])
-                print(np.around(obs_gt, 2)[-3:])
-                print(np.around(obs_pred, 2)[-3:])
+                print(np.around(state_before, 2)[-3:-1])
+                print(np.around(obs_gt, 2)[-3:-1])
+                print(np.around(obs_pred, 2)[-3:-1])
                 print()
                 # print()
             count += 1
@@ -278,29 +279,45 @@ def train_dynamics(out_path, nr_epochs=3000):
     torch.save(dynamics_model, out_path)
 
 
-def evaluate(controller, render=False):
+def evaluate_render(controller):
     obs = env.reset()
-    done = False
     count = 0
+    reward_sum = 0
+    with torch.no_grad():
+        while count < 1000:
+            action = controller(obs)
+            obs, rew, _, _ = env.step(action)
+            env.render()
+            time.sleep(0.05)
+            reward_sum += rew
+
+            count += 1
+        print("In real env: sum of rewards", round(reward_sum, 2))
+    return reward_sum
+
+
+def evaluate(controller, render=False, nr_iters=1000):
+    if render:
+        return evaluate_render(controller)
 
     with torch.no_grad():
         x_pos_change = 0
         reward_sum = 0
 
-        while count < 1000:
-            x_pos = obs[0]
+        for i in range(nr_iters):
+            if i % 50 == 0:
+                obs = env.reset()
+
+            x_pos = (obs[-3:])**2
+
             action = controller(obs)
             obs, rew, done, _ = env.step(action)
-            if render:
-                # print(action)
-                env.render()
-                time.sleep(0.05)
 
             reward_sum += rew
-            x_pos_change += (obs[0] - x_pos)
+            x_pos_change += np.sqrt(np.sum(obs[-3:]**2))
 
-            count += 1
-        print("In real env: sum of rewards", round(reward_sum, 2))
+        print("distance in real", x_pos_change / nr_iters * 50)
+        # print("In real env: sum of rewards", round(reward_sum, 2))
         #, "x", x_pos_change)
     return reward_sum
 
@@ -313,10 +330,12 @@ def eval_in_trained_dyn(controller, dynamics, nr_actions=3, episode_len=500):
 
         while count < episode_len:
             if count % 50 == 0:
+                # print("-----------------------------\n")
                 obs = env.reset()
                 obs = list_to_torch([obs])
 
             x_pos = (obs[0, -3:])**2
+            # print(x_pos[-3:-1])
             # predict action
             action_seq = controller(obs)
             action_seq = torch.reshape(action_seq, (-1, nr_actions, act_size))
@@ -329,13 +348,12 @@ def eval_in_trained_dyn(controller, dynamics, nr_actions=3, episode_len=500):
             # print(obs)
 
             # distance afterwards - distance before --> should be low
-            x_pos_change += torch.sum(obs[0, -3:]**2 - x_pos).item()
-            # print(x_pos_change)
+            x_pos_change += torch.sqrt(torch.sum(obs[0, -3:]**2)).item()
 
             count += 1
         print(
-            "In trained env: should decrease: ",
-            round(x_pos_change / episode_len * 1000, 2)
+            "distance in trained env: ",
+            round(x_pos_change / episode_len * 50, 2)
         )
 
 
@@ -520,11 +538,11 @@ if __name__ == "__main__":
 
     dynamics_model = torch.load(out_path + "dynamics_final_new")
     controller_model = torch.load(out_path + "controller_final_new")
-    eval_in_trained_dyn(controller_model, dynamics_model)
+    # eval_in_trained_dyn(controller_model, dynamics_model)
     # evaluate(
     #     # DummyController(),
     #     ControllerWrapper(controller_model, nr_actions=nr_actions),
-    #     render=True
+    #     render=False
     # )
 
     # train from scatch
@@ -534,11 +552,11 @@ if __name__ == "__main__":
 
     # dynamics_model = torch.load(out_path + "dynamics_final")
     # dynamics_model = torch.load(dynamics_path)
-    # test_dynamics(
-    #     dynamics_model,
-    #     # con_model=ControllerWrapper(controller_model, nr_actions=3),
-    #     render=True
-    # )
+    test_dynamics(
+        dynamics_model,
+        con_model=ControllerWrapper(controller_model, nr_actions=3),
+        render=False
+    )
 
     # controller_model = None  # torch.load(
     # #     "trained_models/mujoco/working_a_bit/reachercontroller"
