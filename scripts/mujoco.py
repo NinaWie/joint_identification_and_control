@@ -287,8 +287,10 @@ def evaluate_render(controller):
         while count < 1000:
             action = controller(obs)
             obs, rew, _, _ = env.step(action)
+            # print(np.around(obs, 2), obs[7])
+
             env.render()
-            time.sleep(0.05)
+            time.sleep(0.1)
             reward_sum += rew
 
             count += 1
@@ -355,6 +357,7 @@ def eval_in_trained_dyn(controller, dynamics, nr_actions=3, episode_len=500):
             "distance in trained env: ",
             round(x_pos_change / episode_len * 50, 2)
         )
+    return x_pos_change / episode_len * 50
 
 
 def loss_cheetah(in_obs, out_obs):
@@ -395,7 +398,7 @@ def train_controller(
     if controller_model is None:
         controller_model = ControllerNet(obs_size, act_size * nr_actions)
     optimizer_controller = torch.optim.SGD(
-        controller_model.parameters(), lr=0.00001
+        controller_model.parameters(), lr=0.000001
     )
     optimizer_dynamics = torch.optim.Adam(
         dynamics_model.parameters(), lr=0.0001
@@ -414,11 +417,10 @@ def train_controller(
     for epoch in range(nr_epochs):
         epoch_loss = 0
         # if epoch < 200:
-        #     train_model = "dynamics"
-        #     set_trainable(dynamics_model)
-        # train_model = "controller"
-        # set_trainable(controller_model)
-        # TODO
+        # train_model = "dynamics"
+        # TODO: atm only train the controller
+        # set_trainable(dynamics_model)
+        train_model = "controller"
         for i, data in enumerate(trainloader):
             if train_model == "controller":
                 optimizer_controller.zero_grad()
@@ -445,12 +447,6 @@ def train_controller(
                 for act_ind in range(nr_actions):
                     state = dynamics_model(state, action_seq[:, act_ind, :])
                     collect_obs[:, act_ind] = state[:, -3:-1]
-                # predicted_reward = -1 * dynamics_model(state, act)
-                # print(predicted_reward)
-                # loss = torch.sum(predicted_reward)
-                # print()
-                # print(reference[0])
-                # print(collect_obs[0])
                 loss = controller_loss(collect_obs, reference)  # TODO
                 loss.backward()
                 optimizer_controller.step()
@@ -478,31 +474,32 @@ def train_controller(
                 train_model = "controller"
                 dyn_loss.append(epoch_loss / i)
                 test_dynamics(dynamics_model)
-                print("with controller:")
-                test_dynamics(dynamics_model, con_model=wrapped_model)
+                # print("with controller:")
+                # test_dynamics(dynamics_model, con_model=wrapped_model)
             elif train_model == "controller":
-                set_not_trainable(controller_model)
-                set_trainable(dynamics_model)
-                train_model = "dynamics"
+                # TODO: for iterative training
+                # set_not_trainable(controller_model)
+                # set_trainable(dynamics_model)
+                # train_model = "dynamics"
                 con_loss.append(epoch_loss / i)
-                reward_sum = evaluate(wrapped_model, render=False)
-                rewards.append(reward_sum)
-                eval_in_trained_dyn(
+                # reward_sum = evaluate(wrapped_model, render=False)
+                reward_sum = eval_in_trained_dyn(
                     controller_model, dynamics_model, nr_actions=nr_actions
                 )
+                rewards.append(reward_sum)
                 if reward_sum > best_rew:
                     best_rew = reward_sum
                     torch.save(controller_model, out_path + "controller")
                     torch.save(dynamics_model, out_path + "dynamics")
                     print("Saved models, best episode")
 
-                dataset.collect_new_data(wrapped_model)
-                if epoch % 100 == 0:
+                dataset.collect_new_data()
+                if epoch % 40 == 0:
                     # every now and then, collect data with the controller
                     dataset.collect_new_data(wrapped_model)
 
-    torch.save(controller_model, out_path + "controller_final_new")
-    torch.save(dynamics_model, out_path + "dynamics_final_new")
+    torch.save(controller_model, out_path + "controller_final")
+    torch.save(dynamics_model, out_path + "dynamics_final")
 
     plt.figure(figsize=(15, 5))
     plt.subplot(1, 3, 1)
@@ -536,15 +533,15 @@ if __name__ == "__main__":
 
     # train_dynamics(nr_epochs=4000, out_path=dynamics_path)
 
-    dynamics_model = torch.load(out_path + "dynamics_final_new")
-    controller_model = torch.load(out_path + "controller_final_new")
-    # eval_in_trained_dyn(controller_model, dynamics_model)
+    dynamics_model = torch.load(out_path + "dynamics_final")
+    controller_model = torch.load(out_path + "controller_final")
+    eval_in_trained_dyn(controller_model, dynamics_model)
     # evaluate(
     #     # DummyController(),
     #     ControllerWrapper(controller_model, nr_actions=nr_actions),
     #     render=False
     # )
-
+    # exit()
     # train from scatch
     # dynamics_model = LearntDynamicsNew(
     #     obs_size, act_size, out_state_size=1
@@ -552,20 +549,20 @@ if __name__ == "__main__":
 
     # dynamics_model = torch.load(out_path + "dynamics_final")
     # dynamics_model = torch.load(dynamics_path)
-    test_dynamics(
-        dynamics_model,
-        con_model=ControllerWrapper(controller_model, nr_actions=3),
-        render=False
-    )
+    # test_dynamics(
+    #     dynamics_model,
+    #     # con_model=ControllerWrapper(controller_model, nr_actions=3),
+    #     render=False
+    # )
 
     # controller_model = None  # torch.load(
-    # #     "trained_models/mujoco/working_a_bit/reachercontroller"
-    # # )
+    #     "trained_models/mujoco/working_a_bit/reachercontroller"
+    # )
     # train_controller(
     #     dynamics_model,
     #     out_path,
     #     controller_model=controller_model,
-    #     nr_epochs=10000,
+    #     nr_epochs=20000,
     #     nr_actions=nr_actions,
     #     controller_loss=loss_dict[env_name]
     # )
