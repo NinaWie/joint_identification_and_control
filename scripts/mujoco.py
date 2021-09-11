@@ -42,18 +42,36 @@ class DummyController:
 
 class MujocoDataset(torch.utils.data.Dataset):
 
-    def __init__(self):
+    def __init__(self, normalize=True):
+        self.normalize = normalize
+        states_x, _, _ = collect_episode()
+        if self.normalize:
+            self.mean = torch.mean(states_x, dim=0)
+            self.std = torch.std(states_x, dim=0)
+            # print("Mean and std", self.mean.size())
+
         self.collect_new_data(DummyController())
         # TODO: normalize? - but difference is entscheidend!
         # self.mean = torch.mean(self.states_x, dim=0)
         # print("means", self.mean.size())
         # self.std = torch.std(self.states_x, dim=0)
 
+    def normalize_data(self, states):
+        return (states - self.mean) / self.std
+
+    def denormalize_data(self, states):
+        return states * self.std + self.mean
+
     def collect_new_data(self, model=DummyController()):
         with torch.no_grad():
-            self.states_x, self.actions, self.states_y = collect_episode(
-                model=model
-            )
+            states_x, self.actions, states_y = collect_episode(model=model)
+        if self.normalize:
+            self.states_x = self.normalize_data(states_x)
+            self.states_y = self.normalize_data(states_y)
+        else:
+            self.states_x = states_x
+            self.states_y = states_y
+
         # if self.mean is None:
         #     states_x, actions, states_y =
 
@@ -77,8 +95,8 @@ class LearntDynamicsNew(nn.Module):
             out_state_size = state_size
 
         self.lin1 = nn.Linear(state_size + act_size, 128)
-        self.lin2 = nn.Linear(128, 64)
-        self.lin3 = nn.Linear(64, 128)
+        self.lin2 = nn.Linear(128, 256)
+        self.lin3 = nn.Linear(256, 128)
         self.lin4 = nn.Linear(128, out_state_size)
 
     def forward(self, state, action):
@@ -87,7 +105,7 @@ class LearntDynamicsNew(nn.Module):
         x2 = torch.relu(self.lin2(x1))
         x3 = torch.relu(self.lin3(x2))
         delta_state = torch.tanh(self.lin4(x3)) * 3
-        delta_state[:, -1] *= 0  # last one is always zero
+        # delta_state[:, -1] *= 0  # last one is always zero # TODO reacher
         return state + delta_state
 
 
@@ -173,7 +191,12 @@ def collect_episode(model=None, nr_data=1000):
     )
 
 
-def test_dynamics(dynamics_model, con_model=DummyController(), render=False):
+def test_dynamics(
+    dynamics_model,
+    con_model=DummyController(),
+    render=False,
+    normalize_dataset=None
+):
     obs_gt = env.reset()
     done = False
     count = 0
@@ -181,14 +204,20 @@ def test_dynamics(dynamics_model, con_model=DummyController(), render=False):
     mse = []
     avg_pred = []
     with torch.no_grad():
-        while count < 100:
+        while count < 3:
             action = con_model(obs_gt)  # np.random.rand(act_size) * 2 - 1
 
-            state_before = obs_gt.copy()
-            # print(state_before)
-            obs_pred = dynamics_model(
-                list_to_torch([state_before]), list_to_torch([action])
-            )  # .numpy()[0]
+            state_before = list_to_torch([obs_gt.copy()])
+            # print()
+            # print("state before", state_before)
+            if normalize_dataset:
+                state_before = normalize_dataset.normalize_data(state_before)
+            # print("state before normed", state_before)
+            obs_pred = dynamics_model(state_before, list_to_torch([action]))
+            # print("obs pred", obs_pred)
+            if normalize_dataset:
+                obs_pred = normalize_dataset.denormalize_data(obs_pred)
+            # print("obs pred denormed", obs_pred)
             # print(
             #     "Loss:", loss_reacher(list_to_torch([state_before]), obs_pred)
             # )
@@ -196,7 +225,7 @@ def test_dynamics(dynamics_model, con_model=DummyController(), render=False):
 
             # prev_dist = np.sum(state_before[-3:]**2) * 100
             obs_gt, rew_gt, done, info = env.step(action)
-            after_dist = np.sum(obs_gt[-3:]**2) * 100
+            # after_dist = np.sum(obs_gt[-3:]**2) * 100
 
             # rew_gt = prev_dist - after_dist
 
@@ -205,7 +234,7 @@ def test_dynamics(dynamics_model, con_model=DummyController(), render=False):
             avg_pred.append(obs_pred)
 
             # store the differences
-            diff_to_bef = np.sum((state_before - obs_gt)**2)
+            diff_to_bef = np.sum((state_before.numpy()[0] - obs_gt)**2)
             diff_to_gt = np.sum((obs_pred - obs_gt)**2)
             # print("actu", rew_gt)  # prev_dist - after_dist)
             actu_list.append(diff_to_bef)
@@ -243,10 +272,12 @@ def test_dynamics(dynamics_model, con_model=DummyController(), render=False):
 
 
 def train_dynamics(out_path, nr_epochs=3000):
-    dynamics_model = LearntDynamicsNew(obs_size, act_size)
-    optimizer = torch.optim.SGD(dynamics_model.parameters(), lr=0.00001)
+    loaded_model = PPOWrapper()
 
-    dataset = MujocoDataset()
+    dynamics_model = LearntDynamicsNew(obs_size, act_size)
+    optimizer = torch.optim.SGD(dynamics_model.parameters(), lr=1e-6)
+
+    dataset = MujocoDataset(normalize=True)
     trainloader = torch.utils.data.DataLoader(
         dataset, batch_size=8, shuffle=True, num_workers=0
     )
@@ -273,8 +304,8 @@ def train_dynamics(out_path, nr_epochs=3000):
 
         if epoch % 50 == 0:
             print(f"Epoch {epoch} loss {round(epoch_loss / i, 2)}")
-            dataset.collect_new_data()
-            test_dynamics(dynamics_model)
+            dataset.collect_new_data(loaded_model)
+            test_dynamics(dynamics_model, normalize_dataset=dataset)
 
     torch.save(dynamics_model, out_path)
 
@@ -386,6 +417,18 @@ def set_trainable(model):
     return model
 
 
+class PPOWrapper:
+
+    def __init__(self) -> None:
+        self.model = torch.load("../ppo_mujoco/trained_model")
+
+    def __call__(self, obs):
+        a = self.model.choose_action(
+            torch.from_numpy(np.array(obs).astype(np.float32)).unsqueeze(0)
+        )[0]
+        return a
+
+
 def train_controller(
     dynamics_model,
     out_path,
@@ -397,8 +440,8 @@ def train_controller(
 ):
     if controller_model is None:
         controller_model = ControllerNet(obs_size, act_size * nr_actions)
-    optimizer_controller = torch.optim.SGD(
-        controller_model.parameters(), lr=0.000001
+    optimizer_controller = torch.optim.Adam(
+        controller_model.parameters(), lr=0.0000001
     )
     optimizer_dynamics = torch.optim.Adam(
         dynamics_model.parameters(), lr=0.0001
@@ -520,7 +563,7 @@ loss_dict = {"cheetah": loss_cheetah, "reacher": loss_reacher}
 
 if __name__ == "__main__":
     nr_actions = 3
-    env_name = "reacher"
+    env_name = "cheetah"
     # env = DummyEnv()
     env = gym.make(env_dict[env_name])
 
@@ -531,11 +574,11 @@ if __name__ == "__main__":
     dynamics_path = "trained_models/mujoco/dynamics_" + env_name
     out_path = "trained_models/mujoco/" + env_name
 
-    # train_dynamics(nr_epochs=4000, out_path=dynamics_path)
+    train_dynamics(nr_epochs=4000, out_path=dynamics_path)
 
-    dynamics_model = torch.load(out_path + "dynamics_final")
-    controller_model = torch.load(out_path + "controller_final")
-    eval_in_trained_dyn(controller_model, dynamics_model)
+    # dynamics_model = torch.load(out_path + "dynamics_final")
+    # controller_model = torch.load(out_path + "controller_final")
+    # eval_in_trained_dyn(controller_model, dynamics_model)
     # evaluate(
     #     # DummyController(),
     #     ControllerWrapper(controller_model, nr_actions=nr_actions),
@@ -552,7 +595,7 @@ if __name__ == "__main__":
     # test_dynamics(
     #     dynamics_model,
     #     # con_model=ControllerWrapper(controller_model, nr_actions=3),
-    #     render=False
+    #     render=True
     # )
 
     # controller_model = None  # torch.load(
