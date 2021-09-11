@@ -42,12 +42,19 @@ class DummyController:
 
 class MujocoDataset(torch.utils.data.Dataset):
 
-    def __init__(self, normalize=True):
+    def __init__(self, normalize=True, load_mean_path=None):
         self.normalize = normalize
-        states_x, _, _ = collect_episode()
+        states_x, _, _ = collect_episode(nr_data=3000)
         if self.normalize:
-            self.mean = torch.mean(states_x, dim=0)
-            self.std = torch.std(states_x, dim=0)
+            if load_mean_path:
+                # print("Loading mean and std from files..")
+                self.mean = torch.from_numpy(np.load(load_mean_path))
+                self.std = torch.from_numpy(
+                    np.load(load_mean_path.replace("mean", "std"))
+                )
+            else:
+                self.mean = torch.mean(states_x, dim=0)
+                self.std = torch.std(states_x, dim=0)
             # print("Mean and std", self.mean.size())
 
         self.collect_new_data(DummyController())
@@ -271,16 +278,21 @@ def test_dynamics(
     # print("Average mse", np.mean(mse))
 
 
-def train_dynamics(out_path, nr_epochs=3000):
+def train_dynamics(out_path, load_model=None, nr_epochs=3000):
     loaded_model = PPOWrapper()
 
     dynamics_model = LearntDynamicsNew(obs_size, act_size)
-    optimizer = torch.optim.SGD(dynamics_model.parameters(), lr=1e-6)
+    # POSSIBLY LOAD MODEL and mean and std with which it was trained
+    load_mean = None
+    if load_model:
+        dynamics_model = torch.load(load_model)
+        load_mean = load_model + "_mean.npy"
 
-    dataset = MujocoDataset(normalize=True)
+    dataset = MujocoDataset(normalize=True, load_mean_path=load_mean)
     trainloader = torch.utils.data.DataLoader(
         dataset, batch_size=8, shuffle=True, num_workers=0
     )
+    optimizer = torch.optim.SGD(dynamics_model.parameters(), lr=1e-6)
 
     for epoch in range(nr_epochs):
         epoch_loss = 0
@@ -307,6 +319,8 @@ def train_dynamics(out_path, nr_epochs=3000):
             dataset.collect_new_data(loaded_model)
             test_dynamics(dynamics_model, normalize_dataset=dataset)
 
+    np.save(out_path + "_mean.npy", dataset.mean)
+    np.save(out_path + "_std.npy", dataset.std)
     torch.save(dynamics_model, out_path)
 
 
@@ -574,7 +588,11 @@ if __name__ == "__main__":
     dynamics_path = "trained_models/mujoco/dynamics_" + env_name
     out_path = "trained_models/mujoco/" + env_name
 
-    train_dynamics(nr_epochs=4000, out_path=dynamics_path)
+    train_dynamics(
+        nr_epochs=4000,
+        load_model=dynamics_path + "_2",
+        out_path=dynamics_path + "_3"
+    )
 
     # dynamics_model = torch.load(out_path + "dynamics_final")
     # controller_model = torch.load(out_path + "controller_final")
