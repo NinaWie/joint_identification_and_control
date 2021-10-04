@@ -42,22 +42,46 @@ class DummyController:
 
 class MujocoDataset(torch.utils.data.Dataset):
 
-    def __init__(self, normalize=True, load_mean_path=None):
+    def __init__(self, normalize=True, load_mean_path=None, model=None):
         self.normalize = normalize
-        states_x, _, _ = collect_episode(nr_data=3000)
-        if self.normalize:
-            if load_mean_path:
-                # print("Loading mean and std from files..")
-                self.mean = torch.from_numpy(np.load(load_mean_path))
-                self.std = torch.from_numpy(
-                    np.load(load_mean_path.replace("mean", "std"))
-                )
-            else:
-                self.mean = torch.mean(states_x, dim=0)
-                self.std = torch.std(states_x, dim=0)
-            # print("Mean and std", self.mean.size())
+        # states_x, _, _ = collect_episode(model=model, nr_data=1000)
+        # if self.normalize:
+        #     if load_mean_path:
+        #         # print("Loading mean and std from files..")
+        #         self.mean = torch.from_numpy(np.load(load_mean_path))
+        #         self.std = torch.from_numpy(
+        #             np.load(load_mean_path.replace("mean", "std"))
+        #         )
+        #     else:
+        #         self.mean = torch.mean(states_x, dim=0)
+        #         self.std = torch.std(states_x, dim=0)
+        #     # print("Mean and std", self.mean.size())
+        mean_norm = np.array(
+            [
+                -0.039147362499211455, -0.06344040616791331,
+                -0.053515751581788666, -0.0006876384938832863,
+                -0.1576048576576067, -0.0010528325940817758,
+                -0.014806472689703377, -0.12300787232536478, 3.133405195288861,
+                -0.035269991069096625, -0.0702261040394841, 0.2443248326861995,
+                -0.07020634079392384, -0.011922802037972267,
+                -0.04747278308920107, 0.11358221097146762, -0.03936516213317199
+            ]
+        )
+        std_norm = np.array(
+            [
+                0.12128480940171858, 0.45064279496848514, 0.39133256859862564,
+                0.5147855194920697, 0.2941345962941414, 0.4906188252192244,
+                0.4241574872646527, 0.2727549326347819, 2.482476652673881,
+                0.9014415183423282, 1.804328931038569, 8.943195120208939,
+                8.364966600415459, 6.500870652046472, 6.208960629261971,
+                8.770794513405406, 5.362724020687089
+            ]
+        )
+        self.mean = torch.from_numpy(mean_norm).float()
+        # np.load(path + "_mean.npy"))
+        self.std = torch.from_numpy(std_norm).float()
 
-        self.collect_new_data(DummyController())
+        self.collect_new_data(model=model, nr_data=3000)
         # TODO: normalize? - but difference is entscheidend!
         # self.mean = torch.mean(self.states_x, dim=0)
         # print("means", self.mean.size())
@@ -69,9 +93,11 @@ class MujocoDataset(torch.utils.data.Dataset):
     def denormalize_data(self, states):
         return states * self.std + self.mean
 
-    def collect_new_data(self, model=DummyController()):
+    def collect_new_data(self, model=DummyController(), nr_data=1000):
         with torch.no_grad():
-            states_x, self.actions, states_y = collect_episode(model=model)
+            states_x, self.actions, states_y = collect_episode(
+                model=model, nr_data=nr_data
+            )
         if self.normalize:
             self.states_x = self.normalize_data(states_x)
             self.states_y = self.normalize_data(states_y)
@@ -79,6 +105,7 @@ class MujocoDataset(torch.utils.data.Dataset):
             self.states_x = states_x
             self.states_y = states_y
 
+        print("collect new data", len(self.states_x))
         # if self.mean is None:
         #     states_x, actions, states_y =
 
@@ -162,16 +189,18 @@ class ControllerNet(nn.Module):
         return x
 
 
-def collect_episode(model=None, nr_data=1000):
+def collect_episode(model=None, nr_data=1000, episode_len=300):
     if model is None:
         model = DummyController()
-    count = 0
+
     states_before, actions, states_after = list(), list(), list()
     # run episodes until we got enough data
     while len(states_before) < nr_data:
         obs = env.reset()
         done = False
-        while not done:
+        score = 0
+        count = 0
+        while not done and count < episode_len:
             # predict random action
             action = model(obs)
             states_before.append(obs.copy())
@@ -180,6 +209,7 @@ def collect_episode(model=None, nr_data=1000):
             prev_dist = np.sum(obs[-3:]**2) * 100
 
             obs, rew, done, _ = env.step(action)
+            score += rew
 
             after_dist = np.sum(obs[-3:]**2) * 100
             # env.render()
@@ -193,6 +223,7 @@ def collect_episode(model=None, nr_data=1000):
             # [np.sum(obs[-3:]**2)])
 
             count += 1
+        # print("sum of rewards in episode:", score, "(episode len:", count)
     return list_to_torch(states_before), list_to_torch(actions), list_to_torch(
         states_after
     )
@@ -211,7 +242,7 @@ def test_dynamics(
     mse = []
     avg_pred = []
     with torch.no_grad():
-        while count < 3:
+        while count < 200:
             action = con_model(obs_gt)  # np.random.rand(act_size) * 2 - 1
 
             state_before = list_to_torch([obs_gt.copy()])
@@ -250,7 +281,7 @@ def test_dynamics(
 
             if render:
                 env.render()
-                time.sleep(.5)
+                # time.sleep(.5)
                 # print(np.around(state_before, 2))
                 # print(np.around(obs_gt[-3:], 2))
                 # print(np.around(obs_pred, 2)) # obs_pred[-3:])
@@ -258,9 +289,12 @@ def test_dynamics(
                 # print("pred", rew_pred)
                 # print(np.around(np.sum(obs_gt[-3:]**2), 4))
                 # print(np.around(state_before, 2)[-3:-1])
-                print(np.around(state_before, 2)[-3:-1])
-                print(np.around(obs_gt, 2)[-3:-1])
-                print(np.around(obs_pred, 2)[-3:-1])
+                print(np.around(state_before.numpy()[0, :6], 2))
+                print(np.around(obs_gt[:6], 2))
+                print(np.around(obs_pred[:6], 2))
+                # print(np.around(state_before, 2)[-3:-1])
+                # print(np.around(obs_gt, 2)[-3:-1])
+                # print(np.around(obs_pred, 2)[-3:-1])
                 print()
                 # print()
             count += 1
@@ -288,7 +322,9 @@ def train_dynamics(out_path, load_model=None, nr_epochs=3000):
         dynamics_model = torch.load(load_model)
         load_mean = load_model + "_mean.npy"
 
-    dataset = MujocoDataset(normalize=True, load_mean_path=load_mean)
+    dataset = MujocoDataset(
+        model=loaded_model, normalize=True, load_mean_path=load_mean
+    )
     trainloader = torch.utils.data.DataLoader(
         dataset, batch_size=8, shuffle=True, num_workers=0
     )
@@ -314,9 +350,13 @@ def train_dynamics(out_path, load_model=None, nr_epochs=3000):
 
             epoch_loss += loss.item()
 
+        # if (epoch + 1) % 200 == 0:
+        #     print()
+        #     dataset.collect_new_data(loaded_model)
+
         if epoch % 50 == 0:
             print(f"Epoch {epoch} loss {round(epoch_loss / i, 2)}")
-            dataset.collect_new_data(loaded_model)
+            # Evaluate is on train data already
             test_dynamics(dynamics_model, normalize_dataset=dataset)
 
     np.save(out_path + "_mean.npy", dataset.mean)
@@ -363,7 +403,7 @@ def evaluate(controller, render=False, nr_iters=1000):
             reward_sum += rew
             x_pos_change += np.sqrt(np.sum(obs[-3:]**2))
 
-        print("distance in real", x_pos_change / nr_iters * 50)
+        # print("distance in real", x_pos_change / nr_iters * 50)
         # print("In real env: sum of rewards", round(reward_sum, 2))
         #, "x", x_pos_change)
     return reward_sum
@@ -433,39 +473,52 @@ def set_trainable(model):
 
 class PPOWrapper:
 
-    def __init__(self) -> None:
-        self.model = torch.load("../ppo_mujoco/trained_model")
+    def __init__(self, model=None):
+        if model is None:
+            self.model = torch.load("../ppo_mujoco/trained_model")
+        else:
+            self.model = model
+        from nomalize import Nomalize
+        self.normal = Nomalize(obs_size)
 
     def __call__(self, obs):
+        obs_in = self.normal(obs)
         a = self.model.choose_action(
-            torch.from_numpy(np.array(obs).astype(np.float32)).unsqueeze(0)
+            torch.from_numpy(np.array(obs_in).astype(np.float32)).unsqueeze(0)
         )[0]
         return a
 
 
 def train_controller(
-    dynamics_model,
     out_path,
+    load_dynamics_model=None,
     controller_model=None,
     nr_epochs=1000,
     nr_actions=3,
     batch_size=8,
     controller_loss=loss_cheetah
 ):
-    if controller_model is None:
-        controller_model = ControllerNet(obs_size, act_size * nr_actions)
+    # controller
+    controller_model = torch.load("../ppo_mujoco/trained_model")
     optimizer_controller = torch.optim.Adam(
-        controller_model.parameters(), lr=0.0000001
+        controller_model.parameters(), lr=1e-6
     )
-    optimizer_dynamics = torch.optim.Adam(
-        dynamics_model.parameters(), lr=0.0001
+    wrapped_model = PPOWrapper(controller_model)
+
+    # dynamics
+    load_mean = None
+    if load_dynamics_model:
+        dynamics_model = torch.load(load_dynamics_model)
+        load_mean = load_dynamics_model + "_mean.npy"
+
+    dataset = MujocoDataset(
+        model=wrapped_model, normalize=True, load_mean_path=load_mean
     )
 
     dataset = MujocoDataset()
     trainloader = torch.utils.data.DataLoader(
         dataset, batch_size=batch_size, shuffle=True, num_workers=0
     )
-    train_model = "controller"
     set_not_trainable(dynamics_model)
 
     best_rew = -500
@@ -473,90 +526,52 @@ def train_controller(
 
     for epoch in range(nr_epochs):
         epoch_loss = 0
-        # if epoch < 200:
-        # train_model = "dynamics"
-        # TODO: atm only train the controller
-        # set_trainable(dynamics_model)
-        train_model = "controller"
+
         for i, data in enumerate(trainloader):
-            if train_model == "controller":
-                optimizer_controller.zero_grad()
+            optimizer_controller.zero_grad()
 
-                (in_state, _, _) = data
-                state = in_state.clone()
+            (in_state, _, _) = data
+            state = in_state.clone()
 
-                # design reference
-                dist_normed = in_state[:, -3:-1]
-                use_step = torch.minimum(
-                    torch.abs(dist_normed),
-                    # TODO: Assumes that we can move 0.02 per step in each dir
-                    torch.ones(dist_normed.size()) * 0.02 * nr_actions
-                ) / nr_actions * torch.sign(dist_normed)
-                reference = torch.zeros(in_state.size()[0], nr_actions, 2)
-                for ind in range(nr_actions):
-                    reference[:,
-                              ind] = in_state[:, -3:-1] - use_step * (ind + 1)
+            # design reference
+            # reference = torch.zeros(in_state.size()[0], nr_actions, 2)
+            # for ind in range(nr_actions):
+            #     reference[:, ind] = in_state[:, -3:-1]
 
-                act = controller_model(state)
+            act, _ = controller_model(state)
 
-                collect_obs = torch.zeros(in_state.size()[0], nr_actions, 2)
-                action_seq = torch.reshape(act, (-1, nr_actions, act_size))
-                for act_ind in range(nr_actions):
-                    state = dynamics_model(state, action_seq[:, act_ind, :])
-                    collect_obs[:, act_ind] = state[:, -3:-1]
-                loss = controller_loss(collect_obs, reference)  # TODO
-                loss.backward()
-                optimizer_controller.step()
-            else:
-                optimizer_dynamics.zero_grad()
+            # collect_obs = torch.zeros(
+            #     in_state.size()[0], nr_actions,
+            #     in_state.size()[1]
+            # )
+            # action_seq = torch.reshape(act, (-1, nr_actions, act_size))
+            # for act_ind in range(nr_actions):
+            #     state = dynamics_model(state, action_seq[:, act_ind, :])
+            #     collect_obs[:, act_ind] = state
+            state = dynamics_model(state, act)
 
-                (state, act, state_out) = data
-                state_pred = dynamics_model(state, act)
-
-                loss = torch.sum((state_pred - state_out)**2 / 8)
-
-                loss.backward()
-                optimizer_dynamics.step()
+            loss = loss_cheetah(in_state, state)  # TODO
+            loss.backward()
+            # print(loss)
+            optimizer_controller.step()
 
             epoch_loss += loss.item()
+        # print("Epoch loss", epoch_loss)
 
-        if epoch % 20 == 0:
-            wrapped_model = ControllerWrapper(controller_model, nr_actions)
-            print()
-            print(f"Epoch {epoch} trained ", train_model)
-            print(f"Loss: {round(epoch_loss / i * 100, 2)}")
-            if train_model == "dynamics":
-                set_not_trainable(dynamics_model)
-                set_trainable(controller_model)
-                train_model = "controller"
-                dyn_loss.append(epoch_loss / i)
-                test_dynamics(dynamics_model)
-                # print("with controller:")
-                # test_dynamics(dynamics_model, con_model=wrapped_model)
-            elif train_model == "controller":
-                # TODO: for iterative training
-                # set_not_trainable(controller_model)
-                # set_trainable(dynamics_model)
-                # train_model = "dynamics"
-                con_loss.append(epoch_loss / i)
-                # reward_sum = evaluate(wrapped_model, render=False)
-                reward_sum = eval_in_trained_dyn(
-                    controller_model, dynamics_model, nr_actions=nr_actions
-                )
-                rewards.append(reward_sum)
-                if reward_sum > best_rew:
-                    best_rew = reward_sum
-                    torch.save(controller_model, out_path + "controller")
-                    torch.save(dynamics_model, out_path + "dynamics")
-                    print("Saved models, best episode")
+        if epoch % 10 == 0:
+            con_loss.append(epoch_loss / i)
+            reward_sum = evaluate(wrapped_model, render=False)
+            rewards.append(reward_sum)
+            print("Loss", epoch_loss, "Rewards", reward_sum)
+            if reward_sum > best_rew:
+                best_rew = reward_sum
+                torch.save(controller_model, out_path + "controller")
+                print("Saved models, best episode")
 
-                dataset.collect_new_data()
-                if epoch % 40 == 0:
-                    # every now and then, collect data with the controller
-                    dataset.collect_new_data(wrapped_model)
+            # dataset.collect_new_data(wrapped_model)
 
     torch.save(controller_model, out_path + "controller_final")
-    torch.save(dynamics_model, out_path + "dynamics_final")
+    # torch.save(dynamics_model, out_path + "dynamics_final")
 
     plt.figure(figsize=(15, 5))
     plt.subplot(1, 3, 1)
@@ -588,13 +603,16 @@ if __name__ == "__main__":
     dynamics_path = "trained_models/mujoco/dynamics_" + env_name
     out_path = "trained_models/mujoco/" + env_name
 
-    train_dynamics(
-        nr_epochs=4000,
-        load_model=dynamics_path + "_2",
-        out_path=dynamics_path + "_3"
-    )
+    # train_dynamics(
+    #     nr_epochs=2000,
+    #     load_model=dynamics_path,
+    #     out_path=dynamics_path + "_2"
+    # )
+    dynamics_model = torch.load(dynamics_path)
 
-    # dynamics_model = torch.load(out_path + "dynamics_final")
+    # load_dynamics_model = dynamics_path + "_finetuned"
+    # train_controller(out_path + "cheetah_test", load_dynamics_model)
+
     # controller_model = torch.load(out_path + "controller_final")
     # eval_in_trained_dyn(controller_model, dynamics_model)
     # evaluate(
@@ -610,11 +628,13 @@ if __name__ == "__main__":
 
     # dynamics_model = torch.load(out_path + "dynamics_final")
     # dynamics_model = torch.load(dynamics_path)
-    # test_dynamics(
-    #     dynamics_model,
-    #     # con_model=ControllerWrapper(controller_model, nr_actions=3),
-    #     render=True
-    # )
+    test_dynamics(
+        dynamics_model,
+        con_model=PPOWrapper(),
+        # con_model=ControllerWrapper(controller_model, nr_actions=3),
+        normalize_dataset=MujocoDataset(),
+        render=True
+    )
 
     # controller_model = None  # torch.load(
     #     "trained_models/mujoco/working_a_bit/reachercontroller"
@@ -627,3 +647,135 @@ if __name__ == "__main__":
     #     nr_actions=nr_actions,
     #     controller_loss=loss_dict[env_name]
     # )
+
+# def train_controller(
+#     dynamics_model,
+#     out_path,
+#     controller_model=None,
+#     nr_epochs=1000,
+#     nr_actions=3,
+#     batch_size=8,
+#     controller_loss=loss_cheetah
+# ):
+#     optimizer_controller = torch.optim.Adam(
+#         controller_model.parameters(), lr=0.0000001
+#     )
+
+#     if controller_model is None:
+#         controller_model = ControllerNet(obs_size, act_size * nr_actions)
+#     optimizer_controller = torch.optim.Adam(
+#         controller_model.parameters(), lr=0.0000001
+#     )
+#     optimizer_dynamics = torch.optim.Adam(
+#         dynamics_model.parameters(), lr=0.0001
+#     )
+
+#     dataset = MujocoDataset()
+#     trainloader = torch.utils.data.DataLoader(
+#         dataset, batch_size=batch_size, shuffle=True, num_workers=0
+#     )
+#     train_model = "controller"
+#     set_not_trainable(dynamics_model)
+
+#     best_rew = -500
+#     con_loss, dyn_loss, rewards = [], [], []
+
+#     for epoch in range(nr_epochs):
+#         epoch_loss = 0
+#         # if epoch < 200:
+#         # train_model = "dynamics"
+#         # TODO: atm only train the controller
+#         # set_trainable(dynamics_model)
+#         train_model = "controller"
+#         for i, data in enumerate(trainloader):
+#             if train_model == "controller":
+#                 optimizer_controller.zero_grad()
+
+#                 (in_state, _, _) = data
+#                 state = in_state.clone()
+
+#                 # design reference
+#                 dist_normed = in_state[:, -3:-1]
+#                 use_step = torch.minimum(
+#                     torch.abs(dist_normed),
+#                     # TODO: Assumes that we can move 0.02 per step in each dir
+#                     torch.ones(dist_normed.size()) * 0.02 * nr_actions
+#                 ) / nr_actions * torch.sign(dist_normed)
+#                 reference = torch.zeros(in_state.size()[0], nr_actions, 2)
+#                 for ind in range(nr_actions):
+#                     reference[:,
+#                               ind] = in_state[:, -3:-1] - use_step * (ind + 1)
+
+#                 act = controller_model(state)
+
+#                 collect_obs = torch.zeros(in_state.size()[0], nr_actions, 2)
+#                 action_seq = torch.reshape(act, (-1, nr_actions, act_size))
+#                 for act_ind in range(nr_actions):
+#                     state = dynamics_model(state, action_seq[:, act_ind, :])
+#                     collect_obs[:, act_ind] = state[:, -3:-1]
+#                 loss = controller_loss(collect_obs, reference)  # TODO
+#                 loss.backward()
+#                 optimizer_controller.step()
+#             else:
+#                 optimizer_dynamics.zero_grad()
+
+#                 (state, act, state_out) = data
+#                 state_pred = dynamics_model(state, act)
+
+#                 loss = torch.sum((state_pred - state_out)**2 / 8)
+
+#                 loss.backward()
+#                 optimizer_dynamics.step()
+
+#             epoch_loss += loss.item()
+
+#         if epoch % 20 == 0:
+#             wrapped_model = ControllerWrapper(controller_model, nr_actions)
+#             print()
+#             print(f"Epoch {epoch} trained ", train_model)
+#             print(f"Loss: {round(epoch_loss / i * 100, 2)}")
+#             if train_model == "dynamics":
+#                 set_not_trainable(dynamics_model)
+#                 set_trainable(controller_model)
+#                 train_model = "controller"
+#                 dyn_loss.append(epoch_loss / i)
+#                 test_dynamics(dynamics_model)
+#                 # print("with controller:")
+#                 # test_dynamics(dynamics_model, con_model=wrapped_model)
+#             elif train_model == "controller":
+#                 # TODO: for iterative training
+#                 # set_not_trainable(controller_model)
+#                 # set_trainable(dynamics_model)
+#                 # train_model = "dynamics"
+#                 con_loss.append(epoch_loss / i)
+#                 # reward_sum = evaluate(wrapped_model, render=False)
+#                 reward_sum = eval_in_trained_dyn(
+#                     controller_model, dynamics_model, nr_actions=nr_actions
+#                 )
+#                 rewards.append(reward_sum)
+#                 if reward_sum > best_rew:
+#                     best_rew = reward_sum
+#                     torch.save(controller_model, out_path + "controller")
+#                     torch.save(dynamics_model, out_path + "dynamics")
+#                     print("Saved models, best episode")
+
+#                 dataset.collect_new_data()
+#                 if epoch % 40 == 0:
+#                     # every now and then, collect data with the controller
+#                     dataset.collect_new_data(wrapped_model)
+
+#     torch.save(controller_model, out_path + "controller_final")
+#     torch.save(dynamics_model, out_path + "dynamics_final")
+
+#     plt.figure(figsize=(15, 5))
+#     plt.subplot(1, 3, 1)
+#     plt.plot(con_loss)
+#     plt.title("controller loss")
+#     plt.subplot(1, 3, 2)
+#     plt.plot(dyn_loss)
+#     plt.title("dynamics loss")
+#     plt.subplot(1, 3, 3)
+#     plt.plot(rewards)
+#     plt.title("rewards")
+#     plt.savefig("out_plot.png")
+#     plt.show()
