@@ -374,19 +374,22 @@ class QuadEnvRL(gym.Env, QuadRotorEnvBase):
 
 class WingEnvRL(gym.Env, SimpleWingEnv):
 
-    def __init__(self, dynamics, dt, **kwargs):
+    def __init__(self, dynamics, dt, div_in_obs=False, thresh_div=4, **kwargs):
         SimpleWingEnv.__init__(self, dynamics, dt)
         self.action_space = spaces.Box(low=0, high=1, shape=(4, ))
 
-        obs_dim = 12
+        self.div_in_obs = div_in_obs
+
+        self.step_counter = 0
+        obs_dim = 15
         # high = np.array([20 for k in range(obs_dim)])
-        high = np.array([20, 20, 20, 3, 3, 3, 3, 3, 3, 3, 3, 3])
+        high = np.array([3, 3, 3, 20, 20, 20, 3, 3, 3, 3, 3, 3, 3, 3, 3])
         self.observation_space = spaces.Box(-high, high, shape=(obs_dim, ))
         # Observations could be what we use as input data to my NN
 
         # thresholds for done (?)
         self.thresh_stable = .5
-        self.thresh_div = 4
+        self.thresh_div = thresh_div
 
         # for making observation:
         self.dataset = WingDataset(0, dt=self.dt, **kwargs)
@@ -407,16 +410,29 @@ class WingEnvRL(gym.Env, SimpleWingEnv):
     def state_to_obs(self):
         # get from dataset
         obs_state, obs_ref = self.prepare_obs()
-        # concatenate relative position and observation
-        obs = torch.cat((obs_ref, obs_state), dim=1)[0].numpy()
-        return obs
+
+        if self.div_in_obs:
+            # For PETS, we need the divergence vector in the observation
+            drone_on_line = project_to_line(
+                np.zeros(3), self.target_point, self.state[:3]
+            )
+            div_vec = torch.from_numpy(drone_on_line -
+                                       self.state[:3]).unsqueeze(0)
+            # concatenate relative position and observation
+            obs = torch.cat((div_vec, obs_ref, obs_state), dim=1)[0].numpy()
+            return obs
+        else:
+            obs = torch.cat((obs_ref, obs_state), dim=1)[0].numpy()
+            return obs
 
     def reset(self, x_dist=50, x_std=5):
         rand_y, rand_z = tuple((np.random.rand(2) - .5) * 2 * x_std)
+        # rand_y, rand_z = (3, 3) # for a single trajectory
         self.target_point = np.array([x_dist, rand_y, rand_z])
         self.zero_reset()
         self.state = self._state
         self.obs = self.state_to_obs()
+        self.prev_state = self.state.copy()
 
         self.drone_render_object.set_target([self.target_point])
         return self.obs
@@ -433,8 +449,10 @@ class WingEnvRL(gym.Env, SimpleWingEnv):
         return div
 
     def step(self, action):
+        self.prev_state = self.state.copy()
         self.state, _ = SimpleWingEnv.step(self, action)
         self.obs = self.state_to_obs()
+        self.step_counter += 1
 
         div = self.get_divergence()
 
@@ -454,6 +472,16 @@ class WingEnvRL(gym.Env, SimpleWingEnv):
 
         return self.obs, reward, done, info
 
+    def get_target_div(self):
+        if self.state[0] < self.target_point[0]:
+            div_target = np.linalg.norm(self.state[:3] - self.target_point)
+        else:
+            target_on_traj = project_to_line(
+                self.prev_state[:3], self.state[:3], self.target_point
+            )
+            div_target = np.linalg.norm(target_on_traj - self.target_point)
+        return div_target
+
     def render(self, mode="human"):
         SimpleWingEnv.render(self, mode=mode)
 
@@ -472,3 +500,13 @@ class QuadEnvMario(QuadEnvRL):
         self.observation_space = spaces.Box(
             -np.inf, np.inf, shape=(self.obs_dim, )
         )
+
+
+if __name__ == "__main__":
+    import neural_control.environments.rl_envs as wing_env
+    from neural_control.dynamics.fixed_wing_dynamics import FixedWingDynamics
+    dyn = FixedWingDynamics(modified_params={})
+    env = wing_env.WingEnvRL(dyn, 0.05)
+    env.reset()
+    for i in range(10):
+        obs, _, _, _ = env.step(np.random.rand(4))

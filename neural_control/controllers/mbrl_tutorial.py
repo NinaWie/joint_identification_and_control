@@ -34,10 +34,11 @@ import mbrl.planning as planning
 import mbrl.util.common as common_util
 import mbrl.util as util
 
-modified_params = {
-    'translational_drag': np.array([0.3, 0.3, 0.3])
-}  # {"wind": .5}
-SYSTEM = "quad"
+# modified_params = {
+#     'translational_drag': np.array([0.3, 0.3, 0.3])
+# }  # {"wind": .5}
+modified_params = {"vel_drag_factor": 0.3}
+SYSTEM = "fixed_wing"
 
 # import mbrl.env.cartpole_continuous as cartpole_env
 # env = cartpole_env.CartPoleEnv()
@@ -61,10 +62,19 @@ elif SYSTEM == "quad":
     reward_fn = reward_fns.quad
     # This function allows the model to know if an observation should make the episode end
     term_fn = termination_fns.quad
+elif SYSTEM == "fixed_wing":
+    import neural_control.environments.rl_envs as wing_env
+    from neural_control.dynamics.fixed_wing_dynamics import FixedWingDynamics
+    dyn = FixedWingDynamics(modified_params=modified_params)
+    env = wing_env.WingEnvRL(dyn, 0.05, div_in_obs=True, thresh_div=.5)
+    # This functions allows the model to evaluate the true rewards given an observation
+    reward_fn = reward_fns.fixed_wing
+    # This function allows the model to know if an observation should make the episode end
+    term_fn = termination_fns.fixed_wing
 
 # SPECIFY
-model_load_path = "trained_models/out_mbrl/quad_single_traj/eps_14_1588"
-model_save_path = "trained_models/out_mbrl/quad_single_traj_finetuned"
+model_load_path = None  # "trained_models/out_mbrl/fixed_wing_smallthresh_2/eps_64_4724/"
+model_save_path = "trained_models/out_mbrl/fixed_wing_test"
 if not os.path.exists(model_save_path):
     os.makedirs(model_save_path)
 trial_length = 200  # 200
@@ -237,6 +247,7 @@ model_trainer = models.ModelTrainer(
 # ax_text = axs[0].text(300, 50, "")
 def make_dict_and_save():
     out_dict = {}
+    out_dict["div_to_target"] = list(div_to_target)
     out_dict["train_losses"] = list(train_losses)
     out_dict["all_rewards"] = list(all_rewards)
     out_dict["timestamps"] = list(timestamps)
@@ -255,6 +266,7 @@ def make_dict_and_save():
 all_rewards = []
 sum_rewards = []
 step_counter_list = []
+div_to_target = []
 eval_metric_list = []
 episode_lens_list = []
 for trial in range(num_trials):
@@ -275,9 +287,11 @@ for trial in range(num_trials):
         # --------------- Model Training -----------------
         if steps_trial == 0:
             # tic_dyn = time.time()
-            dynamics_model.update_normalizer(
-                replay_buffer.get_all()
-            )  # update normalizer stats
+            if model_load_path is None:
+                # only normalize if no normalizer was loaded
+                dynamics_model.update_normalizer(
+                    replay_buffer.get_all()
+                )  # update normalizer stats
 
             dataset_train, dataset_val = common_util.get_basic_buffer_iterators(
                 replay_buffer,
@@ -317,6 +331,9 @@ for trial in range(num_trials):
         elif SYSTEM == "quad":
             eval_metric.append(env.get_divergence())
             print("div", eval_metric[-1])
+        elif SYSTEM == "fixed_wing":
+            eval_metric.append(env.get_divergence())
+            print("div", eval_metric[-1])
         single_rewards.append(reward)
         obs = next_obs
         total_reward += reward
@@ -324,6 +341,9 @@ for trial in range(num_trials):
 
         if steps_trial == trial_length:
             break
+    if SYSTEM == "fixed_wing":
+        div_to_target.append(env.get_target_div())
+        print("div to target", div_to_target[-1])
     eval_metric_list.append(float(np.mean(np.absolute(np.array(eval_metric)))))
     step_counter_list.append(env.step_counter)
     episode_lens_list.append(episode_length)
