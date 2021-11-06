@@ -38,7 +38,7 @@ import mbrl.util as util
 #     'translational_drag': np.array([0.3, 0.3, 0.3])
 # }  # {"wind": .5}
 modified_params = {"vel_drag_factor": 0.3}
-SYSTEM = "fixed_wing"
+SYSTEM = "halfcheetah"
 
 # import mbrl.env.cartpole_continuous as cartpole_env
 # env = cartpole_env.CartPoleEnv()
@@ -71,14 +71,23 @@ elif SYSTEM == "fixed_wing":
     reward_fn = reward_fns.fixed_wing
     # This function allows the model to know if an observation should make the episode end
     term_fn = termination_fns.fixed_wing
+elif SYSTEM == "halfcheetah":
+    from mbrl.env.pets_halfcheetah import HalfCheetahEnv
+    env = HalfCheetahEnv()
+    reward_fn = reward_fns.halfcheetah
+    term_fn = termination_fns.no_termination
+    print("Successfull init of halfcheetah")
+
+# TODO!
+# This example uses a probabilistic ensemble. You can also use a fully deterministic model with class GaussianMLP by setting ensemble_size=1, and deterministic=True.
 
 # SPECIFY
 model_load_path = None  # "trained_models/out_mbrl/fixed_wing_smallthresh_2/eps_64_4724/"
-model_save_path = "trained_models/out_mbrl/fixed_wing_test"
+model_save_path = "trained_models/out_mbrl/test_halfcheetah"
 if not os.path.exists(model_save_path):
     os.makedirs(model_save_path)
 trial_length = 200  # 200
-num_trials = 100  # 10
+num_trials = 200  # 10
 ensemble_size = 5
 
 mpl.rcParams.update({"font.size": 16})
@@ -269,6 +278,7 @@ step_counter_list = []
 div_to_target = []
 eval_metric_list = []
 episode_lens_list = []
+step_counter_local = trial_length  # from the buffer
 for trial in range(num_trials):
     obs = env.reset()
     agent.reset()
@@ -288,6 +298,7 @@ for trial in range(num_trials):
         if steps_trial == 0:
             # tic_dyn = time.time()
             if model_load_path is None:
+                print("init normalizer")
                 # only normalize if no normalizer was loaded
                 dynamics_model.update_normalizer(
                     replay_buffer.get_all()
@@ -311,6 +322,7 @@ for trial in range(num_trials):
                 callback=train_callback
             )
             # print(steps_trial, "train dyn", time.time() - tic_dyn)
+        step_counter_local += 1
 
         # episode length counter independent of rewards
         episode_length += 1
@@ -334,6 +346,10 @@ for trial in range(num_trials):
         elif SYSTEM == "fixed_wing":
             eval_metric.append(env.get_divergence())
             print("div", eval_metric[-1])
+        elif SYSTEM == "halfcheetah":
+            reward = float(reward)
+            eval_metric.append(reward)
+            print("rew", reward)
         single_rewards.append(reward)
         obs = next_obs
         total_reward += reward
@@ -345,7 +361,10 @@ for trial in range(num_trials):
         div_to_target.append(env.get_target_div())
         print("div to target", div_to_target[-1])
     eval_metric_list.append(float(np.mean(np.absolute(np.array(eval_metric)))))
-    step_counter_list.append(env.step_counter)
+    if SYSTEM == "halfcheetah":
+        step_counter_list.append(step_counter_local)
+    else:
+        step_counter_list.append(env.step_counter)
     episode_lens_list.append(episode_length)
     print("total", total_reward)
     print("episode length", episode_length)
@@ -355,9 +374,9 @@ for trial in range(num_trials):
     timestamps.append(time.time())
 
     if trial == 0 or (trial + 1) % 5 == 0:
-        episode_out_dir = f"eps_{trial}_{env.step_counter}"
+        episode_out_dir = f"eps_{trial}_{step_counter_list[-1]}"
         out_path = os.path.join(model_save_path, episode_out_dir)
-        os.makedirs(out_path)
+        os.makedirs(out_path, exist_ok=True)
         dynamics_model.save(save_dir=out_path)
         make_dict_and_save()
 
