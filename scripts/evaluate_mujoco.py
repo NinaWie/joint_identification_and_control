@@ -12,16 +12,16 @@ def loss_fn(next_obs, act, conversion_factor=1):
     return loss_ctrl + loss_move
 
 
-def evaluate_cheetah(env, controller, nr_steps=100):
+def evaluate_cheetah(env, controller, nr_steps=100, return_obs=False):
     collect_obs = []
+    collect_rewards = []
 
-    act_shape = env.action_space.shape
-    obs_shape = env.observation_space.shape
+    # act_shape = env.action_space.shape
+    # obs_shape = env.observation_space.shape
 
     # create real environment
     obs = env.reset()
 
-    test_list = []
     for _ in range(nr_steps):
         # print()
 
@@ -47,14 +47,26 @@ def evaluate_cheetah(env, controller, nr_steps=100):
         # print(pred_obs_final[0, :5])
         # ----- DYNAMICS TESTING --------
 
-        obs, rew, done, _ = env.step(act)
+        obs, rew, _, _ = env.step(act)
         # print(obs[:5])
         collect_obs.append(obs)
+        collect_rewards.append(rew)
 
-        loss = loss_fn(np.expand_dims(obs, axis=0), np.array([act]))
+        # loss = loss_fn(np.expand_dims(obs, axis=0), np.array([act]))
 
-        test_list.append([rew, loss])
-    return collect_obs
+        # test_list.append([rew, loss])
+    if return_obs:
+        return collect_obs
+    else:
+        return collect_rewards
+
+
+def run_eval(env, controller, nr_steps, nr_iters):
+    rew = []
+    for iter in range(nr_iters):
+        rewards = evaluate_cheetah(env, controller, nr_steps)
+        rew.append(np.sum(rewards))
+    return round(np.mean(rewards), 3)
 
 
 if __name__ == "__main__":
