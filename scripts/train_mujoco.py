@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 from mbrl.env.pets_halfcheetah import HalfCheetahEnv
 from neural_control.mujoco_utils import (ControllerModel, DynamicsModelPETS)
-from scripts.evaluate_mujoco import evaluate_cheetah, run_eval
+from scripts.evaluate_mujoco import evaluate_cheetah, run_eval, RandomController
 
 
 class MujocoDataset(torch.utils.data.Dataset):
@@ -31,12 +31,6 @@ class MujocoDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         return self.data[index]
-
-
-class RandomController:
-
-    def __call__(self, obs):
-        return torch.from_numpy(np.expand_dims(np.random.rand(6), axis=0))
 
 
 nr_epochs = 2000

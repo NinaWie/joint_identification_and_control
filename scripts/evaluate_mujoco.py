@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import torch
 
@@ -12,7 +13,9 @@ def loss_fn(next_obs, act, conversion_factor=1):
     return loss_ctrl + loss_move
 
 
-def evaluate_cheetah(env, controller, nr_steps=100, return_obs=False):
+def evaluate_cheetah(
+    env, controller, nr_steps=100, return_obs=False, render=False
+):
     collect_obs = []
     collect_rewards = []
 
@@ -48,12 +51,22 @@ def evaluate_cheetah(env, controller, nr_steps=100, return_obs=False):
         # ----- DYNAMICS TESTING --------
 
         obs, rew, _, _ = env.step(act)
-        # print(obs[:5])
+        # render
+        if render:
+            if obs[2] > 3:
+                print("flipped")
+            env.render()
+            time.sleep(0.1)
+
+        # flipped
+        if obs[2] > 3:
+            rew = -10
+            break
+        # logging
         collect_obs.append(obs)
         collect_rewards.append(rew)
 
         # loss = loss_fn(np.expand_dims(obs, axis=0), np.array([act]))
-
         # test_list.append([rew, loss])
     if return_obs:
         return collect_obs
@@ -63,16 +76,30 @@ def evaluate_cheetah(env, controller, nr_steps=100, return_obs=False):
 
 def run_eval(env, controller, nr_steps, nr_iters):
     rew = []
-    for iter in range(nr_iters):
+    for _ in range(nr_iters):
         rewards = evaluate_cheetah(env, controller, nr_steps)
-        rew.append(np.sum(rewards))
-    return round(np.mean(rewards), 3)
+        rew.append(np.mean(rewards))  # TODO: any reason to take the sum?
+    return round(np.mean(rew), 3)
+
+
+class RandomController:
+
+    def __call__(self, obs):
+        return torch.from_numpy(
+            np.expand_dims(np.random.rand(6) * 2 - 1, axis=0)
+        )
 
 
 if __name__ == "__main__":
     env = HalfCheetahEnv()
     dynamics = DynamicsModelPETS()
-    controller = ControllerModel(
-        env.observation_space.shape[0], env.action_space.shape[0]
-    )
-    evaluate_cheetah(env, controller, nr_steps=10)
+
+    controller = torch.load("trained_models/mujoco/cheetah_model_petsdyn")
+    # controller = RandomController()
+
+    # # Evaluate with plotting
+    # evaluate_cheetah(env, controller, nr_steps=200, render=True)
+
+    # Evaluate systematically
+    avg_rewards = run_eval(env, controller, 100, 20)
+    print("with run eval", avg_rewards)
