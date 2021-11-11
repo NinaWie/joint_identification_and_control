@@ -76,17 +76,19 @@ class ControllerModel(nn.Module):
     group
     """
 
-    def __init__(self, state_dim, out_size):
+    def __init__(self, state_dim, out_size, nr_actions=1):
         """
         in_size: number of input neurons (features)
         out_size: number of output neurons
         """
         super(ControllerModel, self).__init__()
+        self.out_size = out_size
+        self.nr_actions = nr_actions
         self.states_in = nn.Linear(state_dim, 64)
         self.fc1 = nn.Linear(64, 64)
         self.fc2 = nn.Linear(64, 64)
         self.fc3 = nn.Linear(64, 64)
-        self.fc_out = nn.Linear(64, out_size)
+        self.fc_out = nn.Linear(64, out_size * nr_actions)
 
     def forward(self, state):
         # concatenate
@@ -96,6 +98,7 @@ class ControllerModel(nn.Module):
         x = torch.tanh(self.fc2(x))
         x = torch.tanh(self.fc3(x))
         x = torch.tanh(self.fc_out(x))
+        x = torch.reshape(x, (-1, self.nr_actions, self.out_size))
         return x
 
 

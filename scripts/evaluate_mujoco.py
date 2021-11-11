@@ -25,12 +25,12 @@ def evaluate_cheetah(
     # create real environment
     obs = env.reset()
 
-    for _ in range(nr_steps):
+    for step in range(nr_steps):
         # print()
 
         obs_reshaped = torch.from_numpy(np.expand_dims(obs, 0)).float()
 
-        act = controller(obs_reshaped)[0].detach().numpy()
+        act = controller(obs_reshaped)[0, 0].detach().numpy()
 
         # ----- DYNAMICS TESTING --------
         # act = np.expand_dims(np.random.rand(act_shape[0]), 0)
@@ -53,7 +53,9 @@ def evaluate_cheetah(
         obs, rew, _, _ = env.step(act)
         # render
         if render:
+            # print(obs[2])
             if obs[2] > 3:
+                print(step)
                 print("flipped")
             env.render()
             time.sleep(0.1)
@@ -101,5 +103,5 @@ if __name__ == "__main__":
     # evaluate_cheetah(env, controller, nr_steps=200, render=True)
 
     # Evaluate systematically
-    avg_rewards = run_eval(env, controller, 100, 20)
+    avg_rewards = run_eval(env, controller, 10, 20)
     print("with run eval", avg_rewards)
