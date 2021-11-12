@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.lib.function_base import flip
 import torch
 
 import matplotlib.pyplot as plt
@@ -34,11 +35,12 @@ class MujocoDataset(torch.utils.data.Dataset):
 
 
 nr_epochs = 2000
-batch_size = 8
+batch_size = 4
 samples_per_epoch = 5000
 resample_every_x_epochs = 5
-learning_rate_controller = 0.0001
-nr_actions = 5
+learning_rate_controller = 1e-6
+nr_actions = 7
+ctrl_weight, pos_weight, vel_weight, flip_weight = (0.1, 0.3, 2, 0.5)
 # NOTES
 # currently using random controller only in the beginning for sampling
 # loss function: negative values seem to be fine!
@@ -88,9 +90,18 @@ def loss_fn(next_obs, act, conversion_factor=1):
 
 
 def loss_fn_horizon(obs, act, conversion_factor=1):
-    loss_ctrl = 0.1 * torch.sum(act**2)
-    loss_move = torch.sum(conversion_factor - obs)  # TODO: weighting?
-    return loss_ctrl + loss_move
+    loss_ctrl = torch.sum(act**2)
+    loss_move_pos = torch.mean(conversion_factor - obs[:, :, 0])
+    loss_move_vel = torch.mean(conversion_factor - obs[:, :, 9])
+    loss_flip = torch.mean(obs[:, :, 2]**2)
+    # print(
+    #     ctrl_weight * loss_ctrl, pos_weight * loss_move_pos,
+    #     vel_weight * loss_move_vel, flip_weight * loss_flip
+    # )
+    return (
+        ctrl_weight * loss_ctrl + pos_weight * loss_move_pos +
+        vel_weight * loss_move_vel + flip_weight * loss_flip
+    )
 
 
 optimizer = torch.optim.SGD(
@@ -122,13 +133,14 @@ try:
             # normalize and feed through dynamics
             normed_act = (act - act_mean) / act_std
 
-            intermediate_states = torch.zeros(obs.size()[0], nr_actions, 1)
+            intermediate_states = torch.zeros(
+                obs.size()[0], nr_actions, obs_len
+            )
             for j in range(nr_actions):
                 normed_obs = ((obs - obs_mean) / obs_std).float()
                 obs = train_dynamics.forward(obs, normed_obs, normed_act[:, j])
-                # save 0 and 9 of obs # TODO
-                # intermediate_states[:, j, 0] = obs[:, 0]
-                intermediate_states[:, j, 0] = obs[:, 9]
+                # save obs
+                intermediate_states[:, j] = obs
 
             loss = loss_fn_horizon(intermediate_states, act)
 
@@ -141,7 +153,7 @@ try:
 
             loss.backward()
             if epoch % 5 == 0 and i == 10:
-                print("act", act[:3])
+                print("act", act[0, :2])
                 print("grad", torch.sum(torch.abs(controller.fc3.weight.grad)))
             optimizer.step()
 
