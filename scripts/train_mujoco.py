@@ -1,6 +1,7 @@
 import numpy as np
 from numpy.lib.function_base import flip
 import torch
+import pickle
 
 import matplotlib.pyplot as plt
 
@@ -34,13 +35,15 @@ class MujocoDataset(torch.utils.data.Dataset):
         return self.data[index]
 
 
-nr_epochs = 2000
+nr_epochs = 3000
 batch_size = 4
 samples_per_epoch = 5000
 resample_every_x_epochs = 5
 learning_rate_controller = 1e-6
-nr_actions = 7
-ctrl_weight, pos_weight, vel_weight, flip_weight = (0.1, 0.3, 2, 0.5)
+thresh_flip = 0.8
+grad_clip_val = 5
+nr_actions = 5
+ctrl_weight, pos_weight, vel_weight, flip_weight = (0, 0.3, 2, 0.5)
 # NOTES
 # currently using random controller only in the beginning for sampling
 # loss function: negative values seem to be fine!
@@ -89,18 +92,23 @@ def loss_fn(next_obs, act, conversion_factor=1):
     return loss
 
 
+vec_05 = torch.tensor([thresh_flip**2])
+
+
 def loss_fn_horizon(obs, act, conversion_factor=1):
-    loss_ctrl = torch.sum(act**2)
+    # loss_ctrl = torch.sum(act**2)
     loss_move_pos = torch.mean(conversion_factor - obs[:, :, 0])
     loss_move_vel = torch.mean(conversion_factor - obs[:, :, 9])
-    loss_flip = torch.mean(obs[:, :, 2]**2)
+    loss_flip = torch.mean(
+        torch.maximum(obs[:, :, 2]**2, vec_05) - thresh_flip**2
+    )
     # print(
     #     ctrl_weight * loss_ctrl, pos_weight * loss_move_pos,
     #     vel_weight * loss_move_vel, flip_weight * loss_flip
     # )
     return (
-        ctrl_weight * loss_ctrl + pos_weight * loss_move_pos +
-        vel_weight * loss_move_vel + flip_weight * loss_flip
+        pos_weight * loss_move_pos + vel_weight * loss_move_vel +
+        flip_weight * loss_flip
     )
 
 
@@ -152,6 +160,15 @@ try:
             # loss = loss_fn(next_state, act[:, 0])
 
             loss.backward()
+            # gradient clipping
+            torch.nn.utils.clip_grad_norm_(
+                controller.parameters(), max_norm=grad_clip_val
+            )
+            # if torch.sum(torch.abs(controller.fc3.weight.grad)) > 100:
+            #     print(
+            #         "gradient problem",
+            #         torch.sum(torch.abs(controller.fc3.weight.grad))
+            #     )
             if epoch % 5 == 0 and i == 10:
                 print("act", act[0, :2])
                 print("grad", torch.sum(torch.abs(controller.fc3.weight.grad)))
@@ -191,3 +208,7 @@ ax2.set_ylabel('Reward', color="red", fontsize=18)
 plt.savefig("trained_models/mujoco/results.png")
 
 torch.save(controller, "trained_models/mujoco/cheetah_model_petsdyn")
+
+results_dict = {"rewards": rew_list, "loss": loss_sum}
+with open("trained_models/mujoco/cheetah_results.pkl", "wb") as outfile:
+    pickle.dump(results_dict, outfile)

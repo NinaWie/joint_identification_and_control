@@ -54,6 +54,7 @@ def evaluate_cheetah(
         # render
         if render:
             # print(obs[2])
+            print("act", act)
             if obs[2] > 3:
                 print(step)
                 print("flipped")
@@ -61,7 +62,7 @@ def evaluate_cheetah(
             time.sleep(0.1)
 
         # flipped
-        if obs[2] > 3:
+        if obs[2] > 0.8:
             rew = -10
             break
         # logging
@@ -88,7 +89,7 @@ class RandomController:
 
     def __call__(self, obs):
         return torch.from_numpy(
-            np.expand_dims(np.random.rand(6) * 2 - 1, axis=0)
+            np.expand_dims(np.random.rand(6) * 2 - 1, axis=(0, 1))
         )
 
 
@@ -100,8 +101,8 @@ if __name__ == "__main__":
     # controller = RandomController()
 
     # # Evaluate with plotting
-    # evaluate_cheetah(env, controller, nr_steps=200, render=True)
+    evaluate_cheetah(env, controller, nr_steps=200, render=True)
 
     # Evaluate systematically
-    avg_rewards = run_eval(env, controller, 10, 20)
-    print("with run eval", avg_rewards)
+    # avg_rewards = run_eval(env, controller, 10, 20)
+    # print("with run eval", avg_rewards)
