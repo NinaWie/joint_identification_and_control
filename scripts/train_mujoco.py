@@ -31,19 +31,31 @@ class MujocoDataset(torch.utils.data.Dataset):
         self.data = data
         print("-------------- RESAMPLE", np.mean(self.data))
 
+    def sample_partly(self, env, controller, how_much=100):
+        data = []
+        while len(data) < how_much:
+            collected_obs = evaluate_cheetah(
+                env, controller, nr_steps=100, return_obs=True
+            )
+            data.extend(collected_obs)
+        # roll and replace
+        self.data = np.roll(self.data, len(data), axis=0)
+        self.data[:len(data)] = data
+
     def __getitem__(self, index):
         return self.data[index]
 
 
-nr_epochs = 3000
+load_model = None  # "trained_models/mujoco/cheetah_model_petsdyn_1"
+nr_epochs = 4000
 batch_size = 4
 samples_per_epoch = 5000
 resample_every_x_epochs = 5
 learning_rate_controller = 1e-6
-thresh_flip = 0.8
-grad_clip_val = 5
+thresh_flip = 0.4
+grad_clip_val = 8  # 5 worked okay
 nr_actions = 5
-ctrl_weight, pos_weight, vel_weight, flip_weight = (0, 0.3, 2, 0.5)
+ctrl_weight, pos_weight, vel_weight, flip_weight = (0.02, 0.3, 2, 1)
 # NOTES
 # currently using random controller only in the beginning for sampling
 # loss function: negative values seem to be fine!
@@ -53,6 +65,8 @@ env = HalfCheetahEnv()
 train_dynamics = DynamicsModelPETS()
 obs_len, act_len = (env.observation_space.shape[0], env.action_space.shape[0])
 controller = ControllerModel(obs_len, act_len, nr_actions=nr_actions)
+if load_model is not None:
+    controller = torch.load(load_model)
 dataset = MujocoDataset(samples_per_epoch)
 dataset.collect_data(env, RandomController())
 
@@ -80,35 +94,24 @@ trainloader = trainloader = torch.utils.data.DataLoader(
 
 zero_vec = torch.zeros(batch_size)
 
-
-def loss_fn(next_obs, act, conversion_factor=1):
-    # TODO: rewrite with torch
-    loss_ctrl = 0.1 * torch.sum(act**2, axis=1)
-    loss_move = conversion_factor - next_obs[:, 9]
-    # torch.maximum((conversion_factor - next_obs[:, 0]), zero_vec)
-    loss = torch.sum(loss_ctrl + loss_move)
-    # Does not work because obs[:, 0] can be negative!
-    # loss = (torch.sum(act**2, axis=1) / next_obs[:, 0])
-    return loss
-
-
 vec_05 = torch.tensor([thresh_flip**2])
 
 
 def loss_fn_horizon(obs, act, conversion_factor=1):
-    # loss_ctrl = torch.sum(act**2)
+    loss_ctrl = torch.sum(act**2)
     loss_move_pos = torch.mean(conversion_factor - obs[:, :, 0])
     loss_move_vel = torch.mean(conversion_factor - obs[:, :, 9])
-    loss_flip = torch.mean(
-        torch.maximum(obs[:, :, 2]**2, vec_05) - thresh_flip**2
-    )
+    loss_flip = torch.sum(obs[:, :, 2]**2)
+    # torch.mean(
+    #     torch.maximum(obs[:, :, 2]**2, vec_05) - thresh_flip**2
+    # )
     # print(
     #     ctrl_weight * loss_ctrl, pos_weight * loss_move_pos,
     #     vel_weight * loss_move_vel, flip_weight * loss_flip
     # )
     return (
-        pos_weight * loss_move_pos + vel_weight * loss_move_vel +
-        flip_weight * loss_flip
+        ctrl_weight * loss_ctrl + pos_weight * loss_move_pos +
+        vel_weight * loss_move_vel + flip_weight * loss_flip
     )
 
 
@@ -125,7 +128,9 @@ try:
     rew_list = []
     for epoch in range(nr_epochs):
         # test_list = []
+        controller.eval()
         eval_reward = run_eval(env, controller, 100, 10)
+        controller.train()
         print("epoch", epoch - 1, "rewards eval", eval_reward)
         rew_list.append(eval_reward)
         losses = []
@@ -182,8 +187,16 @@ try:
         print()
         print("epoch", epoch, "sum of losses", round(loss_sum[-1], 2))
 
-        if (epoch + 1) % resample_every_x_epochs == 0:
-            dataset.collect_data(env, RandomController())
+        # if (epoch + 1) % resample_every_x_epochs == 0:
+        #     dataset.collect_data(env, )  # RandomController())
+        dataset.sample_partly(env, RandomController(), how_much=500)
+        controller.eval()
+        dataset.sample_partly(env, controller, how_much=150)
+
+        # # show it
+        # if (epoch + 1) % 10 == 0:
+        #     evaluate_cheetah(env, controller, render=True)
+        #     env.close()
 
         # print(next_state)
 
