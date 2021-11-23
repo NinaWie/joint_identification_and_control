@@ -85,18 +85,20 @@ class ControllerModel(nn.Module):
         self.out_size = out_size
         self.nr_actions = nr_actions
         self.states_in = nn.Linear(state_dim, 64)
-        self.fc1 = nn.Linear(64, 64)
-        self.fc2 = nn.Linear(64, 64)
-        self.fc3 = nn.Linear(64, 64)
+        self.fc1 = nn.Linear(64, 128)
+        self.fc2 = nn.Linear(128, 128)
+        self.bn1 = nn.BatchNorm1d(128)
+        self.bn2 = nn.BatchNorm1d(128)
+        self.fc3 = nn.Linear(128, 64)
         self.fc_out = nn.Linear(64, out_size * nr_actions)
 
     def forward(self, state):
         # concatenate
-        x = torch.tanh(self.states_in(state))
+        x = torch.relu(self.states_in(state))
         # normal feed-forward
-        x = torch.tanh(self.fc1(x))
-        x = torch.tanh(self.fc2(x))
-        x = torch.tanh(self.fc3(x))
+        x = torch.tanh(self.bn1(self.fc1(x)))
+        x = torch.tanh(self.bn2(self.fc2(x)))
+        x = torch.relu(self.fc3(x))
         x = torch.tanh(self.fc_out(x))
         x = torch.reshape(x, (-1, self.nr_actions, self.out_size))
         return x

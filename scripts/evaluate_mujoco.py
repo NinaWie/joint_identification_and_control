@@ -53,17 +53,19 @@ def evaluate_cheetah(
         obs, rew, _, _ = env.step(act)
         # render
         if render:
-            # print(obs[2])
+            # print(obs[1])
             print("act", act)
-            if obs[2] > 3:
-                print(step)
-                print("flipped")
+            # if obs[2] > 3:
+            #     print(step)
+            #     print("flipped")
             env.render()
             time.sleep(0.1)
 
         # flipped
-        if obs[2] > 0.8:
-            rew = -10
+        if obs[2] > 1:
+            collect_obs.append(obs)
+            collect_rewards.append(-10)
+            # print(collect_rewards)
             break
         # logging
         collect_obs.append(obs)
@@ -98,11 +100,12 @@ if __name__ == "__main__":
     dynamics = DynamicsModelPETS()
 
     controller = torch.load("trained_models/mujoco/cheetah_model_petsdyn")
+    controller.eval()
     # controller = RandomController()
 
     # # Evaluate with plotting
     evaluate_cheetah(env, controller, nr_steps=200, render=True)
 
     # Evaluate systematically
-    # avg_rewards = run_eval(env, controller, 10, 20)
+    # avg_rewards = run_eval(env, controller, 200, 20)
     # print("with run eval", avg_rewards)
