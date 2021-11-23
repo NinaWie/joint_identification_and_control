@@ -46,7 +46,7 @@ class MujocoDataset(torch.utils.data.Dataset):
         return self.data[index]
 
 
-load_model = None  # "trained_models/mujoco/cheetah_model_petsdyn_1"
+load_model = None  # "trained_models/mujoco/cheetah_model_petsdyn_2"
 nr_epochs = 4000
 batch_size = 4
 samples_per_epoch = 5000
@@ -55,7 +55,7 @@ learning_rate_controller = 1e-6
 thresh_flip = 0.4
 grad_clip_val = 8  # 5 worked okay
 nr_actions = 5
-ctrl_weight, pos_weight, vel_weight, flip_weight = (0.02, 0.3, 2, 1)
+ctrl_weight, pos_weight, vel_weight, flip_weight = (0.02, 0.3, 2, 3)
 # NOTES
 # currently using random controller only in the beginning for sampling
 # loss function: negative values seem to be fine!
@@ -109,10 +109,11 @@ def loss_fn_horizon(obs, act, conversion_factor=1):
     #     ctrl_weight * loss_ctrl, pos_weight * loss_move_pos,
     #     vel_weight * loss_move_vel, flip_weight * loss_flip
     # )
-    return (
-        ctrl_weight * loss_ctrl + pos_weight * loss_move_pos +
-        vel_weight * loss_move_vel + flip_weight * loss_flip
-    )
+    return loss_ctrl, loss_move_pos, loss_move_vel, loss_flip
+    # return (
+    #     ctrl_weight * loss_ctrl + pos_weight * loss_move_pos +
+    #     vel_weight * loss_move_vel + flip_weight * loss_flip
+    # )
 
 
 optimizer = torch.optim.SGD(
@@ -124,6 +125,7 @@ for param in train_dynamics.dynamics_model.parameters():
     param.requires_grad = False
 
 try:
+    loss_divided = []
     loss_sum = []
     rew_list = []
     for epoch in range(nr_epochs):
@@ -155,8 +157,12 @@ try:
                 # save obs
                 intermediate_states[:, j] = obs
 
-            loss = loss_fn_horizon(intermediate_states, act)
-
+            (loss_ctrl, loss_move_pos, loss_move_vel,
+             loss_flip) = loss_fn_horizon(intermediate_states, act)
+            loss = (
+                ctrl_weight * loss_ctrl + pos_weight * loss_move_pos +
+                vel_weight * loss_move_vel + flip_weight * loss_flip
+            )
             # # without horizon:
             # normed_obs = ((obs - obs_mean) / obs_std).float()
             # next_state = train_dynamics.forward(
@@ -179,9 +185,20 @@ try:
                 print("grad", torch.sum(torch.abs(controller.fc3.weight.grad)))
             optimizer.step()
 
-            losses.append(loss.item())
+            losses.append(
+                [
+                    loss.item(),
+                    loss_ctrl.item(),
+                    loss_move_pos.item(),
+                    loss_move_vel.item(),
+                    loss_flip.item()
+                ]
+            )
 
-        loss_sum.append(np.sum(losses))
+        losses = np.array(losses)
+
+        loss_sum.append(np.sum(losses[:, 0]))
+        loss_divided.append(np.mean(losses[:, 1:], axis=0))
 
         # evaluate:
         print()
@@ -222,6 +239,12 @@ plt.savefig("trained_models/mujoco/results.png")
 
 torch.save(controller, "trained_models/mujoco/cheetah_model_petsdyn")
 
-results_dict = {"rewards": rew_list, "loss": loss_sum}
+loss_divided = np.array(loss_divided)
+
+results_dict = {
+    "rewards": rew_list,
+    "loss": loss_sum,
+    "loss_divided": loss_divided
+}
 with open("trained_models/mujoco/cheetah_results.pkl", "wb") as outfile:
     pickle.dump(results_dict, outfile)
