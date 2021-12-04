@@ -47,6 +47,7 @@ class MujocoDataset(torch.utils.data.Dataset):
 
 
 load_model = None  # "trained_models/mujoco/cheetah_model_petsdyn_2"
+recurrent = True
 nr_epochs = 4000
 batch_size = 4
 samples_per_epoch = 5000
@@ -54,8 +55,8 @@ resample_every_x_epochs = 5
 learning_rate_controller = 1e-6
 thresh_flip = 0.4
 grad_clip_val = 8  # 5 worked okay
-nr_actions = 5
-ctrl_weight, pos_weight, vel_weight, flip_weight = (0.02, 0.3, 2, 3)
+nr_actions = 10
+ctrl_weight, pos_weight, vel_weight, flip_weight = (0.02, 0.3, 2, 10)
 # NOTES
 # currently using random controller only in the beginning for sampling
 # loss function: negative values seem to be fine!
@@ -64,7 +65,8 @@ ctrl_weight, pos_weight, vel_weight, flip_weight = (0.02, 0.3, 2, 3)
 env = HalfCheetahEnv()
 train_dynamics = DynamicsModelPETS()
 obs_len, act_len = (env.observation_space.shape[0], env.action_space.shape[0])
-controller = ControllerModel(obs_len, act_len, nr_actions=nr_actions)
+con_actions = 1 if recurrent else nr_actions
+controller = ControllerModel(obs_len, act_len, nr_actions=con_actions)
 if load_model is not None:
     controller = torch.load(load_model)
 dataset = MujocoDataset(samples_per_epoch)
@@ -143,19 +145,35 @@ try:
             # --- testing with env -----
             optimizer.zero_grad()
 
-            act = controller(obs.float())
-
-            # normalize and feed through dynamics
-            normed_act = (act - act_mean) / act_std
-
             intermediate_states = torch.zeros(
                 obs.size()[0], nr_actions, obs_len
             )
-            for j in range(nr_actions):
-                normed_obs = ((obs - obs_mean) / obs_std).float()
-                obs = train_dynamics.forward(obs, normed_obs, normed_act[:, j])
-                # save obs
-                intermediate_states[:, j] = obs
+            if recurrent:
+                all_actions = torch.zeros(obs.size()[0], nr_actions, act_len)
+                for j in range(nr_actions):
+                    act = controller(obs.float())
+
+                    # normalize and feed through dynamics
+                    normed_act = (act - act_mean) / act_std
+
+                    normed_obs = ((obs - obs_mean) / obs_std).float()
+                    obs = train_dynamics.forward(obs, normed_obs, normed_act)
+                    # save obs
+                    intermediate_states[:, j] = obs
+                    all_actions[:, j] = act
+            else:
+                all_actions = controller(obs.float())
+
+                # normalize and feed through dynamics
+                normed_act = (all_actions - act_mean) / act_std
+
+                for j in range(nr_actions):
+                    normed_obs = ((obs - obs_mean) / obs_std).float()
+                    obs = train_dynamics.forward(
+                        obs, normed_obs, normed_act[:, j]
+                    )
+                    # save obs
+                    intermediate_states[:, j] = obs
 
             (loss_ctrl, loss_move_pos, loss_move_vel,
              loss_flip) = loss_fn_horizon(intermediate_states, act)
@@ -206,9 +224,14 @@ try:
 
         # if (epoch + 1) % resample_every_x_epochs == 0:
         #     dataset.collect_data(env, )  # RandomController())
-        dataset.sample_partly(env, RandomController(), how_much=500)
+        dataset.sample_partly(env, RandomController(), how_much=400)
         controller.eval()
-        dataset.sample_partly(env, controller, how_much=150)
+        dataset.sample_partly(env, controller, how_much=200)
+
+        if epoch % 100 == 0:
+            torch.save(
+                controller, "trained_models/mujoco/cheetah_model_petsdyn"
+            )
 
         # # show it
         # if (epoch + 1) % 10 == 0:

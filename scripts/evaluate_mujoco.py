@@ -53,16 +53,16 @@ def evaluate_cheetah(
         obs, rew, _, _ = env.step(act)
         # render
         if render:
-            # print(obs[1])
-            print("act", act)
+            # print(obs[2])
+            # print("act", act)
             # if obs[2] > 3:
             #     print(step)
             #     print("flipped")
             env.render()
-            time.sleep(0.1)
+            time.sleep(0.03)
 
         # flipped
-        if obs[2] > 1:
+        if abs(obs[2]) > 1.5:
             collect_obs.append(obs)
             collect_rewards.append(-10)
             # print(collect_rewards)

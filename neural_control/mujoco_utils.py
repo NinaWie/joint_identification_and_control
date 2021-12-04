@@ -100,7 +100,8 @@ class ControllerModel(nn.Module):
         x = torch.tanh(self.bn2(self.fc2(x)))
         x = torch.relu(self.fc3(x))
         x = torch.tanh(self.fc_out(x))
-        x = torch.reshape(x, (-1, self.nr_actions, self.out_size))
+        if self.nr_actions > 1:
+            x = torch.reshape(x, (-1, self.nr_actions, self.out_size))
         return x
 
 
