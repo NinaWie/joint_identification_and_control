@@ -54,8 +54,8 @@ samples_per_epoch = 5000
 resample_every_x_epochs = 5
 learning_rate_controller = 1e-6
 thresh_flip = 0.4
-grad_clip_val = 8  # 5 worked okay
-nr_actions = 10
+grad_clip_val = 8
+nr_actions = 15  # increase in several iterations is maybe the best
 ctrl_weight, pos_weight, vel_weight, flip_weight = (0.02, 0.3, 2, 10)
 # NOTES
 # currently using random controller only in the beginning for sampling
