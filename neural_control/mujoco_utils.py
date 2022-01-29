@@ -108,7 +108,7 @@ class ControllerModel(nn.Module):
 class DynamicsModelPETS:
 
     def __init__(
-        self, path="trained_models/out_mbrl/test_halfcheetah/eps_189_38200"
+        self, path="trained_models/out_mbrl/bl_halfcheetah/eps_189_38200"
     ):
         model = hydra.utils.instantiate(cfg.dynamics_model.model)
         self.dynamics_model = mbrl.models.OneDTransitionRewardModel(
@@ -141,3 +141,37 @@ class DynamicsModelPETS:
         pred_obs_diff = torch.mean(preds_batched, dim=1)
         # TODO: check whether reshaping works correctly
         return obs + pred_obs_diff
+
+
+class PpoWrapper:
+
+    def __init__(self):
+        self.mean_norm = torch.tensor(
+            [
+                -0.039147362499211455, -0.06344040616791331,
+                -0.053515751581788666, -0.0006876384938832863,
+                -0.1576048576576067, -0.0010528325940817758,
+                -0.014806472689703377, -0.12300787232536478, 3.133405195288861,
+                -0.035269991069096625, -0.0702261040394841, 0.2443248326861995,
+                -0.07020634079392384, -0.011922802037972267,
+                -0.04747278308920107, 0.11358221097146762, -0.03936516213317199
+            ]
+        )
+        self.std_norm = torch.tensor(
+            [
+                0.12128480940171858, 0.45064279496848514, 0.39133256859862564,
+                0.5147855194920697, 0.2941345962941414, 0.4906188252192244,
+                0.4241574872646527, 0.2727549326347819, 2.482476652673881,
+                0.9014415183423282, 1.804328931038569, 8.943195120208939,
+                8.364966600415459, 6.500870652046472, 6.208960629261971,
+                8.770794513405406, 5.362724020687089
+            ]
+        )
+        self.model = torch.load("trained_models/mujoco/ppo_mujoco_bl")
+        print(self.model)
+
+    def __call__(self, state):
+        # use only first part and normalize
+        normed_state = (state[:, 1:] - self.mean_norm) / self.std_norm
+        action = self.model.choose_action(normed_state)
+        return action

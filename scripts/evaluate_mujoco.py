@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 from mbrl.env.pets_halfcheetah import HalfCheetahEnv
-from neural_control.mujoco_utils import DynamicsModelPETS, ControllerModel
+from neural_control.mujoco_utils import DynamicsModelPETS, ControllerModel, PpoWrapper
 
 
 def loss_fn(next_obs, act, conversion_factor=1):
@@ -30,7 +30,7 @@ def evaluate_cheetah(
 
         obs_reshaped = torch.from_numpy(np.expand_dims(obs, 0)).float()
 
-        act = controller(obs_reshaped)[0, 0].detach().numpy()
+        act = controller(obs_reshaped)[0].detach().numpy()
 
         # ----- DYNAMICS TESTING --------
         # act = np.expand_dims(np.random.rand(act_shape[0]), 0)
@@ -99,13 +99,17 @@ if __name__ == "__main__":
     env = HalfCheetahEnv()
     dynamics = DynamicsModelPETS()
 
-    controller = torch.load("trained_models/mujoco/cheetah_model_petsdyn")
-    controller.eval()
+    # controller = torch.load(
+    #     "trained_models/mujoco/cheetah_model_petsdyn_final"
+    # )
+    # controller.eval()
+    controller = PpoWrapper()
+
     # controller = RandomController()
 
     # # Evaluate with plotting
-    evaluate_cheetah(env, controller, nr_steps=200, render=True)
+    # evaluate_cheetah(env, controller, nr_steps=100, render=True)
 
     # Evaluate systematically
-    # avg_rewards = run_eval(env, controller, 200, 20)
-    # print("with run eval", avg_rewards)
+    avg_rewards = run_eval(env, controller, 100, 100)
+    print("with run eval", avg_rewards)

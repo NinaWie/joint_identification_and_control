@@ -565,8 +565,8 @@ def load_prepare_trajectory(base_dir, dt, speed_factor, test=False):
     #     10, 0.01, seed=np.random.randint(10000)
     # )
     folder = 'test' if test else "train"
-    # data_list = os.listdir(os.path.join(base_dir, folder))
-    rand_traj = "traj_0.npy" # np.random.choice(data_list)
+    data_list = os.listdir(os.path.join(base_dir, folder))
+    rand_traj = np.random.choice(data_list)
     trajectory = np.load(os.path.join(base_dir, folder, rand_traj))
 
     # dt for trajectory generation is 0.01, then transform back
