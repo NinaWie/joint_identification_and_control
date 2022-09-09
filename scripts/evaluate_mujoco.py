@@ -19,6 +19,8 @@ def evaluate_cheetah(
     collect_obs = []
     collect_rewards = []
 
+    num_neg_rewards = 0
+
     # act_shape = env.action_space.shape
     # obs_shape = env.observation_space.shape
 
@@ -59,17 +61,25 @@ def evaluate_cheetah(
             #     print(step)
             #     print("flipped")
             env.render()
-            time.sleep(0.03)
+            time.sleep(0.05)
 
         # flipped
         if abs(obs[2]) > 1.5:
             collect_obs.append(obs)
-            collect_rewards.append(-10)
+            # collect_rewards.append(-10)
             # print(collect_rewards)
             break
         # logging
         collect_obs.append(obs)
         collect_rewards.append(rew)
+        # print(round(float(rew), 2))
+        if rew < 0:
+            num_neg_rewards += 1
+        else:
+            num_neg_rewards = 0
+        if num_neg_rewards > 10:
+            collect_rewards = collect_rewards[:-10]
+            break
 
         # loss = loss_fn(np.expand_dims(obs, axis=0), np.array([act]))
         # test_list.append([rew, loss])
@@ -80,10 +90,18 @@ def evaluate_cheetah(
 
 
 def run_eval(env, controller, nr_steps, nr_iters):
-    rew = []
+    rew, not_falling = [], []
     for _ in range(nr_iters):
         rewards = evaluate_cheetah(env, controller, nr_steps)
-        rew.append(np.mean(rewards))  # TODO: any reason to take the sum?
+        not_falling.append(len(rewards))
+        rew.append(np.sum(rewards))  # TODO: any reason to take the sum?
+    print(not_falling)
+    print(rew)
+    print("Average rewards before fall:", np.mean(rew), np.median(rew))
+    print(
+        "Average nr of steps before fall:", np.mean(not_falling),
+        np.median(not_falling)
+    )
     return round(np.mean(rew), 3)
 
 
@@ -97,15 +115,17 @@ class RandomController:
 
 if __name__ == "__main__":
     env = HalfCheetahEnv()
-    dynamics = DynamicsModelPETS()
+    # dynamics = DynamicsModelPETS()
 
-    controller = torch.load("trained_models/mujoco/cheetah_model_petsdyn")
+    controller = torch.load(
+        "trained_models/mujoco/cheetah_model_petsdyn_final"
+    )
     controller.eval()
     # controller = RandomController()
 
     # # Evaluate with plotting
-    evaluate_cheetah(env, controller, nr_steps=200, render=True)
+    # evaluate_cheetah(env, controller, nr_steps=10000, render=True)
 
     # Evaluate systematically
-    # avg_rewards = run_eval(env, controller, 200, 20)
+    avg_rewards = run_eval(env, controller, 1000, 50)
     # print("with run eval", avg_rewards)

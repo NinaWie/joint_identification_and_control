@@ -6,6 +6,7 @@ import time
 from gym import spaces
 import cv2
 from gym.utils import seeding
+from stable_baselines3 import PPO
 
 from neural_control.environments.cartpole_env import CartPoleEnv
 from neural_control.environments.wing_env import SimpleWingEnv
@@ -28,6 +29,9 @@ class CartPoleEnvRL(gym.Env, CartPoleEnv):
 
     def __init__(self, dynamics, dt=0.05, **kwargs):
         self.step_counter = 0
+
+        save_name = "trained_models/cartpole/reinforcement_learning/smallvel/rl_200000_steps"
+        self.residual_model = PPO.load(save_name)
 
         CartPoleEnv.__init__(self, dynamics, dt=dt)
 
@@ -112,7 +116,14 @@ class CartPoleEnvRL(gym.Env, CartPoleEnv):
         self.image_buffer[0] = self._preprocess_img(new_img)
         return self._convert_image_buffer(self.state)
 
-    def step(self, action):
+    def step(self, act_in):
+
+        # add residual
+        act_residual, _ = self.residual_model.predict(
+            self.state, deterministic=True
+        )
+        action = act_in + act_residual
+
         super()._step(action, is_torch=False)
         # print(self.state)
         done = not self.is_upright() or self.step_ind > 250
@@ -378,12 +389,21 @@ class WingEnvRL(gym.Env, SimpleWingEnv):
         SimpleWingEnv.__init__(self, dynamics, dt)
         self.action_space = spaces.Box(low=0, high=1, shape=(4, ))
 
+        self.residual_model = PPO.load(
+            "trained_models/wing/reinforcement_final/rl_340000_steps"
+            # rl_370000_steps"
+        )
+
         self.div_in_obs = div_in_obs
 
+        if div_in_obs:
+            obs_dim = 15
+            high = np.array([3, 3, 3, 20, 20, 20, 3, 3, 3, 3, 3, 3, 3, 3, 3])
+        else:
+            obs_dim = 12
+            high = np.array([20, 20, 20, 3, 3, 3, 3, 3, 3, 3, 3, 3])
+
         self.step_counter = 0
-        obs_dim = 15
-        # high = np.array([20 for k in range(obs_dim)])
-        high = np.array([3, 3, 3, 20, 20, 20, 3, 3, 3, 3, 3, 3, 3, 3, 3])
         self.observation_space = spaces.Box(-high, high, shape=(obs_dim, ))
         # Observations could be what we use as input data to my NN
 
@@ -448,7 +468,13 @@ class WingEnvRL(gym.Env, SimpleWingEnv):
         div = np.linalg.norm(drone_on_line - self.state[:3])
         return div
 
-    def step(self, action):
+    def step(self, act_in):
+        # add residual
+        act_residual, _ = self.residual_model.predict(
+            self.obs, deterministic=True
+        )
+        action = act_in + act_residual
+
         self.prev_state = self.state.copy()
         self.state, _ = SimpleWingEnv.step(self, action)
         self.obs = self.state_to_obs()
