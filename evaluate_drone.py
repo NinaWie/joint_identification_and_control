@@ -138,10 +138,9 @@ class QuadEvaluator():
             )
 
             # possible average with previous actions
-            use_action = average_action(action, i, do_avg_act=do_avg_act)
-
+            # use_action = average_action(action, i, do_avg_act=do_avg_act)
             current_np_state, stable = self.eval_env.step(
-                use_action, thresh=thresh_stable
+                action, thresh=thresh_stable
             )
             # np.set_printoptions(suppress=1, precision=3)
             # print(current_np_state[:3], trajectory[0, :3])

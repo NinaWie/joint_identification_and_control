@@ -144,7 +144,8 @@ class QuadDataset(DroneDataset):
         )
         return states, ref_states
 
-    def rot_world_to_body(self, state_vector, world_to_body):
+    @staticmethod
+    def rot_world_to_body(state_vector, world_to_body):
         """
         world_to_body is rotation matrix
         vector is array of size (?, 3)
@@ -168,7 +169,7 @@ class QuadDataset(DroneDataset):
 
         # 2) compute relative position and reset drone position to zero
         subtract_drone_pos = torch.unsqueeze(drone_states[:, :3], 1)
-        subtract_drone_vel = torch.unsqueeze(drone_states[:, 6:9], 1)
+        subtract_drone_vel = torch.unsqueeze(drone_states[:, 6:9], 1)  # TODO
         torch_ref_states[:, :, :3] = (
             torch_ref_states[:, :, :3] - subtract_drone_pos
         )
@@ -202,6 +203,22 @@ class QuadDataset(DroneDataset):
 
         # transform acceleration
         return inp_drone_states, drone_states, inp_ref_states, torch_ref_states
+
+
+def state_preprocessing(drone_states):
+    # get rotation matrix
+    drone_vel = drone_states[:, 6:9]
+    world_to_body = Dynamics.world_to_body_matrix(drone_states[:, 3:6])
+    drone_vel_body = QuadDataset.rot_world_to_body(drone_vel, world_to_body)
+    # first two columns of rotation matrix
+    drone_rotation_matrix = torch.reshape(world_to_body[:, :, :2], (-1, 6))
+    inp_drone_states = torch.hstack( # TODO
+            (
+                drone_vel, drone_rotation_matrix, drone_vel_body,
+                drone_states[:, 9:12]
+            )
+        )
+    return inp_drone_states
 
 
 class CartpoleDataset(torch.utils.data.Dataset):

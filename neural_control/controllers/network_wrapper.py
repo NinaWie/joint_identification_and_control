@@ -18,12 +18,14 @@ class NetworkWrapper:
         dataset,
         optimizer=None,
         horizon=5,
+        nr_actions_rnn=3,
         max_drone_dist=0.1,
         render=0,
         dt=0.02,
         take_every_x=1000,
         **kwargs
     ):
+        self.nr_actions_rnn = nr_actions_rnn
         self.dataset = dataset
         self.net = model
         self.horizon = horizon
@@ -51,13 +53,14 @@ class NetworkWrapper:
         )
 
         with torch.no_grad():
-            suggested_action = self.net(in_state, ref)
+            # RNN: input only the number of reference states necessary
+            suggested_action = self.net(in_state, ref[:, :self.nr_actions_rnn])
 
             suggested_action = torch.sigmoid(suggested_action)
 
-            suggested_action = torch.reshape(
-                suggested_action, (1, self.horizon, self.action_dim)
-            )
+            # suggested_action = torch.reshape(
+            #     suggested_action, (1, self.horizon, self.action_dim)
+            # )
 
         numpy_action_seq = suggested_action[0].detach().numpy()
         # print([round(a, 2) for a in numpy_action_seq[0]])
