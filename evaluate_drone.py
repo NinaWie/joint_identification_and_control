@@ -259,8 +259,7 @@ class QuadEvaluator():
             (reference, np.mean(div_of_full_runs), np.std(div_of_full_runs))
         )
         print(
-            "%s: Average div total: %3.2f (%3.2f)" %
-            (reference, np.mean(div), np.std(div))
+            "Ratio of stable runs: %3.2f" % (len(div_of_full_runs) / len(div))
         )
         print(
             "%s: Steps until divergence: %3.2f (%3.2f)" %
