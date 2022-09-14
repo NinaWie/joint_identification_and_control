@@ -236,9 +236,9 @@ class TrainBase:
     def save_model(self, epoch, success, suc_std):
         # check if we either are higher than the current score (if measuring
         # the number of epochs) or lower (if measuring tracking error)
-        if epoch > 0 and (
-            success > self.current_score and self.suc_up_down == 1
-        ) or (success < self.current_score and self.suc_up_down == -1):
+        if epoch > 0: # and (
+            # success > self.current_score and self.suc_up_down == 1
+        # ) or (success < self.current_score and self.suc_up_down == -1):
             self.current_score = success
             print("Best model with score ", round(success, 2))
             torch.save(
@@ -285,9 +285,11 @@ class TrainBase:
 
     def run_control(self, config, sampling_based_finetune=False, curriculum=1):
         if curriculum:
-            self.config["speed_factor"] = 0.4
+            self.config["speed_factor"] = 0.2
             successes = []
         try:
+            # variable to make sure that after 200 episodes at one speed, it is increased
+            first_epoch_with_this_vel = 0
             for epoch in range(config["nr_epochs"]):
                 _ = self.evaluate_model(epoch)
 
@@ -301,12 +303,12 @@ class TrainBase:
                         round(self.config["speed_factor"], 2), "thresh",
                         round(self.config["thresh_div"], 2)
                     )
-                    if len(successes) > 5 and np.all(
-                        np.array(successes[-5:]) > current_possible_steps
-                    ):
+                    # increase speed if successful or if 200 steps done at this speed. only until 0.4
+                    if ( (len(successes) > 5 and np.all(np.array(successes[-5:]) > current_possible_steps)) or ((epoch - first_epoch_with_this_vel) > 200) ) and self.config["speed_factor"] < 0.4:
                         print(" -------------- increase speed --------- ")
                         self.config["speed_factor"] += 0.1
                         self.config["thresh_div"] = 0.1
+                        first_epoch_with_this_vel = epoch + 1
                         successes = []
                         self.current_score = 0 if self.suc_up_down == 1 else np.inf
 

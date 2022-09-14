@@ -270,9 +270,9 @@ if __name__ == "__main__":
     # config["thresh_div_start"] = 1
     # config["thresh_stable_start"] = 1.5
 
-    config["save_name"] = "mpc_loss"
+    config["save_name"] = "rnn_horizon10"
 
-    config["nr_epochs"] = 400
+    config["nr_epochs"] = 600
 
     # TRAIN
     train_control(baseline_model, config)
