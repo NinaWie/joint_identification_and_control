@@ -223,7 +223,7 @@ class QuadEvaluator():
         self,
         reference: str = "rand",
         nr_test: int = 10,
-        max_steps: int = 200,
+        max_steps: int = 251,
         thresh_div=1,
         thresh_stable=1,
         **kwargs
@@ -231,6 +231,7 @@ class QuadEvaluator():
         """
         Function to evaluate a trajectory multiple times
         """
+        print("Max steps possible:", max_steps)
         if nr_test == 0:
             return 0, 0
         div, stable = [], []
@@ -245,30 +246,33 @@ class QuadEvaluator():
             )
             div.append(np.mean(divergences))
             # before take over
-            no_large_div = np.sum(np.array(divergences) < thresh_div)
+            stable.append(np.sum(np.array(divergences) < thresh_div))
             # print(np.mean(divergences), no_large_div)
             # no_large_div = np.where(np.array(divergences) > thresh_div)[0][0]
-            stable.append(no_large_div)
             # stable.append(len(drone_traj))
 
+        print("DIV")
+        print(div)
+        print("STABLE STEPS"),
+        print(stable)
         # Output results
         stable = np.array(stable)
-        div_of_full_runs = np.array(div)[stable == np.max(stable)]
+        div_of_full_runs = np.array(div)[stable == max_steps]
         print(
-            "%s: Average div of full runs: %3.2f (%3.2f)" %
+            "%s: Average div of full runs: %3.2f (%3.2f) \n" %
             (reference, np.mean(div_of_full_runs), np.std(div_of_full_runs))
         )
-        print(
-            "%s: Average div total: %3.2f (%3.2f)" %
-            (reference, np.mean(div), np.std(div))
-        )
+        # print(
+        #     "%s: Average div total: %3.2f (%3.2f)" %
+        #     (reference, np.mean(div), np.std(div))
+        # )
         print(
             "Ratio of stable runs: %3.2f" % (len(div_of_full_runs) / len(div))
         )
-        print(
-            "%s: Steps until divergence: %3.2f (%3.2f)" %
-            (reference, np.mean(stable), np.std(stable))
-        )
+        # print(
+        #     "%s: Steps until divergence: %3.2f (%3.2f)" %
+        #     (reference, np.mean(stable), np.std(stable))
+        # )
         return np.mean(stable), np.std(stable)
 
     def collect_training_data(self, outpath="data/jan_2021.npy"):
@@ -399,7 +403,8 @@ if __name__ == "__main__":
         "direction": 1,
         "thresh_div": 5,
         "thresh_stable": 2,
-        "duration": 10
+        "duration": 10,
+        "max_steps": int(1000 / (params["speed_factor"] * 10)) + 1
     }
     if args.points is not None:
         from neural_control.trajectory.predefined_trajectories import (
@@ -414,9 +419,7 @@ if __name__ == "__main__":
     if args.eval > 0:
         evaluator.render = 0
         # run_mpc_analysis(evaluator, system="quad")
-        evaluator.run_eval(
-            args.ref, nr_test=args.eval, max_steps=500, **traj_args
-        )
+        evaluator.run_eval(args.ref, nr_test=args.eval, **traj_args)
         exit()
 
     # evaluator.run_mpc_ref(args.ref)
