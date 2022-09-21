@@ -130,6 +130,8 @@ class QuadEvaluator():
 
         (reference_trajectory, drone_trajectory, divergences,
          actions) = [], [current_np_state], [], []
+        dt = 0.05
+        t_prev = time.time()
         for i in range(max_nr_steps):
             # acc = self.eval_env.get_acceleration()
             trajectory = reference.get_ref_traj(current_np_state, 0)
@@ -151,6 +153,11 @@ class QuadEvaluator():
                 current_np_state = states[i]
 
             self.help_render(sleep=0)
+            time_now = time.time()
+            dt_process = (time_now - t_prev)
+            dt_sleep = max(0.0, dt - dt_process)
+            time.sleep(dt_sleep)
+            t_prev = time_now + dt_sleep
 
             drone_pos = current_np_state[:3]
             drone_trajectory.append(current_np_state)
