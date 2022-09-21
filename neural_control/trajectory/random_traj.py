@@ -95,10 +95,7 @@ class PolyObject():
 
     def __init__(self, reference_arr):
         self.points = np.array(
-            [
-                reference_arr[i] for i in range(len(reference_arr))
-                if i % 20 == 0
-            ]
+            [reference_arr[i] for i in range(len(reference_arr))]
         )
         self.points[:, 2] += 1
 

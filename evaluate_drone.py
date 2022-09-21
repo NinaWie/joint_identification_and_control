@@ -434,7 +434,7 @@ if __name__ == "__main__":
         exit()
 
     # evaluator.run_mpc_ref(args.ref)
-    reference_traj, drone_traj, divergences = evaluator.follow_trajectory(
+    reference_traj, drone_traj, divergences, acts = evaluator.follow_trajectory(
         args.ref, max_nr_steps=2000, use_mpc_every=1000, **traj_args
     )
 
